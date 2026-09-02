@@ -18,9 +18,7 @@ for src in "${ROOT}"/dsp/tests/*.test.cpp; do
   printf '\n%s\n' "${name}"
   g++ -std=c++20 -O2 -Wall -Wextra \
     -I "${ROOT}/dsp" \
-    -isystem "${ROOT}/vendor/RTNeural" \
-    -isystem "${ROOT}/vendor/RTNeural/modules/xsimd/include" \
-    -DRTNEURAL_DEFAULT_ALIGNMENT=16 \
+    -isystem "${ROOT}/dsp/amp/faust" \
     "${src}" -o "${OUT}/${name}"
   "${OUT}/${name}" || status=1
 done

@@ -25,11 +25,11 @@ site/**/*.generated.json
 # Generated from schema/params.ts — never edited by hand, never committed
 dsp/params.generated.h
 
+# Generated from dsp/amp/faust/amp.dsp by the Faust compiler
+dsp/amp/faust/amp.generated.h
+
 # Bundled from engine/processor.ts by esbuild
 public/tonecraft-processor.js
-
-# Copied from assets/ by the build. The source lives in assets/ and is committed.
-public/*.tcw
 
 # Astro generated types
 .astro/
@@ -54,4 +54,3 @@ Thumbs.db
 *.user.toml
 # Local Emscripten install (~1.7 GB). CI installs its own, pinned.
 .toolchain/
-vendor/

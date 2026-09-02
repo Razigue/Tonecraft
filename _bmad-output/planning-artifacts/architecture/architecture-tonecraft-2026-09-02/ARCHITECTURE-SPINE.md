@@ -86,7 +86,8 @@ Dependencies point one way only. `dsp/` never imports TypeScript. `app/` never i
 
 - **Binds:** FR-17, NFR-6
 - **Prevents:** a runtime quality ladder chosen from measured headroom.
-- **Rule:** model complexity, oversampling factor and filter orders are compile-time constants chosen for the floor machine. Nothing in the audio path reads a performance measurement and changes behaviour.
+- **Rule:** every circuit constant, the oversampling factor and all filter orders are compile-time constants chosen for the floor machine. Nothing in the audio path reads a performance measurement and changes behaviour.
+- **Amended 2026-09-02:** this said *model* complexity, because the amplifier was to be a neural model. It is not. See AD-22.
 
 ### AD-6 — One renderer, two triggers
 
@@ -136,11 +137,11 @@ Dependencies point one way only. `dsp/` never imports TypeScript. `app/` never i
 - **Prevents:** a garbage-collection pause or an error path turning into an audible glitch.
 - **Rule:** `process()` performs no allocation, no I/O, no logging and no DOM access. Compiled `-fno-exceptions -fno-rtti`, the flat C interface returns status codes; every failure is resolved at init. `process()` always produces audio — silence at worst, never nothing.
 
-### AD-14 — Model weights are loadable content
+### AD-14 — Model weights are loadable content `[RETIRED 2026-09-02]`
 
-- **Binds:** FR-17, NFR-2
-- **Prevents:** an amp becoming a compilation target, which would break the lazy-loaded amps already on the roadmap.
-- **Rule:** weights ship as a binary Float32 blob with a short header, loaded into RTNeural at init. Not embedded in the WASM, not JSON. The default preset's weights are inside the first-interactive budget; every other amp is fetched on demand.
+- **Binds:** nothing. Superseded by AD-22.
+- **Prevents:** nothing any longer. It prevented an amp becoming a compilation target, back when an amp was a weights file.
+- **Rule:** retired with the neural model. Under AD-22 an amplifier is a circuit compiled into the module, not a blob fetched at runtime. The consequence this decision was protecting — amps 2 and 3 as lazy-loaded content — is now an open question rather than a solved one: adding an amp means adding a circuit, and how a second circuit is delivered is undecided. The id is kept and never reused; AD-8's rule applies to decisions as well as parameters.
 
 ### AD-15 — No build output is committed
 
@@ -164,7 +165,8 @@ Dependencies point one way only. `dsp/` never imports TypeScript. `app/` never i
 
 - **Binds:** FR-6, FR-9, FR-17, NFR-6
 - **Prevents:** the same tone sounding different to a user on a 44.1 kHz interface than to one on 48 kHz — a divergence that arrives through the device, which no other invariant watches.
-- **Rule:** every stage is designed for, and runs at, one internal design rate: 48 kHz. Model weights, half-band filter coefficients and the cab FIR are all defined at that rate and at no other. When the device runs at another rate, `engine/` converts explicitly at the chain boundary with our own deterministic resampler — never the browser's implicit one, which FR-9 exists to avoid. A stage may not read the device rate; it may not have a rate parameter at all.
+- **Rule:** every stage is designed for, and runs at, one internal design rate: 48 kHz. Circuit constants, half-band filter coefficients and the cab FIR are all defined at that rate and at no other. When the device runs at another rate, the conversion happens explicitly at the chain boundary with our own deterministic resampler — never the browser's implicit one, which FR-9 exists to avoid. A stage may not read the device rate; it may not have a rate parameter at all.
+- **Amended 2026-09-02:** this said `engine/` converts. It does not — `engine/` is TypeScript, and resampling per sample in the worklet would be slow and would allocate. The conversion is C++, in `dsp/boundary.h`, outside `chain.cpp` and outside every stage. The rule's intent is unchanged; only its statement of where the code lives was wrong. Enforced by `scripts/check-stage-isolation.sh`.
 
 ### AD-19 — One block contract for every stage
 
@@ -183,6 +185,14 @@ Dependencies point one way only. `dsp/` never imports TypeScript. `app/` never i
 - **Binds:** FR-20, FR-24, AD-8
 - **Prevents:** inserting a stage silently shifting every meter slot and every bypass flag by one, with no error anywhere because the array is still the right length.
 - **Rule:** each stage declares a stable meter slot id and a stable bypass parameter id in `schema/`. Nothing addresses a stage by its index in the chain. Adding a stage takes the next id; ids are never reused (AD-8).
+
+### AD-22 — The amplifier is a circuit, not a capture
+
+- **Binds:** FR-17, NFR-1, NFR-6, NFR-9
+- **Prevents:** paying a neural model's whole price — an asset that does not exist, a capture rig, a training run and roughly 10% of one core — for its one real advantage, which this product is forbidden to use.
+- **Rule:** the amplifier is described in Faust (`dsp/amp/faust/amp.dsp`), compiled to C++ at build time and built into the single module. Faust is a code generator here and never a runtime: nothing from `@grame/faustwasm` ships, because its `AudioWorkletNode` would be a second processor (AD-1) and its buffer ABI sits outside the stage contract (AD-19). Only MIT-licensed Faust library primitives are used; no GPL amplifier source enters the build, so the product carries no viral licence.
+- **Why:** a neural model's advantage is fidelity to one *particular* amplifier. `PRODUCT.md` section 7 forbids modelling any named amplifier, so that advantage was unusable. Measured cost after the change: 4.5% of one core against 9.7%.
+- **Accepted consequence:** this cannot be made to sound like a specific amplifier on request. It is tuned by ear, and "good" is a judgement rather than an error metric.
 
 ## Consistency Conventions
 
@@ -210,7 +220,7 @@ Verified against the web on 2026-09-02.
 | nanostores | 1.5.x |
 | Tailwind CSS | 4.3.x |
 | Emscripten | 6.0.x, pinned exactly in CI |
-| RTNeural | 1.0.0, header-only, compile-time API |
+| Faust | 2.70.x, build-time code generator only |
 | Node | 24 LTS (Krypton), build and render only |
 | GoatCounter | hosted, cookieless, custom events |
 | GitHub Pages + Actions | — |
@@ -300,7 +310,7 @@ tonecraft/
 | --- | --- | --- |
 | FG-A Listen path | `site/`, `render/` | AD-6, AD-15, AD-16 |
 | FG-B Onboarding and calibration | `app/`, `engine/` | AD-11, AD-17 |
-| FG-C Signal chain | `dsp/`, `engine/` | AD-1, AD-2, AD-3, AD-4, AD-5, AD-13, AD-14 |
+| FG-C Signal chain | `dsp/`, `engine/` | AD-1, AD-2, AD-3, AD-4, AD-5, AD-13, AD-22 |
 | FG-D Rig interface | `app/` | AD-9, AD-11, AD-12 |
 | FG-E Tone state | `schema/`, `app/` | AD-7, AD-8, AD-9, AD-10, AD-11 |
 | FG-F Measurement and honesty | `engine/`, `app/` | AD-12, AD-13 |

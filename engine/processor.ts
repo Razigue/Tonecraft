@@ -30,10 +30,6 @@ interface ChainExports {
   tc_param_count(): number;
   tc_added_latency_frames(): number;
   tc_resampling(): number;
-  tc_load_weights(byteCount: number): number;
-  tc_weights_ptr(): number;
-  tc_weights_capacity(): number;
-  tc_amp_loaded(): number;
   tc_input_peak(): number;
   tc_input_brightness(): number;
   tc_probe_frames(): number;
@@ -151,24 +147,6 @@ class TonecraftProcessor extends AudioWorkletProcessor {
         resampling: exports.tc_resampling() === 1,
         sampleRate,
       });
-      return;
-    }
-
-    if (data['type'] === 'weights') {
-      const exports = this.#exports;
-      if (exports === null) return;
-      const blob = new Uint8Array(data['bytes'] as ArrayBuffer);
-      if (blob.byteLength > exports.tc_weights_capacity()) {
-        this.port.postMessage({ type: 'weights-failed', status: 1 });
-        return;
-      }
-      new Uint8Array(exports.memory.buffer, exports.tc_weights_ptr(),
-                     exports.tc_weights_capacity()).set(blob);
-      const status = exports.tc_load_weights(blob.byteLength);
-      // Named at load, never discoverable later: process() has no error path.
-      this.port.postMessage(
-        status === 0 ? { type: 'weights-loaded' } : { type: 'weights-failed', status },
-      );
       return;
     }
 

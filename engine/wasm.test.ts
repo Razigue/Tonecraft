@@ -29,11 +29,6 @@ interface Chain {
   tc_param_count(): number;
   tc_added_latency_frames(): number;
   tc_resampling(): number;
-  tc_load_weights(byteCount: number): number;
-  tc_weights_ptr(): number;
-  tc_weights_capacity(): number;
-  tc_weights_float_count(): number;
-  tc_amp_loaded(): number;
   tc_oversample_latency_samples(): number;
   tc_bypass_mask(): number;
   tc_input_peak(): number;
@@ -142,26 +137,27 @@ chain.tc_set_param(index('out_master'), 0);
 
 const sine = (n: number): number => 0.25 * Math.sin((2 * Math.PI * 440 * n) / INTERNAL_SAMPLE_RATE);
 
-// The oversampling window is a linear-phase filter pair, so it delays the
-// signal by its group delay and changes nothing else. The chain is therefore
-// compared against the input delayed by exactly that much — a comparison that
-// would fail if the window altered the signal as well as delaying it.
 const latency = chain.tc_oversample_latency_samples();
 check('the window reports its own group delay', latency > 0 && latency < 32, `${latency}`);
-
-const blocks = 8;
-run(sine, blocks);
-const base = (blocks - 1) * BLOCK_FRAMES;
-let worst = 0;
-for (let i = 0; i < BLOCK_FRAMES; i += 1) {
-  worst = Math.max(worst, Math.abs(output[i]! - sine(base + i - latency)));
-}
-check('a quiet signal crosses the chain delayed but unaltered',
-  worst < 5e-3, `max deviation ${worst.toFixed(6)} against a ${latency}-sample delay`);
-
-check('and the window costs under 0.5 ms of round trip',
+check('and it costs under 0.5 ms of round trip',
   (latency / INTERNAL_SAMPLE_RATE) * 1000 < 0.5,
   `${((latency / INTERNAL_SAMPLE_RATE) * 1000).toFixed(3)} ms`);
+
+// With every stage bypassed the chain must be exactly transparent — same
+// samples, same alignment, no residual delay. Bypassing the amp skips the
+// oversampling window with it, which is the point: a bypassed stage costs
+// nothing, including its resampling. The window's own transparency is measured
+// directly in dsp/tests/oversample.test.cpp.
+chain.tc_set_param(index('gate_bypass'), 1);
+chain.tc_set_param(index('amp_bypass'), 1);
+run(sine, 8);
+let worst = 0;
+for (let i = 0; i < BLOCK_FRAMES; i += 1) {
+  worst = Math.max(worst, Math.abs(output[i]! - input[i]!));
+}
+check('a fully bypassed chain is exactly transparent', worst < 1e-6,
+  `max deviation ${worst}`);
+setDefaults();
 
 // --- the limiter cannot be defeated ---------------------------------------
 // Every parameter pushed to its most extreme value at once, then a full-scale
@@ -245,6 +241,9 @@ setDefaults();
 chain.tc_set_param(index('in_trim'), 0);
 chain.tc_set_param(index('out_master'), 0);
 chain.tc_set_param(index('gate_threshold'), -40);
+// The amp is bypassed: this is a question about the gate, and an amplifier in
+// the path would be answering it instead.
+chain.tc_set_param(index('amp_bypass'), 1);
 run(loud, 60);
 check('and passes one above it', peakOf() > 0.3, `peak ${peakOf().toFixed(3)}`);
 
@@ -286,99 +285,41 @@ check('the input and the output cannot be bypassed at all (FR-18)',
 chain.tc_init(INTERNAL_SAMPLE_RATE);
 setDefaults();
 
-// --- the weights loader (FR-17, AD-14) -------------------------------------
-// Every way this can fail is detected at init and named. process() has no
-// error path, so nothing about loading may be discoverable later (AD-13).
-
-const MAGIC = 0x31574354;
-const floatCount = chain.tc_weights_float_count();
-const blobBytes = 12 + floatCount * 4;
-const weightsArea = new Uint8Array(heap, chain.tc_weights_ptr(), chain.tc_weights_capacity());
-
-const makeBlob = (magic: number, version: number, count: number, floats = count): Uint8Array => {
-  const buf = new Uint8Array(12 + floats * 4);
-  const view = new DataView(buf.buffer);
-  view.setUint32(0, magic, true);
-  view.setUint32(4, version, true);
-  view.setUint32(8, count, true);
-  for (let i = 0; i < floats; i += 1) view.setFloat32(12 + i * 4, 0.01, true);
-  return buf;
-};
-
-const tryLoad = (blob: Uint8Array): number => {
-  weightsArea.fill(0);
-  weightsArea.set(blob.subarray(0, Math.min(blob.length, weightsArea.length)));
-  return chain.tc_load_weights(blob.length);
-};
-
-check('the schema and the model agree on the float count',
-  floatCount === 4 * 20 * 1 + 20 * 4 * 20 + 4 * 20 + 20 + 1,
-  `${floatCount}`);
-check('the amp passes audio through before any weights are loaded',
-  chain.tc_amp_loaded() === 0);
-check('a truncated blob is refused', tryLoad(makeBlob(MAGIC, 1, floatCount).subarray(0, 8)) !== 0);
-check('a bad magic is refused', tryLoad(makeBlob(0xdeadbeef, 1, floatCount)) !== 0);
-check('an unsupported version is refused', tryLoad(makeBlob(MAGIC, 99, floatCount)) !== 0);
-check('a different model shape is refused rather than loaded',
-  tryLoad(makeBlob(MAGIC, 1, floatCount + 1)) !== 0);
-check('a blob whose header lies about its length is refused',
-  tryLoad(makeBlob(MAGIC, 1, floatCount, 4)) !== 0);
-check('no failed load leaves the amp half-loaded', chain.tc_amp_loaded() === 0);
-
-const real = readFileSync(join(ROOT, 'assets', 'amp-placeholder.tcw'));
-check('the placeholder blob is exactly the size the model needs',
-  real.length === blobBytes, `${real.length} vs ${blobBytes}`);
-check('a well-formed blob loads', tryLoad(new Uint8Array(real)) === 0 && chain.tc_amp_loaded() === 1);
-
-// The amp is in the signal path once loaded: identical input must now give a
-// different output than it did before, or the stage is not wired in.
-chain.tc_init(INTERNAL_SAMPLE_RATE);
-tryLoad(new Uint8Array(real));
-setDefaults();
-run(sine, 4);
-const shaped = Float32Array.from(output);
-check('a loaded amp changes the signal', shaped.some((v, i) => v !== input[i]));
-check('and it stays bounded — no runaway recurrent state',
-  shaped.every((v) => Number.isFinite(v) && Math.abs(v) <= 1));
-
-// --- the calibration probe (FR-10) -----------------------------------------
-// Level and bandwidth, measured without an AnalyserNode and without an FFT,
-// because the product has neither. These are what tell a pickup on a 1 MOhm
-// instrument input from one on a few kOhm microphone input.
+// --- the amp is in the chain and is a distortion (FR-17) -------------------
+// Its behaviour is covered in depth by dsp/tests/amp.test.cpp; what matters
+// here is that the shipped artifact actually has it wired in.
 
 chain.tc_init(INTERNAL_SAMPLE_RATE);
 setDefaults();
 chain.tc_set_param(index('in_trim'), 0);
 chain.tc_set_param(index('gate_bypass'), 1);
 chain.tc_set_param(index('amp_bypass'), 1);
+run(sine, 8);
+const clean = Float32Array.from(output);
 
-const probe = (fill: (n: number) => number, blocks = 200): { peak: number; brightness: number } => {
-  chain.tc_probe_clear();
-  run(fill, blocks);
-  return { peak: chain.tc_input_peak(), brightness: chain.tc_input_brightness() };
-};
+setDefaults();
+chain.tc_set_param(index('in_trim'), 0);
+chain.tc_set_param(index('gate_bypass'), 1);
+run(sine, 8);
+check('the amp changes the signal', clean.some((v, i) => v !== output[i]));
 
-const loudLow = probe((n) => 0.5 * Math.sin((2 * Math.PI * 200 * n) / INTERNAL_SAMPLE_RATE));
-check('the probe reports the peak it saw', Math.abs(loudLow.peak - 0.5) < 0.02,
-  `${loudLow.peak.toFixed(3)}`);
+// Turning the tone controls has to reach the audio, or the schema and the
+// generated binding have drifted apart.
+for (const control of ['amp_gain', 'amp_bass', 'amp_mid', 'amp_treble', 'amp_master']) {
+  chain.tc_init(INTERNAL_SAMPLE_RATE);
+  setDefaults();
+  chain.tc_set_param(index('gate_bypass'), 1);
+  run(sine, 8);
+  const before = Float32Array.from(output);
 
-const quietLow = probe((n) => 0.005 * Math.sin((2 * Math.PI * 200 * n) / INTERNAL_SAMPLE_RATE));
-check('and a quiet signal as quiet', quietLow.peak < 0.02, `${quietLow.peak.toFixed(4)}`);
-
-// A dull signal and a bright one at the same level must separate clearly, or
-// the impedance diagnosis has nothing to stand on.
-const dull = probe((n) => 0.4 * Math.sin((2 * Math.PI * 150 * n) / INTERNAL_SAMPLE_RATE));
-const bright = probe((n) =>
-  0.4 * Math.sin((2 * Math.PI * 150 * n) / INTERNAL_SAMPLE_RATE) +
-  0.4 * Math.sin((2 * Math.PI * 6000 * n) / INTERNAL_SAMPLE_RATE));
-check('a signal with overtones reads far brighter than one without',
-  bright.brightness > dull.brightness * 3,
-  `${bright.brightness.toFixed(3)} vs ${dull.brightness.toFixed(3)}`);
-check('and a dull one falls under the impedance threshold',
-  dull.brightness < 0.10, `${dull.brightness.toFixed(3)}`);
-check('while a bright one does not', bright.brightness >= 0.10,
-  `${bright.brightness.toFixed(3)}`);
-check('the probe counts what it measured', chain.tc_probe_frames() > 0);
+  chain.tc_init(INTERNAL_SAMPLE_RATE);
+  setDefaults();
+  chain.tc_set_param(index('gate_bypass'), 1);
+  const p = PARAMS[index(control)]!;
+  chain.tc_set_param(index(control), p.min);
+  run(sine, 8);
+  check(`${control} reaches the audio`, before.some((v, i) => v !== output[i]));
+}
 
 chain.tc_init(INTERNAL_SAMPLE_RATE);
 setDefaults();

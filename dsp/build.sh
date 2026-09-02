@@ -26,7 +26,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${ROOT}/public/tonecraft.wasm"
 
-EXPORTS='_tc_init,_tc_process,_tc_set_param,_tc_get_param,_tc_input_ptr,_tc_output_ptr,_tc_meter_ptr,_tc_param_count,_tc_meter_count,_tc_block_frames,_tc_internal_sample_rate,_tc_added_latency_frames,_tc_resampling,_tc_load_weights,_tc_weights_ptr,_tc_weights_capacity,_tc_weights_float_count,_tc_amp_loaded,_tc_oversample_latency_samples,_tc_bypass_mask,_tc_input_peak,_tc_input_brightness,_tc_probe_frames,_tc_probe_clear'
+EXPORTS='_tc_init,_tc_process,_tc_set_param,_tc_get_param,_tc_input_ptr,_tc_output_ptr,_tc_meter_ptr,_tc_param_count,_tc_meter_count,_tc_block_frames,_tc_internal_sample_rate,_tc_added_latency_frames,_tc_resampling,_tc_oversample_latency_samples,_tc_bypass_mask,_tc_input_peak,_tc_input_brightness,_tc_probe_frames,_tc_probe_clear'
+
+# The Faust circuit is compiled to C++ first; both generated files are build
+# output and neither is committed (AD-15).
+bash "${ROOT}/scripts/build-amp.sh"
 
 mkdir -p "$(dirname "${OUT}")"
 
@@ -35,10 +39,7 @@ emcc \
   -O3 -msimd128 -flto -fno-exceptions -fno-rtti \
   -Wall -Wextra -Werror \
   -I "${ROOT}/dsp" \
-  -isystem "${ROOT}/vendor/RTNeural" \
-  -isystem "${ROOT}/vendor/RTNeural/modules/xsimd/include" \
-  -DRTNEURAL_DEFAULT_ALIGNMENT=16 \
-  -DRTNEURAL_USE_XSIMD=1 \
+  -isystem "${ROOT}/dsp/amp/faust" \
   --no-entry \
   -sSTANDALONE_WASM=1 \
   -sALLOW_MEMORY_GROWTH=0 \
@@ -46,7 +47,5 @@ emcc \
   "${ROOT}/dsp/chain.cpp" \
   "${ROOT}/dsp/bindings.cpp" \
   -o "${OUT}"
-
-cp "${ROOT}/assets/amp-placeholder.tcw" "${ROOT}/public/amp-placeholder.tcw"
 
 printf 'dsp: wrote public/tonecraft.wasm (%s bytes)\n' "$(stat -c%s "${OUT}")"

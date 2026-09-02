@@ -30,6 +30,7 @@ float dbToLinear(float db) { return std::pow(10.0f, db * 0.05f); }
 
 void Chain::init() {
   window_.init();
+  amp_.init();
   for (uint32_t i = 0; i < kParamCount; ++i) {
     params_[i] = kParams[i].default_value;
   }
@@ -114,6 +115,9 @@ void Chain::process(const float* in, float* out, uint32_t frames) {
   // story 1.10 and costs only its own arithmetic, because the resampling is
   // already paid for.
   if (!bypassed(STAGE_AMP)) {
+    amp_.setControls(params_[PARAM_AMP_GAIN], params_[PARAM_AMP_BASS],
+                     params_[PARAM_AMP_MID], params_[PARAM_AMP_TREBLE],
+                     params_[PARAM_AMP_MASTER]);
     window_.process(a, b, frames, [this](const float* osIn, float* osOut, uint32_t osFrames) {
       amp_.process(osIn, osOut, osFrames);
     });

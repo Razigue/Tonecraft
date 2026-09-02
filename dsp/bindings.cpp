@@ -17,11 +17,6 @@ tonecraft::Boundary g_boundary;
 alignas(16) float g_input[tonecraft::kOversampledBlockFrames];
 alignas(16) float g_output[tonecraft::kOversampledBlockFrames];
 
-// Where the main thread writes the weights blob before asking us to load it.
-// Sized for the header plus the exact float count this build's model needs.
-alignas(16) uint8_t g_weights[3 * sizeof(uint32_t) +
-                              tonecraft::kWeightsFloatCount * sizeof(float)];
-
 bool g_initialised = false;
 
 }  // namespace
@@ -55,20 +50,6 @@ void tc_process(uint32_t frames) {
   g_boundary.process(g_input, g_output, frames);
 }
 
-// Returns a WeightsStatus. Every way this can fail is detected here, at init,
-// and named — process() has no error path (AD-13).
-int32_t tc_load_weights(uint32_t byte_count) {
-  tonecraft::WeightsView view;
-  const auto status = tonecraft::parseWeights(g_weights, byte_count, &view);
-  if (status != tonecraft::WeightsStatus::Ok) return static_cast<int32_t>(status);
-  g_boundary.chain().amp().load(view);
-  return 0;
-}
-
-uint8_t* tc_weights_ptr() { return g_weights; }
-uint32_t tc_weights_capacity() { return sizeof(g_weights); }
-uint32_t tc_weights_float_count() { return tonecraft::kWeightsFloatCount; }
-uint32_t tc_amp_loaded() { return g_boundary.chain().amp().loaded() ? 1u : 0u; }
 
 // A bitmask of bypassed stages, resolved through declared ids (AD-21). The UI
 // already owns the parameters; this exists so a test can assert that the chain

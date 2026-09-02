@@ -16,12 +16,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # bindings.cpp is excluded because it *is* the boundary's entry point: it takes
 # the device rate from the worklet and hands it to Boundary::init. That is the
 # one place in the C++ that is allowed to know it, and it does not process audio.
+#
+# Generated files are excluded because they are not code we write. A Faust DSP
+# is rate-parameterised by construction and takes a sample_rate argument. So is
+# faust-runtime.h, which only mirrors the interface the generated code expects.
+# What matters is what we *pass* them, which is asserted positively below.
 mapfile -t STAGE_FILES < <(
   find "${ROOT}/dsp" -name '*.h' -o -name '*.cpp' \
     | grep -v '/boundary\.h$' \
     | grep -v '/bindings\.cpp$' \
     | grep -v '/resample/' \
-    | grep -v '/params\.generated\.h$' \
+    | grep -v '\.generated\.h$' \
+    | grep -v '/faust-runtime\.h$' \
     | sort
 )
 
@@ -47,4 +53,16 @@ MSG
   exit 1
 fi
 
+# The generated amp accepts a rate, so the rule becomes: our wrapper hands it
+# the internal design rate and nothing else, ever.
+if ! grep -q 'init(static_cast<int>(kInternalSampleRate))' "${ROOT}/dsp/amp/amp.h"; then
+  printf 'dsp/amp/amp.h must initialise the generated amp with kInternalSampleRate.\n' >&2
+  exit 1
+fi
+if grep -nE 'void init\(.*(rate|Rate)' "${ROOT}/dsp/amp/amp.h"; then
+  printf '\ndsp/amp/amp.h takes a sample rate. AD-18: a stage may not have one.\n' >&2
+  exit 1
+fi
+
 printf 'stage isolation: %d stage files, none reads a device rate\n' "${#STAGE_FILES[@]}"
+echo '                 the generated amp is given kInternalSampleRate and nothing else'

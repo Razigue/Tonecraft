@@ -60,9 +60,10 @@ jobs:
           version: ${{ env.EMSDK_VERSION }}
           actions-cache-folder: emsdk-cache
 
-      # RTNeural and xsimd, pinned by commit. Not committed to this repository.
-      - name: Fetch vendored C++ dependencies
-        run: npm run deps
+      # Faust is a code generator here, not a runtime: it produces the C++ that
+      # is compiled into the one module. Nothing from it ships at runtime.
+      - name: Install the Faust compiler
+        run: sudo apt-get update && sudo apt-get install -y faust
 
       - name: Build the DSP chain to WebAssembly
         run: npm run build:wasm

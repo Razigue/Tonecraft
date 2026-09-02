@@ -19,13 +19,13 @@
   let dropouts = $state(0);
   let roundTrip = $state<number | null>(null);
   let info = $state<import('../engine/engine.ts').EngineInfo | null>(null);
-  let ampLoaded = $state(false);
   let health = $state<Health | null>(null);
   let showLatencyDetail = $state(false);
 
   // Enough control to judge by ear what is actually built. The real interface —
   // faders, the cord, the design system — is epic 2.
-  const CONTROLS = ['in_trim', 'gate_threshold', 'out_master'] as const;
+  const CONTROLS = ['in_trim', 'gate_threshold', 'amp_gain', 'amp_bass',
+                    'amp_mid', 'amp_treble', 'out_master'] as const;
   const BYPASSES = STAGES.filter((st) => st.bypassParam !== null);
 
   let values = $state<Record<string, number>>(
@@ -70,7 +70,6 @@
       await engine.start();
       roundTrip = engine.roundTripMs;
       info = engine.info;
-      ampLoaded = engine.ampLoaded;
       state = 'running';
     } catch (error) {
       // Cause in one sentence, fix in one sentence. No apology, and nothing
@@ -200,15 +199,6 @@
   {/if}
 
   {#if state === 'running'}
-    {#if ampLoaded}
-      <p class="warn">
-        <span>The amp is running placeholder weights — deterministic noise, not
-        an amplifier.</span>
-        <span class="fix">Bypass it below to hear the chain without a model.
-        Real weights need a captured amplifier and do not exist yet.</span>
-      </p>
-    {/if}
-
     <div class="controls-grid">
       {#each CONTROLS as id (id)}
         {@const p = PARAMS.find((q) => q.id === id)!}

@@ -1,88 +1,67 @@
-// The neural amp stage.
+// The amplifier stage.
 //
-// One LSTM layer of kLstmHiddenSize units followed by a dense layer to one
-// output — the shape the architecture fixes at build time and never chooses at
-// runtime from measured headroom (AD-5, FR-17). A fast machine keeps its
-// unused headroom, because a shared tone has to sound the same for the person
-// who receives it, and an adaptive engine would make every tone link a lie.
+// A cascade of gain stages, a tone stack and a power stage, described in Faust
+// and compiled to C++ that is built into this module. The circuit lives in
+// `faust/amp.dsp`; this file only makes it obey the stage contract (AD-19).
 //
-// Until weights are loaded this stage passes audio through untouched. It does
-// not fall back to a guess, and it does not go silent: a chain that produces
-// nothing is indistinguishable from a broken interface, and the player would
-// have no way to tell which they were looking at.
+// **This replaces a neural model, deliberately.** The architecture originally
+// bound an LSTM, and an LSTM's one real advantage is fidelity to a *particular*
+// amplifier — a specific unit with its own ageing components and bias point.
+// `PRODUCT.md` section 7 forbids modelling any named amplifier, so the product
+// was paying that model's whole price for an advantage it had no use for: an
+// asset that did not exist, a capture rig, a training run, and 9.7% of one core
+// on a machine whose floor we cannot measure.
+//
+// What is given up is honest to state: this cannot be made to sound like one
+// specific amplifier on request. It has to be tuned by ear until it sounds
+// good, and "good" is a judgement rather than an error metric.
 
 #pragma once
 
-#include <RTNeural/RTNeural.h>
-
 #include <cstdint>
-#include <vector>
 
+// Angle brackets and -isystem: generated code is code we did not write, and
+// -Werror has to stay sharp on the code we did.
+#include <amp.generated.h>
 #include "params.generated.h"
-#include "weights.h"
 
 namespace tonecraft {
 
 class Amp {
  public:
-  void reset() {
-    model_.reset();
+  void init() {
+    dsp_.init(static_cast<int>(kInternalSampleRate));
+    reset();
   }
 
-  bool loaded() const { return loaded_; }
+  void reset() { dsp_.instanceClear(); }
 
-  /// Init-time only: allocates through RTNeural's setters, which is why this
-  /// can never be called from the audio path (AD-13).
-  void load(const WeightsView& weights) {
-    auto& lstm = model_.template get<0>();
-    auto& dense = model_.template get<1>();
-
-    constexpr uint32_t kGateWidth = kLstmGates * kLstmHiddenSize;
-
-    std::vector<std::vector<float>> w(kLstmInputSize, std::vector<float>(kGateWidth));
-    for (uint32_t i = 0; i < kLstmInputSize; ++i)
-      for (uint32_t g = 0; g < kGateWidth; ++g) w[i][g] = weights.w[i * kGateWidth + g];
-
-    std::vector<std::vector<float>> u(kLstmHiddenSize, std::vector<float>(kGateWidth));
-    for (uint32_t h = 0; h < kLstmHiddenSize; ++h)
-      for (uint32_t g = 0; g < kGateWidth; ++g) u[h][g] = weights.u[h * kGateWidth + g];
-
-    std::vector<float> b(kGateWidth);
-    for (uint32_t g = 0; g < kGateWidth; ++g) b[g] = weights.b[g];
-
-    lstm.setWVals(w);
-    lstm.setUVals(u);
-    lstm.setBVals(b);
-
-    std::vector<std::vector<float>> dw(1, std::vector<float>(kLstmHiddenSize));
-    for (uint32_t h = 0; h < kLstmHiddenSize; ++h) dw[0][h] = weights.denseW[h];
-    dense.setWeights(dw);
-    dense.setBias(const_cast<float*>(weights.denseB));
-
-    model_.reset();
-    loaded_ = true;
+  /// Parameters arrive already smoothed at the worklet boundary and this stage
+  /// adds none of its own (AD-20). Written straight into the generated object's
+  /// public fields — no UI machinery on the audio path, or anywhere.
+  /// The setters are generated alongside the circuit, because Faust reorders
+  /// its own slider indices whenever the .dsp changes — a hand-written mapping
+  /// would eventually point "bass" at the gain, silently.
+  void setControls(float gainDb, float bassDb, float midDb, float trebleDb,
+                   float masterDb) {
+    ampSetGain(dsp_, gainDb);
+    ampSetBass(dsp_, bassDb);
+    ampSetMid(dsp_, midDb);
+    ampSetTreble(dsp_, trebleDb);
+    ampSetMaster(dsp_, masterDb);
   }
 
   void process(const float* in, float* out, uint32_t frames) {
-    if (!loaded_) {
-      for (uint32_t i = 0; i < frames; ++i) out[i] = in[i];
-      return;
-    }
-    // Per sample, and unavoidably so: an LSTM carries state from one sample to
-    // the next, which is exactly what makes it model an amplifier rather than a
-    // filter. It is also why this stage dominates the CPU budget.
-    for (uint32_t i = 0; i < frames; ++i) {
-      float sample[1] = {in[i]};
-      out[i] = model_.forward(sample);
-    }
+    // Faust wants arrays of channel pointers. The chain is mono end to end, so
+    // this is one pointer each and costs nothing. The const cast is safe: the
+    // generated `compute` only reads its inputs.
+    float* inputs[1] = {const_cast<float*>(in)};
+    float* outputs[1] = {out};
+    dsp_.compute(static_cast<int>(frames), inputs, outputs);
   }
 
  private:
-  RTNeural::ModelT<float, 1, 1,
-                   RTNeural::LSTMLayerT<float, kLstmInputSize, kLstmHiddenSize>,
-                   RTNeural::DenseT<float, kLstmHiddenSize, 1>>
-      model_;
-  bool loaded_ = false;
+  AmpDsp dsp_;
 };
 
 }  // namespace tonecraft

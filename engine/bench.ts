@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BLOCK_FRAMES, INTERNAL_SAMPLE_RATE, LSTM_HIDDEN_SIZE } from '../schema/params.ts';
+import { BLOCK_FRAMES, INTERNAL_SAMPLE_RATE } from '../schema/params.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -24,9 +24,7 @@ interface Chain {
   tc_init(rate: number): number;
   tc_process(frames: number): void;
   tc_input_ptr(): number;
-  tc_weights_ptr(): number;
-  tc_load_weights(bytes: number): number;
-  tc_amp_loaded(): number;
+  tc_set_param(index: number, value: number): void;
 }
 
 const { instance } = await WebAssembly.instantiate(
@@ -60,20 +58,17 @@ function measure(label: string): number {
 console.log(`\nBlock: ${BLOCK_FRAMES} frames at ${INTERNAL_SAMPLE_RATE} Hz = ${BLOCK_MS.toFixed(3)} ms of wall clock`);
 console.log(`Budget: 25% of one core = ${(BLOCK_MS * 0.25).toFixed(4)} ms per block\n`);
 
-// The window runs either way; what changes is whether there is a model inside
-// it. So this is the cost of everything except the model itself.
-const withoutAmp = measure('chain, no model in the window');
-
-const weights = readFileSync(join(ROOT, 'assets', 'amp-placeholder.tcw'));
-new Uint8Array(heap, chain.tc_weights_ptr(), weights.length).set(weights);
-const status = chain.tc_load_weights(weights.length);
-console.log(`\n  weights load status: ${status} (0 = ok), amp loaded: ${chain.tc_amp_loaded() === 1}\n`);
-
-const withAmp = measure(`chain with LSTM-${LSTM_HIDDEN_SIZE} at 4x`);
+// The amp is a stage like any other, so the honest comparison is with it
+// bypassed and with it running.
+const AMP_BYPASS = 12;
+chain.tc_set_param(AMP_BYPASS, 1);
+const withoutAmp = measure('chain, amp bypassed');
+chain.tc_set_param(AMP_BYPASS, 0);
+const withAmp = measure('chain with the amp at 4x');
 
 const amp = withAmp - withoutAmp;
 const budget = 25;
-console.log(`\n  the model alone, inside the window  ${amp.toFixed(1)}% of one core`);
+console.log(`\n  the amp alone, inside the window    ${amp.toFixed(1)}% of one core`);
 console.log(`  headroom left against ${budget}%          ${(budget - withAmp).toFixed(1)}% for drive, cab, reverb, gate`);
 console.log(`\n  A machine 2x slower would put the whole chain at ${(withAmp * 2).toFixed(1)}%,`);
 console.log(`  and 3x slower at ${(withAmp * 3).toFixed(1)}%. The floor machine is a 2019-2020`);

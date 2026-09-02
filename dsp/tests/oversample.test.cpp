@@ -29,6 +29,8 @@ static double db(double a, double ref) { return 20.0 * std::log10(a / ref + 1e-3
 // The non-linearity a drive pedal actually is.
 static inline float shape(float x) { return std::tanh(3.0f * x); }
 
+static int failures = 0;
+
 int main() {
   const double rate = kInternalSampleRate;
   const double f = 7000.0;      // 5th harmonic at 35k folds to 13k, 7th to 1k
@@ -76,6 +78,36 @@ int main() {
               OversampleWindow::latencySamples(),
               OversampleWindow::latencySamples() * 1000.0 / rate);
   std::printf("\n  %d of %d alias products reduced by more than 6 dB\n", wins, total);
+  // With a pass-through inside it, the window must return the signal delayed by
+  // exactly its reported group delay and otherwise untouched. A window that
+  // altered what it carried would still reduce aliasing, so this is the check
+  // that separates "filtering correctly" from "filtering at all".
+  {
+    OversampleWindow t; t.init();
+    const double lat = OversampleWindow::latencySamples();
+    std::vector<float> tin(kBlockFrames), tout(kBlockFrames);
+    double deviation = 0.0;
+    uint32_t m = 0;
+    for (uint32_t b = 0; b < 40; ++b) {
+      for (uint32_t i = 0; i < kBlockFrames; ++i, ++m)
+        tin[i] = (float)(0.3 * std::sin(2.0 * M_PI * 440.0 * m / rate));
+      t.process(tin.data(), tout.data(), kBlockFrames,
+                [](const float* a, float* o, uint32_t nf) {
+                  for (uint32_t i = 0; i < nf; ++i) o[i] = a[i];
+                });
+      if (b > 8) {
+        for (uint32_t i = 0; i < kBlockFrames; ++i) {
+          const double n = (double)(b * kBlockFrames + i) - lat;
+          deviation = std::max(deviation,
+              std::fabs(tout[i] - 0.3 * std::sin(2.0 * M_PI * 440.0 * n / rate)));
+        }
+      }
+    }
+    std::printf("  window transparency: max deviation %.5f at the reported delay\n", deviation);
+    if (deviation > 0.01) { ++failures; std::printf("  FAIL  the window alters what it carries\n"); }
+    else std::printf("  ok    the window only delays, it does not alter\n");
+  }
+
   // The window must not cost more latency than it is worth. The price of
   // oversampling is paid in dropouts, not in delay (addendum section A).
   const double latencyMs = OversampleWindow::latencySamples() * 1000.0 / rate;
