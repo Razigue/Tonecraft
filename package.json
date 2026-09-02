@@ -23,7 +23,8 @@
     "test:native": "bash scripts/test-native.sh",
     "test:diagnosis": "tsx engine/diagnosis.test.ts",
     "build:amp": "bash scripts/build-amp.sh",
-    "generate": "npm run schema:generate && npm run build:amp"
+    "generate": "npm run schema:generate && npm run build:amp",
+    "verify": "npm run generate && npm test && npm run build"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",

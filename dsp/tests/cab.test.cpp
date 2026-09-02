@@ -88,12 +88,19 @@ int main() {
         responseDb(cab, 8000.0) - ref);
   check("and what is left at 12 kHz is inaudible",
         responseDb(cab, 12000.0) - ref < -35.0, responseDb(cab, 12000.0) - ref);
-  check("the low end below the low E is rolled off",
-        responseDb(cab, 50.0) - ref < -4.0, responseDb(cab, 50.0) - ref);
+  // The corner sits at 58 Hz rather than 82: a 4x12 has real weight down to the
+  // low E, and cutting into it was part of what made this sound like a small
+  // amplifier. What must still go is everything below the instrument.
+  check("what is below the instrument is rolled off",
+        responseDb(cab, 35.0) - ref < -6.0, responseDb(cab, 35.0) - ref);
+  check("and the low E still has weight",
+        responseDb(cab, 82.0) - ref > -2.0, responseDb(cab, 82.0) - ref);
   check("there is a resonance where a cone and a box argue",
         responseDb(cab, 110.0) - ref > 3.0, responseDb(cab, 110.0) - ref);
+  // Halved from +5 dB: at that level it was the brittle top that reads as a
+  // cheap speaker rather than a loud one.
   check("and a presence peak, which is the bite",
-        responseDb(cab, 2600.0) - ref > 3.0, responseDb(cab, 2600.0) - ref);
+        responseDb(cab, 2300.0) - ref > 1.5, responseDb(cab, 2300.0) - ref);
   check("unity at 1 kHz, so switching it in is not a volume change",
         std::fabs(ref) < 1.0, ref);
 

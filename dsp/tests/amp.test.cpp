@@ -33,11 +33,15 @@ static double db(double a, double ref) { return 20.0 * std::log10(a / ref + 1e-3
 
 struct Result { std::vector<float> out; double peak; };
 
+/// The amp lives inside the 4x window, so it is designed for — and must be
+/// driven at — the oversampled rate. Feeding it at the chain's rate puts every
+/// probe two octaves away from the filter it is meant to be measuring, which is
+/// how this test started reporting that the tone controls did nothing.
 static Result run(Amp& amp, double gainDb, double bassDb, double midDb,
                   double trebleDb, double amplitude, double freq, double seconds = 0.4) {
   amp.reset();
   amp.setControls((float)gainDb, (float)bassDb, (float)midDb, (float)trebleDb, 0.0f);
-  const double rate = kInternalSampleRate;
+  const double rate = kOversampledSampleRate;
   const uint32_t total = (uint32_t)(rate * seconds);
   std::vector<float> in(kBlockFrames), out(kBlockFrames), collected;
   double peak = 0;
@@ -54,7 +58,7 @@ static Result run(Amp& amp, double gainDb, double bassDb, double midDb,
 }
 
 int main() {
-  const double rate = kInternalSampleRate;
+  const double rate = kOversampledSampleRate;
   Amp amp;
   amp.init();
 
