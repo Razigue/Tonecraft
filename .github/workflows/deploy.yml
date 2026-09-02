@@ -55,7 +55,9 @@ jobs:
       - name: Check architecture invariants
         run: npm run check:invariants
 
-      - uses: mymindstorm/setup-emsdk@v14
+      # The action moved from mymindstorm to emscripten-core; the old path only
+      # works by redirect.
+      - uses: emscripten-core/setup-emsdk@v14
         with:
           version: ${{ env.EMSDK_VERSION }}
           actions-cache-folder: emsdk-cache
@@ -76,7 +78,11 @@ jobs:
 
       # Story 4.1 adds the Node renderer between the WASM build and astro build.
 
-      - run: npm run build
+      - name: Build
+        # GitHub Pages serves this under /<repo>/ unless a custom domain is set.
+        run: npm run build
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
 
       - uses: actions/upload-pages-artifact@v3
         with:

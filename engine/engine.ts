@@ -59,9 +59,13 @@ export class EngineError extends Error {
   }
 }
 
-const WASM_URL = '/tonecraft.wasm';
-const PROCESSOR_URL = '/tonecraft-processor.js';
-const IR_URL = '/cab.tcir';
+// Resolved against the deployment's base, because GitHub Pages serves a project
+// repository under /<repo>/ and an absolute path would 404 there. Astro
+// substitutes this at build time; it is '/' locally.
+const BASE = import.meta.env.BASE_URL;
+const WASM_URL = `${BASE}tonecraft.wasm`;
+const PROCESSOR_URL = `${BASE}tonecraft-processor.js`;
+const IR_URL = `${BASE}cab.tcir`;
 
 export class Engine {
   #context: AudioContext | null = null;

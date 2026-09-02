@@ -9,8 +9,14 @@ import tailwind from '@tailwindcss/vite';
 // URLs derive from this, so it has to be settled before launch.
 const SITE = 'https://tonecraft.app';
 
+// GitHub Pages serves a project repository under /<repo>/, so every absolute
+// path in the app would 404 there. CI passes the repository name; locally and
+// on a custom domain this stays '/'.
+const BASE = process.env.BASE_PATH ?? '/';
+
 export default defineConfig({
   site: SITE,
+  base: BASE,
 
   // The architecture spine names the top-level directories. `site/` holds the
   // Astro pages; `app/`, `engine/`, `schema/` sit outside it and are imported.
