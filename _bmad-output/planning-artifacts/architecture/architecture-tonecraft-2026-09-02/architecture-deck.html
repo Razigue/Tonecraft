@@ -1,0 +1,711 @@
+<title>Tonecraft Spine</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@110..125,300..500&family=IBM+Plex+Mono:wght@400;500&family=Inter+Tight:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ink: #16181B;
+    --chalk: #E7E8E2;
+    --bone: #F4F4F0;
+    --graphite: #767A78;
+    --celadon: #8FB09A;
+    --iris: #4A46D9;
+    --ember: #B24A34;
+    --hair: rgba(22, 24, 27, 0.14);
+    --hair-soft: rgba(22, 24, 27, 0.07);
+    --lift: 0 1px 2px rgba(22, 24, 27, 0.06);
+    --u: 8px;
+    --display: "Anybody", "Arial Narrow", system-ui, sans-serif;
+    --body: "Inter Tight", "Helvetica Neue", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #E7E8E2;
+      --chalk: #16181B;
+      --bone: #1E2125;
+      --graphite: #8E9290;
+      --celadon: #A6C4B0;
+      --iris: #7A77E8;
+      --ember: #C9614A;
+      --hair: rgba(231, 232, 226, 0.16);
+      --hair-soft: rgba(231, 232, 226, 0.08);
+      --lift: 0 1px 2px rgba(0, 0, 0, 0.4);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ink: #E7E8E2;
+    --chalk: #16181B;
+    --bone: #1E2125;
+    --graphite: #8E9290;
+    --celadon: #A6C4B0;
+    --iris: #7A77E8;
+    --ember: #C9614A;
+    --hair: rgba(231, 232, 226, 0.16);
+    --hair-soft: rgba(231, 232, 226, 0.08);
+    --lift: 0 1px 2px rgba(0, 0, 0, 0.4);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--chalk);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.55;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: calc(var(--u) * 6) calc(var(--u) * 3) calc(var(--u) * 12);
+  }
+
+  .eyebrow {
+    font-family: var(--display);
+    font-variation-settings: "wdth" 125, "wght" 300;
+    font-size: 11px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--graphite);
+    margin: 0;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-variation-settings: "wdth" 125, "wght" 300;
+    font-size: clamp(30px, 6vw, 52px);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    line-height: 1.04;
+    text-wrap: balance;
+    margin: calc(var(--u) * 2) 0 0;
+  }
+
+  h2 {
+    font-family: var(--display);
+    font-variation-settings: "wdth" 125, "wght" 300;
+    font-size: 12px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin: 0 0 calc(var(--u) * 2);
+    padding-bottom: var(--u);
+    border-bottom: 1px solid var(--hair);
+  }
+
+  h3 {
+    font-family: var(--body);
+    font-weight: 600;
+    font-size: 19px;
+    line-height: 1.3;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  p { margin: 0; max-width: 68ch; }
+
+  .lede {
+    font-size: 18px;
+    line-height: 1.5;
+    color: var(--ink);
+    max-width: 60ch;
+  }
+
+  .muted { color: var(--graphite); }
+
+  code, .num {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  section { margin-top: calc(var(--u) * 9); }
+
+  .stack { display: flex; flex-direction: column; gap: calc(var(--u) * 2); }
+  .stack-lg { display: flex; flex-direction: column; gap: calc(var(--u) * 4); }
+
+  /* ---- masthead ---- */
+
+  .mast {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: calc(var(--u) * 4);
+    padding-bottom: calc(var(--u) * 5);
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    gap: calc(var(--u) * 3);
+    border-top: 1px solid var(--hair);
+    padding-top: calc(var(--u) * 3);
+  }
+
+  .fact-n {
+    font-family: var(--mono);
+    font-size: 30px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    display: block;
+    margin-bottom: calc(var(--u) * 0.75);
+  }
+
+  .fact-l {
+    font-size: 12px;
+    color: var(--graphite);
+    line-height: 1.35;
+    display: block;
+  }
+
+  /* ---- diagrams ---- */
+
+  figure {
+    margin: 0;
+    background: var(--bone);
+    border-radius: 2px;
+    box-shadow: var(--lift);
+    padding: calc(var(--u) * 3);
+    overflow-x: auto;
+  }
+
+  figcaption {
+    font-size: 13px;
+    color: var(--graphite);
+    margin-top: calc(var(--u) * 2);
+    padding-top: calc(var(--u) * 1.5);
+    border-top: 1px solid var(--hair-soft);
+    max-width: 70ch;
+  }
+
+  svg { display: block; }
+  svg text { font-family: var(--mono); fill: var(--ink); }
+  svg .lbl { font-family: var(--display); font-variation-settings: "wdth" 125, "wght" 400; font-size: 10px; letter-spacing: 0.16em; }
+  svg .cap { font-size: 10px; fill: var(--graphite); }
+  svg .box { fill: var(--chalk); stroke: var(--ink); stroke-width: 1; }
+  svg .wire { stroke: var(--celadon); stroke-width: 1.5; fill: none; }
+  svg .rule { stroke: var(--hair); stroke-width: 1; fill: none; }
+  svg .os { fill: none; stroke: var(--iris); stroke-width: 1; stroke-dasharray: 3 3; }
+  svg .osfill { fill: var(--iris); opacity: 0.05; }
+
+  /* ---- filter ---- */
+
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--u);
+    margin-bottom: calc(var(--u) * 3);
+  }
+
+  .filters button {
+    font-family: var(--body);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--graphite);
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    padding: calc(var(--u) * 0.75) calc(var(--u) * 0.5);
+    cursor: pointer;
+    transition: color 120ms;
+  }
+
+  .filters button:hover { color: var(--ink); }
+  .filters button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+  .filters button:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
+
+  /* ---- the AD unit: binds / prevents / rule ---- */
+
+  .ads { display: flex; flex-direction: column; gap: calc(var(--u) * 2); }
+
+  .ad {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 0 calc(var(--u) * 2);
+    align-items: start;
+    padding: calc(var(--u) * 2.5) 0;
+    border-top: 1px solid var(--hair);
+  }
+
+  .ad-id {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--graphite);
+    padding-top: 2px;
+  }
+
+  .ad-body { display: flex; flex-direction: column; gap: calc(var(--u) * 1.5); min-width: 0; }
+
+  .ad-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--u); }
+
+  .tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--graphite);
+    border: 1px solid var(--hair);
+    border-radius: 2px;
+    padding: 1px 6px;
+    white-space: nowrap;
+  }
+
+  .tag-adopted { color: var(--celadon); border-color: var(--celadon); }
+
+  .pair {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: calc(var(--u) * 3);
+  }
+
+  .half { display: flex; flex-direction: column; gap: calc(var(--u) * 0.75); min-width: 0; }
+
+  .half-l {
+    font-family: var(--display);
+    font-variation-settings: "wdth" 125, "wght" 300;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--graphite);
+  }
+
+  .prevents .half-l { color: var(--ember); }
+  .prevents p { color: var(--graphite); }
+  .rule { border-left: 2px solid var(--celadon); padding-left: calc(var(--u) * 1.5); }
+
+  .binds {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--graphite);
+  }
+
+  /* ---- holes ---- */
+
+  .holes { display: flex; flex-direction: column; gap: 0; }
+
+  .hole {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr) 92px;
+    gap: calc(var(--u) * 2);
+    align-items: baseline;
+    padding: calc(var(--u) * 2) 0;
+    border-top: 1px solid var(--hair);
+  }
+
+  .sev {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .sev-critical { color: var(--ember); }
+  .sev-high { color: var(--ink); }
+  .sev-medium, .sev-low { color: var(--graphite); }
+
+  .fix { font-family: var(--mono); font-size: 11px; color: var(--celadon); text-align: right; }
+
+  /* ---- versions ---- */
+
+  .vers { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .vers th {
+    text-align: left;
+    font-family: var(--display);
+    font-variation-settings: "wdth" 125, "wght" 300;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--graphite);
+    font-weight: 400;
+    padding: 0 calc(var(--u) * 2) var(--u) 0;
+    border-bottom: 1px solid var(--hair);
+  }
+  .vers td {
+    padding: calc(var(--u) * 1.25) calc(var(--u) * 2) calc(var(--u) * 1.25) 0;
+    border-bottom: 1px solid var(--hair-soft);
+    vertical-align: baseline;
+  }
+  .vers .was { font-family: var(--mono); font-size: 12px; color: var(--graphite); text-decoration: line-through; }
+  .vers .is { font-family: var(--mono); font-size: 12px; }
+  .vers .is-fixed { color: var(--ember); }
+
+  /* ---- deferred ---- */
+
+  .deferred { display: flex; flex-direction: column; gap: 0; }
+  .def {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: calc(var(--u) * 3);
+    padding: calc(var(--u) * 1.75) 0;
+    border-top: 1px solid var(--hair-soft);
+    align-items: baseline;
+  }
+  .def strong { font-weight: 500; }
+
+  footer {
+    margin-top: calc(var(--u) * 10);
+    padding-top: calc(var(--u) * 3);
+    border-top: 2px solid var(--ink);
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(var(--u) * 2) calc(var(--u) * 4);
+    font-size: 12px;
+    color: var(--graphite);
+  }
+
+  @media (max-width: 720px) {
+    .pair { grid-template-columns: minmax(0, 1fr); gap: calc(var(--u) * 2); }
+    .ad { grid-template-columns: minmax(0, 1fr); gap: var(--u); }
+    .hole { grid-template-columns: minmax(0, 1fr); gap: var(--u); }
+    .fix { text-align: left; }
+    .def { grid-template-columns: minmax(0, 1fr); gap: var(--u); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <div>
+      <p class="eyebrow">Architecture spine &middot; feature altitude &middot; pipes-and-filters</p>
+      <h1>Twenty-one ways<br>not to disagree</h1>
+      <p class="lede" style="margin-top: 24px;">A spine fixes only what two people building different halves could otherwise choose incompatibly. Everything else is left to the code. This is Tonecraft v1: one DSP chain, two disjoint load paths, no server anywhere.</p>
+    </div>
+    <div class="facts">
+      <div><span class="fact-n">21</span><span class="fact-l">invariants, each with the divergence it prevents</span></div>
+      <div><span class="fact-n">5</span><span class="fact-l">holes the adversarial pass found and closed</span></div>
+      <div><span class="fact-n">7/9</span><span class="fact-l">pinned versions wrong when asserted from memory</span></div>
+      <div><span class="fact-n">128</span><span class="fact-l">frames per render quantum &mdash; 2.67&nbsp;ms, not configurable</span></div>
+      <div><span class="fact-n">25%</span><span class="fact-l">of one core, the whole budget, essentially spent</span></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>The chain</h2>
+    <figure>
+      <svg viewBox="0 0 940 200" width="940" height="200" role="img" aria-label="Signal chain from input to output, with a 4x oversampling window around the drive and amp stages">
+        <rect class="osfill" x="243" y="34" width="234" height="104" rx="2"></rect>
+        <rect class="os" x="243" y="34" width="234" height="104" rx="2"></rect>
+        <text class="cap" x="360" y="26" text-anchor="middle">4&times; oversampling window &mdash; 512 frames per call</text>
+
+        <line class="wire" x1="16" y1="86" x2="924" y2="86"></line>
+
+        <g>
+          <rect class="box" x="16" y="66" width="66" height="40" rx="2"></rect>
+          <text class="lbl" x="49" y="90" text-anchor="middle">IN</text>
+          <text class="cap" x="49" y="122" text-anchor="middle">trim</text>
+        </g>
+        <g>
+          <rect class="box" x="102" y="66" width="66" height="40" rx="2"></rect>
+          <text class="lbl" x="135" y="90" text-anchor="middle">GATE</text>
+          <text class="cap" x="135" y="122" text-anchor="middle">thr</text>
+        </g>
+        <g>
+          <rect class="box" x="263" y="66" width="86" height="40" rx="2"></rect>
+          <text class="lbl" x="306" y="90" text-anchor="middle">DRIVE</text>
+          <text class="cap" x="306" y="122" text-anchor="middle">waveshaper</text>
+        </g>
+        <g>
+          <rect class="box" x="371" y="66" width="86" height="40" rx="2"></rect>
+          <text class="lbl" x="414" y="90" text-anchor="middle">AMP</text>
+          <text class="cap" x="414" y="122" text-anchor="middle">LSTM 20</text>
+        </g>
+        <g>
+          <rect class="box" x="511" y="66" width="76" height="40" rx="2"></rect>
+          <text class="lbl" x="549" y="90" text-anchor="middle">CAB</text>
+          <text class="cap" x="549" y="122" text-anchor="middle">FIR 2048</text>
+        </g>
+        <g>
+          <rect class="box" x="607" y="66" width="86" height="40" rx="2"></rect>
+          <text class="lbl" x="650" y="90" text-anchor="middle">REVERB</text>
+          <text class="cap" x="650" y="122" text-anchor="middle">mix</text>
+        </g>
+        <g>
+          <rect class="box" x="713" y="66" width="96" height="40" rx="2"></rect>
+          <text class="lbl" x="761" y="90" text-anchor="middle">LIMITER</text>
+          <text class="cap" x="761" y="122" text-anchor="middle">always on</text>
+        </g>
+        <g>
+          <rect class="box" x="829" y="66" width="66" height="40" rx="2"></rect>
+          <text class="lbl" x="862" y="90" text-anchor="middle">OUT</text>
+        </g>
+
+        <text class="cap" x="205" y="90" text-anchor="middle">&#8593;4&times;</text>
+        <text class="cap" x="484" y="90" text-anchor="middle">&#8595;4&times;</text>
+
+        <line class="rule" x1="16" y1="166" x2="924" y2="166"></line>
+        <text class="cap" x="16" y="184">Amp 10&ndash;18% of a core &middot; drive +2&ndash;3% sharing the window &middot; cab ~1% &middot; reverb ~2% &middot; gate, limiter, RMS 1&ndash;2%</text>
+      </svg>
+      <figcaption>Only the drive and the amp run at 4&times;. Gate, cab, reverb and limiter never do &mdash; they do not alias, and paying five times for them would be waste. That the two non-linear stages sit <em>adjacent</em> is what made promoting the drive to Must affordable: one upsampler, one downsampler, paid once. It is also why the chain may never be reordered in a way that separates them.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Two compositions, one renderer</h2>
+    <figure>
+      <svg viewBox="0 0 940 268" width="940" height="268" role="img" aria-label="The same WebAssembly artifact renders build-time audio files and runs live in the AudioWorklet">
+        <rect class="rule" x="16" y="20" width="420" height="104" rx="2"></rect>
+        <text class="cap" x="28" y="38">BUILD TIME &middot; NODE</text>
+        <rect class="box" x="32" y="52" width="82" height="36" rx="2"></rect>
+        <text class="cap" x="73" y="74" text-anchor="middle">DI loop</text>
+        <rect class="box" x="150" y="52" width="112" height="36" rx="2"></rect>
+        <text class="lbl" x="206" y="74" text-anchor="middle">WASM CHAIN</text>
+        <rect class="box" x="298" y="40" width="122" height="28" rx="2"></rect>
+        <text class="cap" x="359" y="58" text-anchor="middle">audio file</text>
+        <rect class="box" x="298" y="76" width="122" height="28" rx="2"></rect>
+        <text class="cap" x="359" y="94" text-anchor="middle">RMS envelope JSON</text>
+        <line class="wire" x1="114" y1="70" x2="150" y2="70"></line>
+        <line class="wire" x1="262" y1="70" x2="298" y2="54"></line>
+        <line class="wire" x1="262" y1="70" x2="298" y2="90"></line>
+
+        <rect class="rule" x="504" y="20" width="420" height="104" rx="2"></rect>
+        <text class="cap" x="516" y="38">RUNTIME &middot; AUDIOWORKLET</text>
+        <rect class="box" x="520" y="52" width="102" height="36" rx="2"></rect>
+        <text class="cap" x="571" y="74" text-anchor="middle">getUserMedia</text>
+        <rect class="box" x="658" y="52" width="112" height="36" rx="2"></rect>
+        <text class="lbl" x="714" y="74" text-anchor="middle">WASM CHAIN</text>
+        <rect class="box" x="806" y="52" width="102" height="36" rx="2"></rect>
+        <text class="cap" x="857" y="74" text-anchor="middle">destination</text>
+        <line class="wire" x1="622" y1="70" x2="658" y2="70"></line>
+        <line class="wire" x1="770" y1="70" x2="806" y2="70"></line>
+
+        <line class="os" x1="262" y1="124" x2="262" y2="152"></line>
+        <line class="os" x1="714" y1="124" x2="714" y2="152"></line>
+        <line class="os" x1="262" y1="152" x2="714" y2="152"></line>
+        <text class="cap" x="488" y="146" text-anchor="middle">byte-identical artifact</text>
+
+        <rect class="rule" x="16" y="176" width="420" height="76" rx="2"></rect>
+        <text class="cap" x="28" y="194">LISTEN PATH &middot; ANY DEVICE</text>
+        <rect class="box" x="32" y="206" width="388" height="32" rx="2"></rect>
+        <text class="cap" x="226" y="226" text-anchor="middle">preset page &mdash; 2 kB inline JS, no engine, no permission</text>
+        <line class="wire" x1="359" y1="104" x2="359" y2="206"></line>
+
+        <rect class="rule" x="504" y="176" width="420" height="76" rx="2"></rect>
+        <text class="cap" x="516" y="194">PLAY PATH &middot; DESKTOP</text>
+        <rect class="box" x="520" y="206" width="388" height="32" rx="2"></rect>
+        <text class="cap" x="714" y="226" text-anchor="middle">Svelte rig &mdash; per-stage RMS posted at 30 Hz</text>
+        <line class="wire" x1="714" y1="88" x2="714" y2="206" stroke-dasharray="2 3"></line>
+      </svg>
+      <figcaption>The build renderer loads the same <code>.wasm</code> the browser loads, driven from Node. One compilation target, identical bytes. That makes &ldquo;the demo must not sound better than the real thing&rdquo; structurally true instead of a rule someone has to remember &mdash; offline rendering has no CPU budget, so 16&times; oversampling and a much larger model would be free and tempting.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>The invariants</h2>
+    <p class="muted" style="margin-bottom: 24px; max-width: 62ch;">Each one exists because two units one level down could otherwise choose incompatibly. Read the left column first &mdash; the rule only makes sense once you can see what it stops.</p>
+    <div class="filters" role="group" aria-label="Filter invariants"></div>
+    <div class="ads" id="ads"></div>
+  </section>
+
+  <section>
+    <h2>What the adversarial pass found</h2>
+    <p class="muted" style="margin-bottom: 24px; max-width: 62ch;">Method: construct two units that obey every rule to the letter and still build incompatibly. Five pairs survived. One of them would have shipped.</p>
+    <div class="holes" id="holes"></div>
+  </section>
+
+  <section>
+    <h2>Versions, checked rather than recalled</h2>
+    <p class="muted" style="margin-bottom: 24px; max-width: 62ch;">A reviewer lens demanded every pinned technology be verified against the web instead of asserted from training data. Seven of nine were wrong. Three were materially wrong.</p>
+    <div style="overflow-x: auto;">
+      <table class="vers">
+        <thead><tr><th>Technology</th><th>From memory</th><th>Verified 2026-09-02</th></tr></thead>
+        <tbody id="vers"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>What it refuses to decide</h2>
+    <p class="muted" style="margin-bottom: 24px; max-width: 62ch;">The half of the contract that keeps a spine lean. Each of these binds nothing and can be settled by whoever writes the code.</p>
+    <div class="deferred" id="deferred"></div>
+  </section>
+
+  <footer>
+    <span>Tonecraft v1 &middot; architecture spine</span>
+    <span>21 invariants &middot; 2026-09-02</span>
+    <span>Pipes-and-filters &middot; feature altitude</span>
+    <span>Static hosting, no server, no cross-origin isolation</span>
+  </footer>
+
+</div>
+
+<script>
+  const ADS = [
+    { id: 1, group: "audio", title: "One processor holds the whole chain", binds: "FR-14, FR-15, NFR-1",
+      prevents: "A node-per-effect graph, where every boundary is a buffer copy and metering has to span two contexts.",
+      rule: "All audio processing lives in a single AudioWorkletProcessor. No AudioNode sits between input and output except those required to reach the worklet itself." },
+    { id: 2, group: "audio", title: "Non-linear stages are contiguous", binds: "FR-16, NFR-1",
+      prevents: "A second polyphase resampling chain, and an oversampled block that never aliased in the first place.",
+      rule: "Every non-linear stage occupies one uninterrupted region. Exactly one 4x window wraps it. No linear stage inside, and no future reordering may split it." },
+    { id: 3, group: "audio", title: "The cab is a direct-form FIR inside the worklet", binds: "FR-6, FR-14, NFR-6",
+      prevents: "A cab that renders differently in each browser, and a convolution written twice.",
+      rule: "IR convolution is a SIMD direct-form FIR compiled into the WASM. ConvolverNode is not used anywhere. IRs cap at 2048 taps; a longer one reopens this decision rather than silently switching algorithm." },
+    { id: 4, group: "determinism", title: "Deterministic floating point", binds: "NFR-6, NFR-16",
+      prevents: "The same tone state rendering differently per engine, which would make every shared link lie.",
+      rule: "Compile with -msimd128. -mrelaxed-simd is forbidden: it is defined to permit engine-specific rounding. -mfma only in its deterministic emulated form. No fast-math, no reassociation." },
+    { id: 5, group: "determinism", adopted: true, title: "Quality is fixed at build time", binds: "FR-17, NFR-6",
+      prevents: "A runtime quality ladder chosen from measured headroom.",
+      rule: "Model complexity, oversampling factor and filter orders are compile-time constants for the floor machine. Nothing in the audio path reads a performance measurement and changes behaviour." },
+    { id: 6, group: "build", title: "One renderer, two triggers", binds: "FR-1, FR-6, FR-33",
+      prevents: "A demo that sounds better than the real-time path.",
+      rule: "Build renders load the identical .wasm the browser loads, driven from Node. No second implementation, no native build of the chain, no separate offline quality configuration." },
+    { id: 7, group: "state", title: "The parameter schema is the only source of truth", binds: "FR-19, FR-28, NFR-17",
+      prevents: "A C++ constant and a TypeScript constant drifting apart silently.",
+      rule: "schema/ declares every parameter with id, unit, range, default and taper. The C++ header is generated; a hand-edited generated header fails the build. No parameter exists outside the schema." },
+    { id: 8, group: "state", title: "The schema is append-only, forever", binds: "FR-29, FR-30",
+      prevents: "A shared link dying, which kills a branch of the only growth loop v1 has.",
+      rule: "Parameters may be added. Never removed, renamed, reordered in the wire format, or changed in meaning or unit. A retired parameter is deprecated and ignored; its id is never reused." },
+    { id: 9, group: "state", title: "Tone state is stored in engineering units", binds: "FR-28, FR-29, FR-30",
+      prevents: "A UI redesign or a retuned fader taper silently changing how every previously shared tone sounds.",
+      rule: "The serialised state carries physical values: dB, Hz, ratio, milliseconds. Never normalised fader positions. Taper curves belong to app/ and never reach the wire format." },
+    { id: 10, group: "state", title: "A tone link pins the engine identity", binds: "FR-29, NFR-6",
+      prevents: "Identical parameters through revised weights producing a different sound years later.",
+      rule: "The state includes the amp id and its weights version. Every weights version ever shipped stays served at a stable URL indefinitely. A fix is a new version, never an overwrite." },
+    { id: 11, group: "state", title: "The main thread owns state; the worklet owns nothing", binds: "FR-19, FR-27, FR-32",
+      prevents: "Two sources of truth, and a state read that needs an audio-thread round trip.",
+      rule: "Chain state lives in main-thread stores. The worklet is a sink for parameters and a source only for measurement. localStorage, the URL hash and the tone file are projections. Nothing reads state back out of the worklet." },
+    { id: 12, group: "audio", title: "Metering is one-way and lossy-tolerant", binds: "FR-24, FR-25, NFR-4",
+      prevents: "The visualisation coupling itself to audio correctness.",
+      rule: "Per-stage RMS goes into a pre-allocated Float32Array, posted at 30 Hz. Dropping or never receiving a frame must not affect audio, state or correctness. The worklet is also the only detector of dropouts." },
+    { id: 13, group: "audio", title: "The audio thread cannot allocate and cannot fail", binds: "FR-15, FR-18, NFR-1",
+      prevents: "A garbage-collection pause or an error path becoming an audible glitch.",
+      rule: "process() performs no allocation, no I/O, no logging, no DOM access. Compiled -fno-exceptions -fno-rtti; the flat C interface returns status codes. process() always produces audio, silence at worst, never nothing." },
+    { id: 14, group: "build", title: "Model weights are loadable content", binds: "FR-17, NFR-2",
+      prevents: "An amp becoming a compilation target, which would break the lazy-loaded amps already on the roadmap.",
+      rule: "Weights ship as a binary Float32 blob with a short header, loaded into RTNeural at init. Not embedded in the WASM, not JSON. The default preset's weights are inside the first-interactive budget." },
+    { id: 15, group: "build", title: "No build output is committed", binds: "FR-1, FR-6, FR-46",
+      prevents: "A .wasm and the audio rendered from it drifting apart, and binaries accumulating in git history forever.",
+      rule: "CI compiles with a pinned Emscripten, runs the renders, deploys. .wasm, rendered audio and RMS JSON are never committed. Source assets are." },
+    { id: 16, group: "build", title: "The listen path shares no runtime code with the play path", binds: "FR-2, FR-3, FR-5, NFR-9",
+      prevents: "The engine reaching a preset page through a shared import, which is how a no-JS page acquires 300 kB.",
+      rule: "A preset page ships at most 2 kB of inline vanilla JS: a play control and the cord. No framework, no hydration, no AudioContext, no WASM. It imports nothing from engine/ or app/. Enforced at build time." },
+    { id: 17, group: "build", adopted: true, title: "Static hosting, no exceptions", binds: "FR-46, NFR-16",
+      prevents: "An architecture that quietly requires a header the host cannot send.",
+      rule: "Everything is a static file on GitHub Pages. No server, no serverless function, no database, no custom header. Therefore no SharedArrayBuffer, no WASM threads, no COOP/COEP, no coi-serviceworker." },
+    { id: 18, group: "determinism", title: "The chain runs at one fixed internal rate", binds: "FR-6, FR-9, FR-17, NFR-6", found: true,
+      prevents: "The same tone sounding different to a user on a 44.1 kHz interface than to one on 48 kHz — a divergence arriving through the device, which no other invariant watches.",
+      rule: "Every stage is designed for and runs at 48 kHz. Weights, half-band coefficients and the cab FIR are defined at that rate and no other. engine/ converts explicitly at the chain boundary with our own resampler. A stage may not read the device rate." },
+    { id: 19, group: "audio", title: "One block contract for every stage", binds: "FR-14, FR-15, FR-16", found: true,
+      prevents: "Two stages that cannot be composed — one in-place, one out-of-place — and disagreement about how many frames a call carries.",
+      rule: "A stage is process(const float* in, float* out, uint32_t frames), mono float32, never in place, never aliasing. frames is 128 outside the oversampling window and 512 inside it. A stage never allocates and never stores a pointer it was passed." },
+    { id: 20, group: "state", title: "Exactly one layer smooths parameters", binds: "FR-19, FR-27", found: true,
+      prevents: "Double smoothing, which is sluggish and inconsistent between stages — and its opposite, which zippers.",
+      rule: "Continuous parameters are smoothed once, by AudioParam interpolation at the worklet boundary. A dsp/ stage receives an already-smoothed value and adds none of its own." },
+    { id: 21, group: "state", title: "Meter slots and bypass are declared, never positional", binds: "FR-20, FR-24, AD-8", found: true,
+      prevents: "Inserting a stage silently shifting every meter slot and bypass flag by one, with no error anywhere because the array is still the right length.",
+      rule: "Each stage declares a stable meter slot id and bypass parameter id in schema/. Nothing addresses a stage by its index in the chain. New ids are taken, never reused." }
+  ];
+
+  const GROUPS = [
+    { key: "all", label: "All 21" },
+    { key: "audio", label: "The audio thread" },
+    { key: "determinism", label: "Determinism" },
+    { key: "state", label: "State and sharing" },
+    { key: "build", label: "Build and hosting" }
+  ];
+
+  const HOLES = [
+    { id: "H-1", sev: "critical", title: "Sample rate: two units, two tunings",
+      text: "An LSTM amp model is a rate-dependent non-linear system. The same weights at 44.1 and at 48 kHz produce audibly different tone, and so do half-band filters designed for one rate and run at another. Two users with different interfaces would hear different things from the same link — through a door neither NFR-6 nor AD-4 was watching.", fix: "AD-18" },
+    { id: "H-2", sev: "high", title: "The stage interface was never specified",
+      text: "gate/ processes in place on one buffer; reverb/ requires distinct pointers. Both reasonable, both obeying every rule, and chain.cpp cannot compose them. Worse: nothing said that a stage inside the oversampling window receives 512 frames and one outside receives 128.", fix: "AD-19" },
+    { id: "H-3", sev: "high", title: "Two owners of parameter smoothing",
+      text: "engine/ smooths before writing the AudioParam; amp/ also smooths its gain internally to avoid zipper noise. Double smoothing is sluggish and inconsistent stage to stage. The opposite pair is worse: neither smooths, and every fader zippers.", fix: "AD-20" },
+    { id: "H-4", sev: "medium", title: "Meter slots addressed by position",
+      text: "chain.cpp writes RMS in chain order; app/ reads slot 3 as the amp from a hardcoded list. Inserting the compressor in v1.1 shifts every slot and the cord lights the wrong segments — with no error anywhere, because the array is still the right length.", fix: "AD-21" },
+    { id: "H-5", sev: "low", title: "Two definitions of a dropout",
+      text: "The worklet comparing currentTime deltas and the main thread watching for gaps report different numbers. The product's headline metric would then be whichever one happened to ship.", fix: "AD-12" }
+  ];
+
+  const VERS = [
+    ["Astro", "5.x", "7.2.10", true],
+    ["Svelte", "5", "5.57.x", false],
+    ["Emscripten", "3.x", "6.0.x", true],
+    ["RTNeural", "1.0.0", "1.0.0, header-only", false],
+    ["nanostores", "0.11.x", "1.5.2", true],
+    ["Tailwind CSS", "4.x", "4.3.3", true],
+    ["Node", "22 LTS", "24 LTS (Krypton)", true],
+    ["GoatCounter", "custom events assumed", "custom events confirmed", false],
+    ["Cloudflare Web Analytics", "no custom events assumed", "unverified — recorded, not rejected", true]
+  ];
+
+  const DEFERRED = [
+    ["Reverb algorithm", "FDN or short partitioned convolution. Both fit the budget and neither changes an interface. Decide with the ear."],
+    ["Gate detector topology", "Peak or RMS, and its time constants. A tuning decision inside one stage; it binds nothing."],
+    ["Half-band filter order", "Chosen against measured aliasing and CPU on the floor machine, not on paper."],
+    ["setSinkId on Firefox", "A capability difference, not a structural one."],
+    ["Preset page layout", "Owned by the design system, not by this spine."],
+    ["Amps 2 and 3, drives 2 and 3, compressor, metronome", "v1.1. AD-14 already makes them loadable content; nothing else needs deciding now."],
+    ["Dark mode version", "The design system says v1.1, the product doc says v1.2. Pre-existing disagreement, not an architecture concern."]
+  ];
+
+  function esc(s) {
+    return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  }
+
+  const adsEl = document.getElementById("ads");
+  function renderAds(group) {
+    adsEl.innerHTML = ADS
+      .filter(a => group === "all" || a.group === group)
+      .map(a => `
+        <article class="ad">
+          <div class="ad-id">AD-${a.id}</div>
+          <div class="ad-body">
+            <div class="ad-head">
+              <h3>${esc(a.title)}</h3>
+              ${a.adopted ? '<span class="tag tag-adopted">adopted</span>' : ""}
+              ${a.found ? '<span class="tag">found by review</span>' : ""}
+            </div>
+            <div class="pair">
+              <div class="half prevents">
+                <span class="half-l">Prevents</span>
+                <p>${esc(a.prevents)}</p>
+              </div>
+              <div class="half rule">
+                <span class="half-l">Rule</span>
+                <p>${esc(a.rule)}</p>
+              </div>
+            </div>
+            <div class="binds">Binds &nbsp;${esc(a.binds)}</div>
+          </div>
+        </article>`).join("");
+  }
+
+  const filtersEl = document.querySelector(".filters");
+  filtersEl.innerHTML = GROUPS.map((g, i) =>
+    `<button type="button" data-g="${g.key}" aria-pressed="${i === 0}">${esc(g.label)}</button>`).join("");
+  filtersEl.addEventListener("click", e => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    filtersEl.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+    renderAds(btn.dataset.g);
+  });
+  renderAds("all");
+
+  document.getElementById("holes").innerHTML = HOLES.map(h => `
+    <article class="hole">
+      <div><span class="sev sev-${h.sev}">${h.id} &middot; ${h.sev}</span></div>
+      <div class="stack" style="gap:6px;">
+        <h3 style="font-size:16px;">${esc(h.title)}</h3>
+        <p class="muted" style="font-size:14px;">${esc(h.text)}</p>
+      </div>
+      <div class="fix">closed by<br>${h.fix}</div>
+    </article>`).join("");
+
+  document.getElementById("vers").innerHTML = VERS.map(([name, was, is, fixed]) => `
+    <tr>
+      <td>${esc(name)}</td>
+      <td class="was">${esc(was)}</td>
+      <td class="is ${fixed ? "is-fixed" : ""}">${esc(is)}</td>
+    </tr>`).join("");
+
+  document.getElementById("deferred").innerHTML = DEFERRED.map(([t, d]) => `
+    <div class="def"><strong>${esc(t)}</strong><span class="muted">${esc(d)}</span></div>`).join("");
+</script>
