@@ -28,16 +28,20 @@ const stories = [
     <meta name="robots" content="noindex" />
     <title>Tonecraft — build pipeline</title>
     <style>
-      :root { color-scheme: light dark; }
+      :root { color-scheme: light; }
       body {
         margin: 0;
         padding: 4rem 1.5rem;
-        font: 15px/1.55 system-ui, sans-serif;
+        font: 15px/1.55 "Inter Tight", "Helvetica Neue", system-ui, sans-serif;
         background: #E7E8E2;
         color: #16181B;
       }
       main { max-width: 40rem; margin: 0 auto; }
-      h1 { font-size: 1.25rem; font-weight: 500; margin: 0 0 0.5rem; }
+      h1.wordmark {
+        font-family: "Anybody", "Arial Narrow", system-ui, sans-serif;
+        font-size: 28px; font-weight: 300; letter-spacing: 0.32em;
+        text-transform: uppercase; margin: 0 0 1rem;
+      }
       p { color: #767A78; margin: 0 0 2rem; max-width: 34rem; }
       main { display: flex; flex-direction: column; gap: 2.5rem; }
       h2.section { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
@@ -51,16 +55,13 @@ const stories = [
       .id { font-family: ui-monospace, monospace; font-size: 13px; color: #767A78; min-width: 2.5rem; }
       .done { color: #16181B; }
       .todo { color: #767A78; }
-      @media (prefers-color-scheme: dark) {
-        body { background: #16181B; color: #E7E8E2; }
-        li { border-top-color: rgba(231,232,226,0.14); }
-        .done { color: #E7E8E2; }
-      }
+      /* Light only. DESIGN.md section 2 puts dark mode in v1.1 and says why:
+         a half-inverted palette looks worse than none. */
     </style>
   </head>
   <body>
     <main>
-      <h1>Tonecraft</h1>
+      <h1 class="wordmark">Tonecraft</h1>
       <p>
         Plug in and press start. There is an amplifier now: four gain stages, a
         tone stack, a power stage at four times the sample rate, and a speaker

@@ -10,6 +10,13 @@
   import { Engine, EngineError, type Meters, type Health } from '../engine/engine.ts';
   import { probeEnvironment, canRunEngine, type EnvironmentReport } from '../engine/input.ts';
   import { STAGES, PARAMS } from '../schema/params.ts';
+  import Fader from './Fader.svelte';
+  import Module from './Module.svelte';
+  import './tokens.css';
+
+  // The amp's five controls, in the order a panel would have them.
+  const AMP_FADERS = ['amp_gain', 'amp_bass', 'amp_mid', 'amp_treble', 'amp_master']
+    .map((id) => PARAMS.find((p) => p.id === id)!);
 
   type State = 'idle' | 'starting' | 'running' | 'failed';
 
@@ -25,8 +32,8 @@
 
   // Enough control to judge by ear what is actually built. The real interface —
   // faders, the cord, the design system — is epic 2.
-  const CONTROLS = ['in_trim', 'gate_threshold', 'amp_gain', 'amp_bass',
-                    'amp_mid', 'amp_treble', 'cab_mix', 'out_master'] as const;
+  // What has no designed control yet stays on the plain sliders below.
+  const CONTROLS = ['in_trim', 'gate_threshold', 'cab_mix', 'out_master'] as const;
   const BYPASSES = STAGES.filter((st) => st.bypassParam !== null);
 
   let values = $state<Record<string, number>>(
@@ -204,6 +211,21 @@
   {/if}
 
   {#if state === 'running'}
+    <div class="rig">
+      <Module
+        name="Amp"
+        bypassed={values['amp_bypass'] === 1}
+        onbypass={(b) => setParam('amp_bypass', b ? 1 : 0)}
+      >
+        {#each AMP_FADERS as p (p.id)}
+          <Fader param={p} value={values[p.id] ?? p.default} onchange={(v) => setParam(p.id, v)} />
+        {/each}
+      </Module>
+    </div>
+
+    <details class="rest">
+      <summary class="t-small">Everything without a designed control yet</summary>
+
     <div class="controls-grid">
       {#each CONTROLS as id (id)}
         {@const p = PARAMS.find((q) => q.id === id)!}
@@ -234,6 +256,8 @@
         </label>
       {/each}
     </div>
+
+    </details>
 
     <ol class="meters">
       {#each STAGES as stage, i (stage.id)}
@@ -296,6 +320,18 @@
   .note { font-size: 13px; }
 
   .warn { display: flex; flex-direction: column; gap: 0.25rem; }
+
+  /* The chain will run left to right across the viewport (UX-DR11). One module
+     of it exists so far, so it sits where the first one will. */
+  .rig {
+    display: flex;
+    gap: calc(var(--u) * 3);
+    align-items: flex-start;
+    padding: calc(var(--u) * 3) 0;
+  }
+
+  .rest { border-top: 1px solid rgba(22, 24, 27, 0.12); padding-top: var(--u); }
+  summary { cursor: pointer; color: var(--graphite); }
 
   .controls-grid { display: flex; flex-direction: column; gap: 0.5rem; }
   label { display: grid; grid-template-columns: 6rem 1fr 5rem; gap: 0.75rem; align-items: center; }

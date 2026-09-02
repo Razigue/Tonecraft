@@ -1,0 +1,65 @@
+/**
+ * The design tokens. DESIGN.md is the source of truth; nothing here invents a
+ * value, and no component may hardcode one (UX-DR1).
+ *
+ * Light only. DESIGN.md section 2 puts dark mode in v1.1, and says why: doing
+ * it properly means re-deriving the whole system, and a half-inverted palette
+ * looks worse than none.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Six tokens, no more. No gradients, no glass, no glow. */
+  --ink: #16181b;      /* all text, hairlines, fader caps. Cool near-black. */
+  --chalk: #e7e8e2;    /* page. Cool grey-green paper, deliberately not cream. */
+  --bone: #f4f4f0;     /* raised surfaces: module cards, sheets. */
+  --graphite: #767a78; /* secondary text, inactive labels, disabled. */
+  --celadon: #8fb09a;  /* the only accent. Active state, signal, the cord. */
+  --iris: #4a46d9;     /* focus rings and keyboard navigation only. */
+  --ember: #b24a34;    /* clipping and destructive confirmation only. */
+
+  /* One elevation, one radius. Almost square, not sharp. */
+  --radius: 2px;
+  --lift: 0 1px 2px rgba(22, 24, 27, 0.06);
+
+  /* 8px base unit. */
+  --u: 8px;
+
+  /* Three faces, three roles. Self-hosting is UX-DR2 and is not done yet, so
+     these fall back to system stacks — the shapes are wrong but the scale,
+     spacing and weights below are the ones DESIGN.md specifies. */
+  --display: "Anybody", "Arial Narrow", "Helvetica Neue", system-ui, sans-serif;
+  --body: "Inter Tight", "Helvetica Neue", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* The scale. Seven steps, and text stays on it. */
+.t-wordmark {
+  font-family: var(--display);
+  font-size: 28px;
+  line-height: 1;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  font-weight: 300;
+}
+
+.t-module {
+  font-family: var(--display);
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+.t-heading { font-family: var(--body); font-size: 20px; line-height: 1.3; font-weight: 500; }
+.t-body    { font-family: var(--body); font-size: 15px; line-height: 1.5; font-weight: 400; }
+.t-small   { font-family: var(--body); font-size: 13px; line-height: 1.4; color: var(--graphite); }
+
+.t-readout {
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
