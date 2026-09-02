@@ -19,6 +19,11 @@ export interface Meters {
   readonly dropouts: number;
   readonly peak: number;
   readonly brightness: number;
+  /**
+   * Level on each captured channel, before one is chosen. This is what makes
+   * "which input is my guitar on" a thing you can see rather than guess.
+   */
+  readonly channelLevels: readonly number[];
 }
 
 /** Everything the product knows about how well it is running (FR-35 to FR-38). */
@@ -94,6 +99,7 @@ export class Engine {
   #deviceId: string | undefined;
   #channel: InputChannel = 'left';
   #channels = 1;
+  #channelLevels: number[] = [];
   readonly #onMeters: ((meters: Meters) => void) | undefined;
 
   constructor(options: EngineOptions = {}) {
@@ -108,9 +114,18 @@ export class Engine {
     return this.#info;
   }
 
-  /** How many channels the open device actually gave us. */
+  /**
+   * How many channels the worklet actually receives — not what the device
+   * claims. The two disagree when something between them mixes them down, and
+   * the number that matters is the one the processor sees.
+   */
   get channelCount(): number {
     return this.#channels;
+  }
+
+  /** Level on each captured channel, newest first reading. */
+  get channelLevels(): readonly number[] {
+    return this.#channelLevels;
   }
 
   get inputChannel(): InputChannel {
@@ -246,6 +261,15 @@ export class Engine {
       numberOfInputs: 1,
       numberOfOutputs: 1,
       outputChannelCount: [1],
+      // Without these the node applies the default 'speakers' mixing rules,
+      // which can fold a two-channel capture down to one before the processor
+      // ever sees it — and then choosing a channel is choosing between two
+      // copies of the same mixed signal. 'explicit' fixes the count at two and
+      // 'discrete' says these are two separate inputs, not a stereo pair to be
+      // mixed. A Scarlett Solo's XLR and instrument jack are exactly that.
+      channelCount: 2,
+      channelCountMode: 'explicit',
+      channelInterpretation: 'discrete',
     });
     this.#node = node;
 
@@ -288,6 +312,12 @@ export class Engine {
             this.#dropouts = data['dropouts'] as number;
             this.#peak = data['peak'] as number;
             this.#brightness = data['brightness'] as number;
+            const levels = data['channelLevels'] as number[] | undefined;
+            if (levels !== undefined) {
+              this.#channelLevels = levels;
+              // What the processor sees wins over what the device reported.
+              this.#channels = levels.length;
+            }
 
             const now = performance.now();
             // A rolling window: jitter is a property of how things are going
@@ -304,6 +334,7 @@ export class Engine {
               dropouts: this.#dropouts,
               peak: this.#peak,
               brightness: this.#brightness,
+              channelLevels: this.#channelLevels,
             });
             break;
           }

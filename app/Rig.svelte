@@ -52,6 +52,7 @@
   let deviceId = $state('');
   let channel = $state<InputChannel>('left');
   let channelCount = $state(1);
+  let channelLevels = $state<readonly number[]>([]);
 
   /**
    * A two-input interface puts its instrument jack on the second channel — a
@@ -92,6 +93,10 @@
 
   function onMeters(meters: Meters): void {
     rms = Array.from(meters.rms);
+    channelLevels = meters.channelLevels;
+    // What the processor receives, not what the device claimed. They disagree
+    // when something between them mixes the capture down.
+    if (meters.channelLevels.length > 0) channelCount = meters.channelLevels.length;
     health = engine?.health ?? null;
   }
 
@@ -188,12 +193,30 @@
                 </label>
               {/if}
               {#if channelCount > 1}
-                <Segmented
-                  label="Input channel"
-                  options={CHANNELS}
-                  value={channel}
-                  onchange={chooseChannel}
-                />
+                <div class="channels">
+                  <Segmented
+                    label="Input channel"
+                    options={CHANNELS}
+                    value={channel}
+                    onchange={chooseChannel}
+                  />
+                  <!-- Play, and the bar that moves is the channel your guitar
+                       is on. Choosing an input is guesswork without this. -->
+                  <div class="levels" aria-hidden="true">
+                    {#each channelLevels as level, c (c)}
+                      <span class="level">
+                        <span
+                          class="level-fill"
+                          style="transform: scaleX({Math.min(1, Math.sqrt(level) * 1.6)})"
+                        ></span>
+                      </span>
+                    {/each}
+                  </div>
+                </div>
+              {:else if state === 'running'}
+                <p class="t-small">
+                  This device gives one channel, so there is nothing to choose.
+                </p>
               {/if}
             {/if}
           {/snippet}
@@ -381,6 +404,22 @@
     font-size: 15px;
   }
   .fix { color: var(--graphite); }
+
+  .channels { display: flex; flex-direction: column; gap: 4px; }
+  .levels { display: flex; gap: var(--u); }
+  .level {
+    flex: 1;
+    height: 3px;
+    background: rgba(22, 24, 27, 0.10);
+    overflow: hidden;
+  }
+  .level-fill {
+    display: block;
+    height: 100%;
+    background: var(--celadon);
+    transform-origin: left center;
+    transform: scaleX(0);
+  }
 
   .source { display: flex; flex-direction: column; gap: 2px; }
   select {

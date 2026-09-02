@@ -83,6 +83,9 @@ class TonecraftProcessor extends AudioWorkletProcessor {
    */
   #inputChannel = 0;
 
+  /** RMS per captured channel, so the UI can show where the signal actually is. */
+  #channelLevels: Float32Array = new Float32Array(0);
+
   #framesSinceMeter = 0;
   #meterInterval = 0;
 
@@ -274,6 +277,21 @@ class TonecraftProcessor extends AudioWorkletProcessor {
       for (let c = 1; c < outChannels.length; c += 1) outChannels[c]?.set(out);
     }
 
+    // Measured on every captured channel, not just the chosen one. Choosing an
+    // input is guesswork without it.
+    if (inChannels !== undefined) {
+      if (this.#channelLevels.length !== inChannels.length) {
+        this.#channelLevels = new Float32Array(inChannels.length);
+      }
+      for (let c = 0; c < inChannels.length; c += 1) {
+        const data = inChannels[c];
+        if (data === undefined) continue;
+        let sum = 0;
+        for (let i = 0; i < frames; i += 1) sum += data[i]! * data[i]!;
+        this.#channelLevels[c] = Math.sqrt(sum / frames);
+      }
+    }
+
     this.#framesSinceMeter += 1;
     if (this.#framesSinceMeter >= this.#meterInterval) {
       this.#framesSinceMeter = 0;
@@ -292,6 +310,7 @@ class TonecraftProcessor extends AudioWorkletProcessor {
           peak: exports.tc_input_peak(),
           brightness: exports.tc_input_brightness(),
           probeFrames: exports.tc_probe_frames(),
+          channelLevels: Array.from(this.#channelLevels),
         });
       }
     }
