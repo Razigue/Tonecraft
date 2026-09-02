@@ -15,7 +15,9 @@
     "build:wasm": "bash dsp/build.sh",
     "build:worklet": "tsx engine/build-worklet.ts",
     "check:flags": "bash scripts/check-build-flags.sh",
-    "test:wasm": "tsx engine/wasm.test.ts"
+    "test:wasm": "tsx engine/wasm.test.ts",
+    "test:input": "tsx engine/input.test.ts",
+    "test": "npm run test:input && npm run test:wasm"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",

@@ -8,6 +8,7 @@
    * that the numbers coming back are real.
    */
   import { Engine, EngineError, type Meters } from '../engine/engine.ts';
+  import { probeEnvironment, canRunEngine, type EnvironmentReport } from '../engine/input.ts';
   import { STAGES } from '../schema/params.ts';
 
   type State = 'idle' | 'starting' | 'running' | 'failed';
@@ -19,6 +20,23 @@
   let roundTrip = $state<number | null>(null);
 
   let engine: Engine | null = null;
+  let env = $state<EnvironmentReport | null>(null);
+
+  // Probed before any engine loads: no AudioContext, no WASM, no permission
+  // prompt (FR-7). Nothing here decides anything — the Start button is
+  // available in every state, including the ones this reports as broken (FR-12).
+  $effect(() => {
+    void probeEnvironment(
+      navigator,
+      window.isSecureContext,
+      typeof AudioWorkletNode !== 'undefined',
+    ).then((report) => { env = report; });
+  });
+
+  // Labels are withheld until permission is granted, so before the first Start
+  // this is usually a count rather than a list. That is the browser's rule, not
+  // a limitation worth explaining to a player.
+  const named = $derived((env?.inputs ?? []).filter((d) => d.label !== ''));
 
   function onMeters(meters: Meters): void {
     rms = Array.from(meters.rms);
@@ -63,6 +81,31 @@
       control, here or anywhere else.
     </p>
   </header>
+
+  {#if env !== null}
+    <dl class="env">
+      <div><dt>Secure context</dt><dd>{env.secureContext ? 'yes' : 'no'}</dd></div>
+      <div><dt>AudioWorklet</dt><dd>{env.audioWorklet ? 'yes' : 'no'}</dd></div>
+      <div><dt>WASM SIMD</dt><dd>{env.wasmSimd ? 'yes' : 'no'}</dd></div>
+      <div><dt>Audio inputs</dt><dd>{env.inputs.length}</dd></div>
+    </dl>
+    {#if named.length > 0}
+      <ul class="devices">
+        {#each named as device (device.id)}
+          <li><span class="kind">{device.kind}</span>{device.label}</li>
+        {/each}
+      </ul>
+    {/if}
+    {#if !canRunEngine(env)}
+      <p class="problem">
+        <span>This browser cannot run the engine here.</span>
+        <span class="fix">
+          It needs a secure context, AudioWorklet and WebAssembly SIMD. You can
+          still press start — nothing is blocked.
+        </span>
+      </p>
+    {/if}
+  {/if}
 
   <div class="controls">
     {#if state === 'running'}
@@ -142,4 +185,16 @@
   .value { font-family: ui-monospace, monospace; font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
 
   .note { font-size: 13px; }
+
+  .env { display: flex; flex-wrap: wrap; gap: 0 2rem; margin: 0; }
+  .env div { display: flex; gap: 0.5rem; align-items: baseline; }
+  dt { font-size: 13px; color: var(--muted); }
+  dd { margin: 0; font-family: ui-monospace, monospace; font-size: 13px; }
+
+  .devices { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+  .devices li { display: flex; gap: 0.75rem; align-items: baseline; font-size: 13px; }
+  .kind {
+    font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted);
+    border: 1px solid currentColor; border-radius: 2px; padding: 0 4px; min-width: 5.5rem; text-align: center;
+  }
 </style>

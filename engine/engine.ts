@@ -8,6 +8,7 @@
  */
 
 import { PARAMS, INTERNAL_SAMPLE_RATE } from '../schema/params.ts';
+import { openInput, InputError } from './input.ts';
 
 export interface Meters {
   readonly rms: Float32Array;
@@ -68,12 +69,9 @@ export class Engine {
   async start(): Promise<void> {
     if (this.#context !== null) return;
 
-    // The WebRTC voice pipeline is off, explicitly and individually. It is on
-    // by default and it destroys a guitar signal: echo cancellation chews
-    // sustain, noise suppression eats pick attack, AGC fights the player's
-    // volume knob. This is the single most common failure mode for browser
-    // audio apps. Story 1.4 adds the automated test that asserts each flag.
-    const stream = await this.#openInput();
+    // The constraints, the error mapping and the test that asserts each flag
+    // all live in engine/input.ts.
+    const stream = await this.#open();
     this.#stream = stream;
 
     const track = stream.getAudioTracks()[0];
@@ -196,32 +194,15 @@ export class Engine {
     this.#context = null;
   }
 
-  async #openInput(): Promise<MediaStream> {
+  async #open(): Promise<MediaStream> {
     try {
-      return await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          // Not in every lib.dom yet, and off is what we need.
-          voiceIsolation: false,
-          channelCount: 1,
-          latency: 0,
-        } as MediaTrackConstraints,
-        video: false,
-      });
+      return await openInput(navigator.mediaDevices);
     } catch (cause) {
-      const name = cause instanceof DOMException ? cause.name : '';
-      if (name === 'NotAllowedError' || name === 'SecurityError') {
-        throw new EngineError(
-          { kind: 'permission-denied' },
-          'Microphone access was refused. Allow it in the address bar and reload.',
-        );
+      if (cause instanceof InputError) {
+        throw new EngineError({ kind: cause.reason }, cause.message);
       }
-      throw new EngineError(
-        { kind: 'no-input-device' },
-        'No audio input found. Connect an interface and reload.',
-      );
+      throw cause;
     }
   }
+
 }

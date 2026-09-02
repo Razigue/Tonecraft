@@ -4,6 +4,7 @@
 
 ## 1. Direction
 
+
 **Nylon and mineral.**
 
 Every amp sim on the market renders brushed metal, tolex, chicken-head knobs and screw heads. It is skeuomorphism inherited from hardware that most of the audience has never owned. Tonecraft rejects it completely, because the product's whole argument is that it is not hardware and does not need to be installed. The interface should feel like a well-made object in a quiet room: chalky surfaces, matte finishes, cool light, one green.
