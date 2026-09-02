@@ -38,6 +38,8 @@
   let problem = $state<{ cause: string; fix: string } | null>(null);
   let health = $state<Health | null>(null);
   let showLatency = $state(false);
+  /** The opening sheet. Dismissible: looking around is never blocked. */
+  let asking = $state(true);
   let rms = $state<number[]>(new Array(STAGES.length).fill(0));
   let values = $state<Record<string, number>>(
     Object.fromEntries(PARAMS.map((p) => [p.id, p.default])),
@@ -66,7 +68,14 @@
     engine = new Engine({ onMeters });
     try {
       await engine.start();
+      // Anything moved before starting carries over — the rig is live-looking
+      // from the first frame, so it has to be honest about what it shows.
+      for (const p of PARAMS) {
+        const v = values[p.id];
+        if (v !== undefined && v !== p.default) engine.setParam(p.id, v);
+      }
       health = engine.health;
+      asking = false;
       state = 'running';
     } catch (error) {
       // Cause in one sentence, fix in one sentence, no apology. Nothing is
@@ -102,11 +111,15 @@
           {health.latency.ms.toFixed(1)} ms
         </span>
       {/if}
+    {:else}
+      <!-- Always reachable, so dismissing the sheet never strands anyone. -->
+      <button class="start small" type="button" onclick={start} disabled={state === 'starting'}>
+        {state === 'starting' ? 'Starting' : 'Start'}
+      </button>
     {/if}
   </header>
 
-  {#if state === 'running'}
-    <div class="strand">
+  <div class="strand">
       {#each STRAND as block, i (block.stage)}
         {#if i > 0}<span class="cord" aria-hidden="true"></span>{/if}
         {@const bypass = bypassOf(block.stage)}
@@ -127,16 +140,27 @@
           {/each}
         </Module>
       {/each}
-    </div>
-  {:else}
-    <div class="opening">
-      <p class="t-body">
-        Plug in a guitar and press start. There is an amplifier and a cabinet;
-        the drive and the reverb are not built yet.
-      </p>
-      <button class="start" type="button" onclick={start} disabled={state === 'starting'}>
-        {state === 'starting' ? 'Starting' : 'Start'}
-      </button>
+  </div>
+
+  {#if asking && state !== 'running'}
+    <!-- A sheet over the rig, not a screen instead of it (DESIGN.md section 4).
+         No backdrop blur: the design forbids it, and a plain wash reads calmer
+         anyway. -->
+    <div class="wash">
+      <div class="sheet" role="dialog" aria-modal="false" aria-label="Start playing">
+        <p class="t-body">
+          Plug in a guitar and press start. There is an amplifier and a cabinet;
+          the drive and the reverb are not built yet.
+        </p>
+        <div class="sheet-actions">
+          <button class="start" type="button" onclick={start} disabled={state === 'starting'}>
+            {state === 'starting' ? 'Starting' : 'Start'}
+          </button>
+          <button class="quiet" type="button" onclick={() => (asking = false)}>
+            Look around first
+          </button>
+        </div>
+      </div>
     </div>
   {/if}
 
@@ -217,16 +241,60 @@
     flex: 0 0 auto;
   }
 
-  .opening {
-    align-self: center;
-    justify-self: center;
+  /* The rig stays visible underneath. A wash rather than a blur: DESIGN.md
+     forbids backdrop-filter, and only transform and opacity may animate. */
+  .wash {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(231, 232, 226, 0.72);
+    padding: calc(var(--u) * 3);
+  }
+
+  .sheet {
+    background: var(--bone);
+    border-radius: var(--radius);
+    box-shadow: var(--lift);
+    padding: calc(var(--u) * 4);
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: calc(var(--u) * 3);
     text-align: center;
-    max-width: 34ch;
+    max-width: 38ch;
+    animation: rise 200ms cubic-bezier(0.2, 0, 0, 1);
   }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sheet { animation: none; }
+  }
+
+  .sheet-actions {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--u) * 2);
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .quiet {
+    font-family: var(--body);
+    font-size: 13px;
+    min-height: 40px;
+    padding: 0 var(--u);
+    background: none;
+    border: 0;
+    color: var(--graphite);
+    cursor: pointer;
+  }
+  .quiet:hover { color: var(--ink); }
+  .quiet:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
   .start {
     font-family: var(--body);
@@ -239,6 +307,7 @@
     color: var(--ink);
     cursor: pointer;
   }
+  .start.small { font-size: 13px; padding: 0 calc(var(--u) * 2); min-height: 32px; }
   .start:disabled { opacity: 0.4; cursor: default; }
   .start:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
