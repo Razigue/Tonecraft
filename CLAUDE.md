@@ -59,10 +59,20 @@ audio: {
   noiseSuppression: false,
   autoGainControl: false,
   voiceIsolation: false,
-  channelCount: 1,
+  channelCount: { ideal: 2 },
   latency: 0,
 }
 ```
+
+**`channelCount` demande deux canaux, en préférence et non en exigence.** Cette
+règle disait `1`, au motif que la chaîne est mono. La chaîne *est* mono et le
+reste — mais la **capture** ne doit pas l'être : une interface à deux entrées
+place son jack instrument sur le second canal. Une Scarlett Solo porte le XLR à
+gauche et l'entrée instrument à droite, donc demander un seul canal rend la
+guitare inatteignable sur exactement le matériel que `PRODUCT.md` désigne comme
+l'audience principale. Le canal qui alimente la chaîne est choisi à la frontière
+du worklet, et **ne fait jamais partie de l'état de tone** : il décrit le
+matériel du joueur, pas son son, et n'a rien à faire dans un tone link.
 
 ### Contexte
 

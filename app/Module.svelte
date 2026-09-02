@@ -14,9 +14,11 @@
     bypassed?: boolean;
     onbypass?: (bypassed: boolean) => void;
     children: Snippet;
+    /** For a stage that carries more than faders — the input's source, say. */
+    footer?: Snippet;
   }
 
-  const { name, bypassed = false, onbypass, children }: Props = $props();
+  const { name, bypassed = false, onbypass, children, footer }: Props = $props();
 </script>
 
 <section class="module" class:bypassed>
@@ -38,6 +40,10 @@
   <div class="controls">
     {@render children()}
   </div>
+
+  {#if footer}
+    <div class="footer">{@render footer()}</div>
+  {/if}
 </section>
 
 <style>
@@ -100,5 +106,13 @@
     display: flex;
     gap: calc(var(--u) * 2);
     align-items: flex-start;
+  }
+
+  .footer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--u);
+    padding-top: var(--u);
+    border-top: 1px solid rgba(22, 24, 27, 0.08);
   }
 </style>

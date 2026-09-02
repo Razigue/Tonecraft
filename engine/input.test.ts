@@ -29,10 +29,13 @@ const check = (name: string, ok: boolean, detail = ''): void => {
 
 // --- FR-8: the voice pipeline is off, in the call the engine really makes ---
 
-let requested: MediaStreamConstraints | undefined;
+// Held in an object rather than a bare `let`: TypeScript cannot see the
+// assignment happening inside the stub's callback, and narrows a plain variable
+// to `undefined` for the rest of the file.
+const seen: { last?: MediaStreamConstraints } = {};
 const stubDevices = {
   async getUserMedia(constraints: MediaStreamConstraints): Promise<MediaStream> {
-    requested = constraints;
+    seen.last = constraints;
     return {} as MediaStream;
   },
   async enumerateDevices(): Promise<MediaDeviceInfo[]> {
@@ -42,7 +45,7 @@ const stubDevices = {
 
 await openInput(stubDevices);
 
-const audio = requested?.audio;
+const audio = seen.last?.audio;
 check('getUserMedia is called with an audio constraint object',
   typeof audio === 'object' && audio !== null);
 
@@ -52,16 +55,30 @@ for (const flag of MUST_BE_DISABLED) {
     Object.prototype.hasOwnProperty.call(constraints, flag) && constraints[flag] === false,
     `got ${JSON.stringify(constraints[flag])}`);
 }
-check('channelCount is 1 — the chain is mono end to end',
-  constraints['channelCount'] === 1, `got ${JSON.stringify(constraints['channelCount'])}`);
+// Two channels, asked for as a preference. A hard 1 was the original rule and
+// it made a Scarlett Solo's instrument input unreachable: that interface puts
+// the XLR on the left and the jack on the right, so a mono capture hands back
+// the wrong one. The chain stays mono; the *capture* must not be.
+check('channelCount asks for two, as a preference not a requirement',
+  JSON.stringify(constraints['channelCount']) === JSON.stringify({ ideal: 2 }),
+  `got ${JSON.stringify(constraints['channelCount'])}`);
 check('latency asks for 0',
   constraints['latency'] === 0, `got ${JSON.stringify(constraints['latency'])}`);
-check('video is never requested',
-  requested?.video === false);
+check('video is never requested', seen.last?.video === false);
 
 // The exported constant and the call must not be allowed to drift apart.
 check('the call passes exactly INPUT_CONSTRAINTS',
   JSON.stringify(constraints) === JSON.stringify(INPUT_CONSTRAINTS));
+
+// Asking for a particular interface and silently getting another is worse than
+// failing: the player would hear the wrong input with no way to know it.
+await openInput(stubDevices, 'scarlett-solo-id');
+const withDevice = seen.last?.audio as Record<string, unknown>;
+check('a named device is requested exactly, never as a preference',
+  JSON.stringify(withDevice['deviceId']) === JSON.stringify({ exact: 'scarlett-solo-id' }),
+  `got ${JSON.stringify(withDevice['deviceId'])}`);
+check('and the voice pipeline stays off when a device is named',
+  MUST_BE_DISABLED.every((f) => withDevice[f] === false));
 
 // --- failures name a cause and a fix, and never leak a DOMException ---------
 

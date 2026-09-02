@@ -19,15 +19,26 @@
  * - `autoGainControl` fights the player's own volume knob, continuously
  * - `voiceIsolation` is built to keep speech and discard everything else
  *
- * `channelCount: 1` because the chain is mono end to end. `latency: 0` asks the
- * browser for the smallest buffer it will give us — a request, not a promise.
+ * `latency: 0` asks the browser for the smallest buffer it will give us — a
+ * request, not a promise.
+ *
+ * **`channelCount` asks for two, as a preference rather than a requirement.**
+ * This used to be a hard `1`, on the reasoning that the chain is mono. The
+ * chain is mono, and stays mono — but the *capture* must not be, because a
+ * two-input interface puts its instrument jack on the second channel. A
+ * Scarlett Solo carries the XLR on the left and the instrument input on the
+ * right, so asking for one channel makes the guitar unreachable on precisely
+ * the hardware PRODUCT.md names as the primary audience's. Which channel
+ * becomes the chain's input is chosen at the worklet boundary.
+ *
+ * `ideal` rather than `exact` so a genuinely mono device still opens.
  */
 export const INPUT_CONSTRAINTS = {
   echoCancellation: false,
   noiseSuppression: false,
   autoGainControl: false,
   voiceIsolation: false,
-  channelCount: 1,
+  channelCount: { ideal: 2 },
   latency: 0,
 } as const;
 
@@ -51,11 +62,21 @@ export class InputError extends Error {
 /**
  * Takes `MediaDevices` rather than reaching for the global, so a test can hand
  * in a stub and assert on what was actually requested.
+ *
+ * `deviceId` is `exact`: asking for a particular interface and silently getting
+ * a different one is worse than failing, because the player would be hearing
+ * the wrong input with no way to know it.
  */
-export async function openInput(devices: MediaDevices): Promise<MediaStream> {
+export async function openInput(
+  devices: MediaDevices,
+  deviceId?: string,
+): Promise<MediaStream> {
   try {
     return await devices.getUserMedia({
-      audio: { ...INPUT_CONSTRAINTS } as MediaTrackConstraints,
+      audio: {
+        ...INPUT_CONSTRAINTS,
+        ...(deviceId === undefined ? {} : { deviceId: { exact: deviceId } }),
+      } as MediaTrackConstraints,
       video: false,
     });
   } catch (cause) {

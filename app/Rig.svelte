@@ -19,6 +19,8 @@
   import Fader from './Fader.svelte';
   import Module from './Module.svelte';
   import Meter from './Meter.svelte';
+  import Segmented from './Segmented.svelte';
+  import type { InputDevice, InputChannel } from '../engine/engine.ts';
   import './tokens.css';
 
   type State = 'idle' | 'starting' | 'running' | 'failed';
@@ -46,6 +48,37 @@
   );
 
   let engine: Engine | null = null;
+  let devices = $state<InputDevice[]>([]);
+  let deviceId = $state('');
+  let channel = $state<InputChannel>('left');
+  let channelCount = $state(1);
+
+  /**
+   * A two-input interface puts its instrument jack on the second channel — a
+   * Scarlett Solo carries the XLR left and the jack right — so the choice only
+   * exists when there is one to make.
+   */
+  const CHANNELS = [
+    { value: 'left', label: 'Left' },
+    { value: 'right', label: 'Right' },
+    { value: 'sum', label: 'Both' },
+  ] as const;
+
+  async function refreshDevices(): Promise<void> {
+    devices = (await engine?.listInputs()) ?? [];
+    channelCount = engine?.channelCount ?? 1;
+  }
+
+  async function chooseDevice(id: string): Promise<void> {
+    deviceId = id;
+    await engine?.useDevice(id);
+    channelCount = engine?.channelCount ?? 1;
+  }
+
+  function chooseChannel(next: string): void {
+    channel = next as InputChannel;
+    engine?.setInputChannel(channel);
+  }
 
   const labelOf = (id: string): string => STAGES.find((s) => s.id === id)?.label ?? id;
   const slotOf = (id: string): number => STAGES.find((s) => s.id === id)?.meterSlot ?? 0;
@@ -77,6 +110,9 @@
       health = engine.health;
       asking = false;
       state = 'running';
+      // Labels are withheld until permission has been granted, so the device
+      // list is only meaningful from here on.
+      await refreshDevices();
     } catch (error) {
       // Cause in one sentence, fix in one sentence, no apology. Nothing is
       // blocked: the control stays available (FR-12).
@@ -138,6 +174,29 @@
               onchange={(v) => setParam(id, v)}
             />
           {/each}
+
+          {#snippet footer()}
+            {#if block.stage === 'input' && state === 'running'}
+              {#if devices.length > 1}
+                <label class="source">
+                  <span class="t-small">Input</span>
+                  <select value={deviceId} onchange={(e) => chooseDevice(e.currentTarget.value)}>
+                    {#each devices as d (d.id)}
+                      <option value={d.id}>{d.label || 'Input'}</option>
+                    {/each}
+                  </select>
+                </label>
+              {/if}
+              {#if channelCount > 1}
+                <Segmented
+                  label="Input channel"
+                  options={CHANNELS}
+                  value={channel}
+                  onchange={chooseChannel}
+                />
+              {/if}
+            {/if}
+          {/snippet}
         </Module>
       {/each}
   </div>
@@ -322,6 +381,20 @@
     font-size: 15px;
   }
   .fix { color: var(--graphite); }
+
+  .source { display: flex; flex-direction: column; gap: 2px; }
+  select {
+    font-family: var(--body);
+    font-size: 13px;
+    min-height: 40px;
+    max-width: 18ch;
+    background: none;
+    border: 0;
+    border-bottom: 1px solid var(--graphite);
+    color: var(--ink);
+    padding: 0;
+  }
+  select:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
   /* Below 1100px the chain wraps, still in order (UX-DR11). */
   @media (max-width: 1100px) {

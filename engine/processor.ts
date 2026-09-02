@@ -73,6 +73,16 @@ class TonecraftProcessor extends AudioWorkletProcessor {
   #automatedIndex: Int32Array = new Int32Array(AUTOMATED.length);
   #lastAutomated: Float32Array = new Float32Array(AUTOMATED.length);
 
+  /**
+   * Which captured channel feeds the chain: 0 for left, 1 for right, -1 to sum.
+   *
+   * Not a schema parameter, deliberately. It describes the player's hardware,
+   * not their tone, so it must never travel in a tone link — the person who
+   * opens the link has a different interface with the guitar somewhere else
+   * (AD-9).
+   */
+  #inputChannel = 0;
+
   #framesSinceMeter = 0;
   #meterInterval = 0;
 
@@ -174,6 +184,11 @@ class TonecraftProcessor extends AudioWorkletProcessor {
       return;
     }
 
+    if (data['type'] === 'input-channel') {
+      this.#inputChannel = data['channel'] as number;
+      return;
+    }
+
     if (data['type'] === 'param') {
       // Discrete only: preset switches, bypass, mute. Continuous values come
       // through AudioParam so they interpolate sample-accurately (FR-19).
@@ -209,11 +224,28 @@ class TonecraftProcessor extends AudioWorkletProcessor {
     }
     this.#lastFrame = currentFrame;
 
-    const inp = inputs[0]?.[0];
+    const inChannels = inputs[0];
+    // A two-input interface puts its instrument jack on the second channel: a
+    // Scarlett Solo carries the XLR left and the instrument right. Falls back
+    // to the first channel when the chosen one is not there, so unplugging a
+    // stereo device cannot leave the chain reading nothing.
+    const inp =
+      this.#inputChannel < 0
+        ? undefined
+        : (inChannels?.[this.#inputChannel] ?? inChannels?.[0]);
+    const summing = this.#inputChannel < 0 && inChannels !== undefined;
 
     // Mono. The chain is mono end to end; a stereo input would be a second
     // chain, which the CPU budget does not have room for.
-    if (inp === undefined) {
+    if (summing && inChannels !== undefined) {
+      // Summing scales down, so a signal present on both channels does not
+      // arrive twice as loud as the same signal on one.
+      const scale = inChannels.length > 0 ? 1 / inChannels.length : 1;
+      input.fill(0);
+      for (const channel of inChannels) {
+        for (let i = 0; i < frames; i += 1) input[i] += (channel[i] ?? 0) * scale;
+      }
+    } else if (inp === undefined) {
       input.fill(0);
     } else {
       input.set(inp.subarray(0, frames));
@@ -237,9 +269,9 @@ class TonecraftProcessor extends AudioWorkletProcessor {
     out.set(output.subarray(0, frames));
 
     // Copy to every other output channel rather than processing twice.
-    const channels = outputs[0];
-    if (channels !== undefined) {
-      for (let c = 1; c < channels.length; c += 1) channels[c]?.set(out);
+    const outChannels = outputs[0];
+    if (outChannels !== undefined) {
+      for (let c = 1; c < outChannels.length; c += 1) outChannels[c]?.set(out);
     }
 
     this.#framesSinceMeter += 1;

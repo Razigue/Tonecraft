@@ -67,6 +67,15 @@ const WASM_URL = `${BASE}tonecraft.wasm`;
 const PROCESSOR_URL = `${BASE}tonecraft-processor.js`;
 const IR_URL = `${BASE}cab.tcir`;
 
+/** Which captured channel feeds the chain. */
+export type InputChannel = 'left' | 'right' | 'sum';
+
+export interface InputDevice {
+  readonly id: string;
+  readonly label: string;
+  readonly kind: DeviceKind;
+}
+
 export class Engine {
   #context: AudioContext | null = null;
   #node: AudioWorkletNode | null = null;
@@ -82,6 +91,9 @@ export class Engine {
   #cabTaps = 0;
   /** Wall-clock arrival of each metering frame; the source of the jitter figure. */
   #meterArrivals: number[] = [];
+  #deviceId: string | undefined;
+  #channel: InputChannel = 'left';
+  #channels = 1;
   readonly #onMeters: ((meters: Meters) => void) | undefined;
 
   constructor(options: EngineOptions = {}) {
@@ -94,6 +106,56 @@ export class Engine {
 
   get info(): EngineInfo | null {
     return this.#info;
+  }
+
+  /** How many channels the open device actually gave us. */
+  get channelCount(): number {
+    return this.#channels;
+  }
+
+  get inputChannel(): InputChannel {
+    return this.#channel;
+  }
+
+  /**
+   * Instant: the capture already carries every channel, so this only changes
+   * which one the chain reads. Never part of the tone state — it describes the
+   * player's hardware, not their tone.
+   */
+  setInputChannel(channel: InputChannel): void {
+    this.#channel = channel;
+    this.#node?.port.postMessage({
+      type: 'input-channel',
+      channel: channel === 'left' ? 0 : channel === 'right' ? 1 : -1,
+    });
+  }
+
+  /** Labels are blank until permission has been granted at least once. */
+  async listInputs(): Promise<InputDevice[]> {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+      .filter((d) => d.kind === 'audioinput')
+      .map((d) => ({ id: d.deviceId, label: d.label, kind: classifyDevice(d.label) }));
+  }
+
+  /** Reopens the stream on another interface, keeping everything else. */
+  async useDevice(deviceId: string): Promise<void> {
+    const context = this.#context;
+    const node = this.#node;
+    if (context === null || node === null) return;
+
+    this.#stream?.getTracks().forEach((t) => t.stop());
+    const stream = await openInput(navigator.mediaDevices, deviceId);
+    this.#stream = stream;
+    this.#deviceId = deviceId;
+
+    const track = stream.getAudioTracks()[0];
+    if (track !== undefined) {
+      this.#deviceLabel = track.label;
+      this.#deviceKind = classifyDevice(track.label);
+      this.#channels = track.getSettings().channelCount ?? 1;
+    }
+    context.createMediaStreamSource(stream).connect(node);
   }
 
   /** Taps in the loaded cabinet impulse response, zero if none loaded. */
@@ -167,6 +229,7 @@ export class Engine {
     // latency and quality, and neither is visible from here (FR-9).
     this.#deviceLabel = track.label;
     this.#deviceKind = classifyDevice(track.label);
+    this.#channels = track.getSettings().channelCount ?? 1;
 
     const deviceRate = track.getSettings().sampleRate ?? INTERNAL_SAMPLE_RATE;
 
@@ -326,7 +389,7 @@ export class Engine {
 
   async #open(): Promise<MediaStream> {
     try {
-      return await openInput(navigator.mediaDevices);
+      return await openInput(navigator.mediaDevices, this.#deviceId);
     } catch (cause) {
       if (cause instanceof InputError) {
         throw new EngineError({ kind: cause.reason }, cause.message);
