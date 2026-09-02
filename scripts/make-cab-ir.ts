@@ -71,12 +71,16 @@ function peaking(f: number, q: number, gainDb: number): Biquad {
 }
 
 const CABINET: readonly Biquad[] = [
-  highpass(82, 0.85),           // nothing useful below the low E's fundamental
-  peaking(112, 1.3, 4.5),       // cone and box resonance
-  peaking(430, 1.1, -2.0),      // keeps the low mids from turning to cardboard
-  peaking(700, 1.0, -4.5),      // the scoop that gives a lead tone room
-  peaking(1450, 1.6, 2.0),      // upper mid body
-  peaking(2600, 1.4, 5.0),      // presence: the bite
+  // Below the low E's fundamental, but not by much: a 4x12 has real weight at
+  // 80 Hz and cutting it at 82 was part of why this sounded like a small amp.
+  highpass(58, 0.75),
+  peaking(105, 1.0, 5.5),       // cone and box resonance, wider and stronger
+  peaking(240, 0.9, 2.5),       // the body a big cabinet has and a small one does not
+  peaking(700, 1.0, -2.5),      // a dip, not a scoop
+  peaking(1450, 1.6, 1.0),      // upper mid, gently
+  // Presence, halved. At +5 dB this was the "aigu cartonné" — the brittle top
+  // that reads as a cheap speaker rather than a loud one.
+  peaking(2300, 1.3, 2.5),
   peaking(3800, 2.0, -3.5),     // takes the edge off before the cliff
   // Three pole pairs, low enough that 5 kHz is already well down. A cabinet
   // that is only -1.5 dB at 5 kHz is not a cabinet, and the difference is

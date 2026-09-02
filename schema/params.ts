@@ -88,6 +88,20 @@ export const OVERSAMPLE_FACTOR = 4;
 /** Frames per call inside the oversampling window (AD-19). */
 export const OVERSAMPLED_BLOCK_FRAMES = BLOCK_FRAMES * OVERSAMPLE_FACTOR;
 
+/**
+ * The rate a stage *inside* the oversampling window actually runs at.
+ *
+ * AD-18 says every stage is designed for the internal rate — and that is true
+ * of the rate the chain runs at, but not of the rate every stage sees. A stage
+ * inside the window is handed four times as many frames per call (AD-19), and
+ * they arrive four times as fast. A filter designed for 48 kHz and run here has
+ * its corner frequency four times too high, which is silent, catastrophic, and
+ * exactly what happened: the amp's inter-stage highpasses, meant for 45 to 85
+ * Hz, were cutting at 180 to 340 Hz and taking 40 dB of the low E with them,
+ * while its lowpasses sat at 24 to 48 kHz doing nothing about the top.
+ */
+export const OVERSAMPLED_SAMPLE_RATE = INTERNAL_SAMPLE_RATE * OVERSAMPLE_FACTOR;
+
 /** Neural amp model size, fixed at build time and never chosen at runtime (AD-5, FR-17). */
 export const LSTM_HIDDEN_SIZE = 20;
 
@@ -145,17 +159,24 @@ export const PARAMS: readonly Param[] = [
     min: 0, max: 1, default: 0, taper: 'switch' },
 
   // --- Amp ---------------------------------------------------------------
+  // 28 is saturated with a few dB of picking dynamics still in it. Past about
+  // 32 the amp stops responding to how hard you play at all — which measures
+  // as more distortion and sounds like less.
   { id: 'amp_gain', stage: 'amp', label: 'Gain', unit: 'dB',
-    min: 0, max: 40, default: 30, taper: 'linear' },
+    min: 0, max: 40, default: 28, taper: 'linear' },
   { id: 'amp_bass', stage: 'amp', label: 'Bass', unit: 'dB',
     min: -12, max: 12, default: 0, taper: 'linear' },
-  // Slightly scooped by default — the shape a lead tone wants.
+  // Not scooped. A scoop plus the cabinet's own dip around 700 Hz took all the
+  // body out and left the thin, boxy tone of a very small amplifier.
   { id: 'amp_mid', stage: 'amp', label: 'Mid', unit: 'dB',
-    min: -12, max: 12, default: -2, taper: 'linear' },
+    min: -12, max: 12, default: 1, taper: 'linear' },
   { id: 'amp_treble', stage: 'amp', label: 'Treble', unit: 'dB',
-    min: -12, max: 12, default: 2, taper: 'linear' },
+    min: -12, max: 12, default: 0, taper: 'linear' },
+  // Leaves the limiter something to do only on peaks, rather than riding the
+  // whole signal — a limiter working continuously is a compressor nobody asked
+  // for.
   { id: 'amp_master', stage: 'amp', label: 'Master', unit: 'dB',
-    min: -24, max: 12, default: -6, taper: 'linear' },
+    min: -24, max: 12, default: -4, taper: 'linear' },
   { id: 'amp_bypass', stage: 'amp', label: 'Bypass', unit: 'bool',
     min: 0, max: 1, default: 0, taper: 'switch' },
 
@@ -176,7 +197,7 @@ export const PARAMS: readonly Param[] = [
 
   // --- Output ------------------------------------------------------------
   { id: 'out_master', stage: 'output', label: 'Master', unit: 'dB',
-    min: -60, max: 6, default: -3, taper: 'linear' },
+    min: -60, max: 6, default: 0, taper: 'linear' },
   { id: 'out_mute', stage: 'output', label: 'Mute', unit: 'bool',
     min: 0, max: 1, default: 0, taper: 'switch' },
 ] as const;

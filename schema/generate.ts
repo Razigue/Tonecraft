@@ -20,6 +20,7 @@ import {
   BLOCK_FRAMES,
   OVERSAMPLE_FACTOR,
   OVERSAMPLED_BLOCK_FRAMES,
+  OVERSAMPLED_SAMPLE_RATE,
   LSTM_HIDDEN_SIZE,
   MAX_IR_TAPS,
   type Param,
@@ -73,6 +74,10 @@ function render(): string {
   w(`constexpr uint32_t kBlockFrames = ${BLOCK_FRAMES};`);
   w(`constexpr uint32_t kOversampleFactor = ${OVERSAMPLE_FACTOR};`);
   w(`constexpr uint32_t kOversampledBlockFrames = ${OVERSAMPLED_BLOCK_FRAMES};`);
+  w('');
+  w('// The rate a stage INSIDE the window runs at. A filter designed for the');
+  w('// internal rate and run here has its corner four times too high.');
+  w(`constexpr uint32_t kOversampledSampleRate = ${OVERSAMPLED_SAMPLE_RATE};`);
   w('');
   w('// AD-5: fixed at build time for the floor machine. Never selected at runtime');
   w('// from measured headroom — an adaptive engine would make a tone link lie.');

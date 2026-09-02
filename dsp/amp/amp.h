@@ -30,7 +30,13 @@ namespace tonecraft {
 class Amp {
  public:
   void init() {
-    dsp_.init(static_cast<int>(kInternalSampleRate));
+    // The oversampled rate, not the internal one: this stage lives inside the
+    // 4x window (AD-2), so it is handed four times the frames at four times the
+    // speed. Initialising it at the chain's rate puts every corner frequency
+    // four times too high — which is inaudible as a bug and devastating as a
+    // sound: the inter-stage highpasses cut at 180-340 Hz instead of 45-85, and
+    // the lowpasses that tame fizz sat above 24 kHz doing nothing at all.
+    dsp_.init(static_cast<int>(kOversampledSampleRate));
     reset();
   }
 

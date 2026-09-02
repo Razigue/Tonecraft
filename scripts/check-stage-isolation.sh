@@ -55,8 +55,12 @@ fi
 
 # The generated amp accepts a rate, so the rule becomes: our wrapper hands it
 # the internal design rate and nothing else, ever.
-if ! grep -q 'init(static_cast<int>(kInternalSampleRate))' "${ROOT}/dsp/amp/amp.h"; then
-  printf 'dsp/amp/amp.h must initialise the generated amp with kInternalSampleRate.\n' >&2
+# The amp lives inside the 4x window, so its design rate is the oversampled one.
+# Either constant is a compile-time value; what is forbidden is a rate that came
+# from the device.
+if ! grep -q 'init(static_cast<int>(kOversampledSampleRate))' "${ROOT}/dsp/amp/amp.h"; then
+  printf 'dsp/amp/amp.h must initialise the generated amp with kOversampledSampleRate:\n' >&2
+  printf 'it runs inside the oversampling window, at four times the chain rate.\n' >&2
   exit 1
 fi
 if grep -nE 'void init\(.*(rate|Rate)' "${ROOT}/dsp/amp/amp.h"; then

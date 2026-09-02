@@ -34,25 +34,34 @@ master = hslider("master", -6, -24, 12, 0.001);
 
 // --- Building blocks ------------------------------------------------------
 
-// A tanh-shaped saturator without the tanh.
+// The saturator.
 //
 // `ma.tanh` compiles to std::tanh, and five of those per sample at 4x is close
 // to a million transcendental calls a second — measured at 10% of one core,
-// which is the entire amp's budget spent on a library function.
+// the entire amp's budget spent on a library function. So it is approximated.
 //
-// This is the Pade approximant of tanh, clamped to its useful range: within
-// about 1% of the real curve to |x| = 3, saturating at exactly 1.0 where tanh
-// reaches 0.995. Multiplies and one divide. The clamp is what makes it a
-// saturator rather than a polynomial that runs away.
-saturate(x) = y * (27.0 + y * y) / (27.0 + 9.0 * y * y)
-with {
-    y = max(-3.0, min(3.0, x));
-};
+// The first approximation was the Pade form of tanh, clamped to |x| <= 3. That
+// clamp turned out to be the problem: past it the curve is perfectly flat, so
+// once a stage was driven hard enough the output stopped depending on the input
+// at all. Measured, the whole amp had 0.2 dB of dynamics between a soft pick
+// and a hard one. It sounded saturated and felt dead, and no amount of gain
+// tuning could fix it, because the flat region *is* the dead zone.
+//
+// x / (1 + |x|) never goes flat. It approaches unity and keeps approaching it,
+// so playing harder always gives more, and the guitar's volume knob still
+// cleans it up. Its knee is softer than tanh's, which means it starts
+// distorting earlier and more gradually — which is what a cascade of valve
+// stages does anyway. One divide and one absolute value.
+saturate(x) = x / (1.0 + abs(x));
 
 // Asymmetric soft clipping. The offset pushes the signal off centre so the two
 // halves of the wave clip differently, which is what produces even harmonics;
 // the DC blocker afterwards removes the offset itself.
-softClip(offset) = +(offset) : saturate : fi.dcblocker;
+// The DC blocker exists to remove the offset the asymmetry adds, and nothing
+// else. Faust's default corner is 35 Hz; four of those in series take 3 dB off
+// the low E before any of the highpasses have had their turn. At 12 Hz it still
+// removes DC and leaves the instrument alone.
+softClip(offset) = +(offset) : saturate : fi.dcblockerat(12);
 
 // One preamp stage: clean up the low end, amplify, clip, tame the top.
 stage(g, hp, lp, offset) =
@@ -61,18 +70,45 @@ stage(g, hp, lp, offset) =
 // --- The amplifier --------------------------------------------------------
 
 // Gain in dB spread across four stages rather than dumped into one.
-drive = ba.db2linear(gain * 0.25);
+//
+// The exponent decides how hard each stage is driven. At 0.25 the first two
+// stages barely clipped and the third harmonic sat 15 dB below the fundamental
+// — audibly a crunch, not a high-gain amp. At 0.45 every stage is working.
+drive = ba.db2linear(gain * 0.40);
 
 // Corners chosen against a measured response, not by feel. Four first-order
 // highpasses cascade: at 100 Hz, corners of 110/95/120/140 stacked up to about
 // 28 dB of cut, which left the bass control nothing to act on and would have
 // sounded like paper. These sit low enough to tighten the stages without
 // removing the instrument.
+// Each stage rolls off further than the last. A real preamp loses top at every
+// coupling, and a model that does not sounds like a fuzz pedal in a tin.
+// Corners set against a measured response rather than by feel — twice now. At
+// 45/55/70/85 the five highpasses and four DC blockers compounded to 28 dB of
+// cut at 80 Hz, which removes the low E's fundamental outright. That is the
+// whole of "thin, boxy, sounds like a five-watt amp": the instrument's bottom
+// octave was being deleted before the gain stages ever saw it.
 preamp =
-    stage(drive * 1.6, 45, 12000, 0.12)   // bright and forgiving
-  : stage(drive * 1.4, 55,  9000, 0.08)
-  : stage(drive * 1.2, 70,  7000, 0.04)   // tighter as the gain builds
-  : stage(drive * 1.0, 85,  6000, 0.00);  // last stage symmetric
+// The multipliers sit below unity on purpose. They were 1.6 down to 1.1, set
+// while the highpasses were throwing away the bottom octave — so they were
+// compensating for a signal that is now there. With the low end restored they
+// drove every stage into saturation even at the lowest gain setting, and the
+// fader had no usable range at all. Now the gain control provides the range and
+// these only shape how it is distributed.
+// The first two stages keep the instrument whole; the last two work on a
+// bass-cut signal. This is what a real high-gain preamp's coupling caps do, and
+// it resolves the tension between saturation and weight: clipping the full low
+// end turns to mud and kills dynamics, so the heavy clipping happens above it
+// and the cabinet's own resonance puts the weight back afterwards.
+//
+// Getting the dose wrong in either direction is audible. All four stages at
+// 28-52 Hz gave a fat but undistorted tone; all four at 45-85 Hz — with the
+// rate bug on top — deleted the bottom octave and produced the thin, boxy
+// five-watt sound this is fixing.
+    stage(drive * 1.00, 28, 10000, 0.12)   // bright and forgiving
+  : stage(drive * 0.92, 34,  7000, 0.08)
+  : stage(drive * 0.86, 95,  5500, 0.04)   // tighter as the gain builds
+  : stage(drive * 0.78, 130, 4500, 0.00);  // last stage symmetric
 
 // Tone stack after the preamp, where a real one sits. The mid is a bell rather
 // than a shelf: a lead tone lives or dies on what happens around 650 Hz.
@@ -86,8 +122,10 @@ toneStack =
   : fi.peak_eq(mid, 650, 700)
   : fi.highshelf(3, treble, 3200);
 
-// Power stage: gentle, symmetric, and it is what stops the tone sounding like
-// a preamp plugged straight into a mixing desk.
-powerAmp = *(1.8) : saturate : *(0.55);
+// Power stage. Driven properly rather than politely: this is where the weight
+// comes from, and at 1.8 in and 0.55 out it was doing almost nothing while
+// throwing away 5 dB. A power amp that never works is what makes a model sound
+// like a five-watt practice combo.
+powerAmp = *(3.2) : saturate : *(0.85);
 
-process = fi.highpass(1, 30) : preamp : toneStack : powerAmp : *(ba.db2linear(master));
+process = fi.highpass(1, 22) : preamp : toneStack : powerAmp : *(ba.db2linear(master));
