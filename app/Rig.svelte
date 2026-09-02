@@ -20,12 +20,13 @@
   let roundTrip = $state<number | null>(null);
   let info = $state<import('../engine/engine.ts').EngineInfo | null>(null);
   let health = $state<Health | null>(null);
+  let cabTaps = $state(0);
   let showLatencyDetail = $state(false);
 
   // Enough control to judge by ear what is actually built. The real interface —
   // faders, the cord, the design system — is epic 2.
   const CONTROLS = ['in_trim', 'gate_threshold', 'amp_gain', 'amp_bass',
-                    'amp_mid', 'amp_treble', 'out_master'] as const;
+                    'amp_mid', 'amp_treble', 'cab_mix', 'out_master'] as const;
   const BYPASSES = STAGES.filter((st) => st.bypassParam !== null);
 
   let values = $state<Record<string, number>>(
@@ -70,6 +71,7 @@
       await engine.start();
       roundTrip = engine.roundTripMs;
       info = engine.info;
+      cabTaps = engine.cabTaps;
       state = 'running';
     } catch (error) {
       // Cause in one sentence, fix in one sentence. No apology, and nothing
@@ -164,6 +166,9 @@
           ? ` · +${info.conversionLatencyMs.toFixed(1)} ms converting`
           : ''}
       </span>
+    {/if}
+    {#if cabTaps > 0}
+      <span class="readout">cab {cabTaps} taps</span>
     {/if}
     {#if health?.timeToFirstNoteMs != null}
       <span class="readout">{(health.timeToFirstNoteMs / 1000).toFixed(1)} s to first note</span>

@@ -35,6 +35,11 @@ interface Chain {
   tc_input_brightness(): number;
   tc_probe_frames(): number;
   tc_probe_clear(): void;
+  tc_load_ir(byteCount: number): number;
+  tc_ir_ptr(): number;
+  tc_ir_capacity(): number;
+  tc_ir_taps(): number;
+  tc_max_ir_taps(): number;
 }
 
 const failures: string[] = [];

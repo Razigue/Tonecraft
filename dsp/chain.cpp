@@ -42,6 +42,7 @@ void Chain::reset() {
   window_.reset();
   gate_.reset();
   amp_.reset();
+  cab_.reset();
   limiter_.reset();
   for (uint32_t i = 0; i < kMeterSlotCount; ++i) meters_[i] = 0.0f;
 }
@@ -125,9 +126,21 @@ void Chain::process(const float* in, float* out, uint32_t frames) {
   }
   meterInto(METER_AMP, a, frames);
 
-  // --- Cab, reverb -------------------------------------------------------
-  // Stories 1.8 and 1.10.
+  // --- Cab ---------------------------------------------------------------
+  // Outside the oversampling window: a convolution is linear and generates no
+  // harmonics, so running it at 4x would be four times the cost for nothing
+  // (AD-2). It is also the stage that decides whether high gain sounds like an
+  // amplifier or like a wasp — everything the preamp made above 5 kHz leaves
+  // here.
+  if (!bypassed(STAGE_CAB)) {
+    cab_.setMix(params_[PARAM_CAB_MIX]);
+    cab_.process(a, b, frames);
+    float* swap = a; a = b; b = swap;
+  }
   meterInto(METER_CAB, a, frames);
+
+  // --- Reverb ------------------------------------------------------------
+  // Story 1.10.
   meterInto(METER_REVERB, a, frames);
 
   // --- Output ------------------------------------------------------------

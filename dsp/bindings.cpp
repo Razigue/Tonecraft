@@ -17,6 +17,10 @@ tonecraft::Boundary g_boundary;
 alignas(16) float g_input[tonecraft::kOversampledBlockFrames];
 alignas(16) float g_output[tonecraft::kOversampledBlockFrames];
 
+// Where the main thread writes the cabinet impulse response before asking us to
+// load it. Sized for the longest IR the direct-form FIR accepts.
+alignas(16) uint8_t g_ir[3 * sizeof(uint32_t) + tonecraft::kMaxIrTaps * sizeof(float)];
+
 bool g_initialised = false;
 
 }  // namespace
@@ -54,6 +58,17 @@ void tc_process(uint32_t frames) {
 // A bitmask of bypassed stages, resolved through declared ids (AD-21). The UI
 // already owns the parameters; this exists so a test can assert that the chain
 // and the schema agree about which stage a bypass belongs to.
+// Returns an IrStatus. Every way this can fail is resolved here, at init, and
+// named — process() has no error path (AD-13).
+int32_t tc_load_ir(uint32_t byte_count) {
+  return static_cast<int32_t>(g_boundary.chain().cab().load(g_ir, byte_count));
+}
+
+uint8_t* tc_ir_ptr() { return g_ir; }
+uint32_t tc_ir_capacity() { return sizeof(g_ir); }
+uint32_t tc_ir_taps() { return g_boundary.chain().cab().taps(); }
+uint32_t tc_max_ir_taps() { return tonecraft::kMaxIrTaps; }
+
 // Calibration reads these; nothing in the audio path does (FR-10).
 float tc_input_peak() { return g_boundary.chain().probe().peak(); }
 float tc_input_brightness() { return g_boundary.chain().probe().brightness(); }

@@ -26,11 +26,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${ROOT}/public/tonecraft.wasm"
 
-EXPORTS='_tc_init,_tc_process,_tc_set_param,_tc_get_param,_tc_input_ptr,_tc_output_ptr,_tc_meter_ptr,_tc_param_count,_tc_meter_count,_tc_block_frames,_tc_internal_sample_rate,_tc_added_latency_frames,_tc_resampling,_tc_oversample_latency_samples,_tc_bypass_mask,_tc_input_peak,_tc_input_brightness,_tc_probe_frames,_tc_probe_clear'
+EXPORTS='_tc_init,_tc_process,_tc_set_param,_tc_get_param,_tc_input_ptr,_tc_output_ptr,_tc_meter_ptr,_tc_param_count,_tc_meter_count,_tc_block_frames,_tc_internal_sample_rate,_tc_added_latency_frames,_tc_resampling,_tc_oversample_latency_samples,_tc_bypass_mask,_tc_input_peak,_tc_input_brightness,_tc_probe_frames,_tc_probe_clear,_tc_load_ir,_tc_ir_ptr,_tc_ir_capacity,_tc_ir_taps,_tc_max_ir_taps'
 
 # The Faust circuit is compiled to C++ first; both generated files are build
 # output and neither is committed (AD-15).
 bash "${ROOT}/scripts/build-amp.sh"
+npx tsx "${ROOT}/scripts/make-cab-ir.ts"
+cp "${ROOT}/assets/cab.tcir" "${ROOT}/public/cab.tcir"
 
 mkdir -p "$(dirname "${OUT}")"
 

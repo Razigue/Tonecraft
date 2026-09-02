@@ -33,6 +33,10 @@ interface ChainExports {
   tc_input_peak(): number;
   tc_input_brightness(): number;
   tc_probe_frames(): number;
+  tc_load_ir(byteCount: number): number;
+  tc_ir_ptr(): number;
+  tc_ir_capacity(): number;
+  tc_ir_taps(): number;
 }
 
 /** Metering cadence (AD-12). Thirty small messages a second is negligible. */
@@ -147,6 +151,26 @@ class TonecraftProcessor extends AudioWorkletProcessor {
         resampling: exports.tc_resampling() === 1,
         sampleRate,
       });
+      return;
+    }
+
+    if (data['type'] === 'ir') {
+      const exports = this.#exports;
+      if (exports === null) return;
+      const blob = new Uint8Array(data['bytes'] as ArrayBuffer);
+      if (blob.byteLength > exports.tc_ir_capacity()) {
+        this.port.postMessage({ type: 'ir-failed', status: 4 });
+        return;
+      }
+      new Uint8Array(exports.memory.buffer, exports.tc_ir_ptr(),
+                     exports.tc_ir_capacity()).set(blob);
+      const status = exports.tc_load_ir(blob.byteLength);
+      // Named at load, never discoverable later: process() has no error path.
+      this.port.postMessage(
+        status === 0
+          ? { type: 'ir-loaded', taps: exports.tc_ir_taps() }
+          : { type: 'ir-failed', status },
+      );
       return;
     }
 

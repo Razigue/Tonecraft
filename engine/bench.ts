@@ -25,6 +25,9 @@ interface Chain {
   tc_process(frames: number): void;
   tc_input_ptr(): number;
   tc_set_param(index: number, value: number): void;
+  tc_ir_ptr(): number;
+  tc_load_ir(bytes: number): number;
+  tc_ir_taps(): number;
 }
 
 const { instance } = await WebAssembly.instantiate(
@@ -60,11 +63,23 @@ console.log(`Budget: 25% of one core = ${(BLOCK_MS * 0.25).toFixed(4)} ms per bl
 
 // The amp is a stage like any other, so the honest comparison is with it
 // bypassed and with it running.
+const irBlob = readFileSync(join(ROOT, 'assets', 'cab.tcir'));
+new Uint8Array(heap, chain.tc_ir_ptr(), irBlob.length).set(irBlob);
+console.log(`  cabinet IR: ${chain.tc_load_ir(irBlob.length) === 0 ? chain.tc_ir_taps() : 0} taps loaded\n`);
+
 const AMP_BYPASS = 12;
+const CAB_BYPASS = 14;
 chain.tc_set_param(AMP_BYPASS, 1);
-const withoutAmp = measure('chain, amp bypassed');
+chain.tc_set_param(CAB_BYPASS, 1);
+const bare = measure('chain, amp and cab bypassed');
+
 chain.tc_set_param(AMP_BYPASS, 0);
-const withAmp = measure('chain with the amp at 4x');
+const withoutAmp = bare;
+const withAmpOnly = measure('  + the amp at 4x');
+
+chain.tc_set_param(CAB_BYPASS, 0);
+const withAmp = measure('  + the cabinet');
+console.log(`\n  the cabinet alone                  ${(withAmp - withAmpOnly).toFixed(1)}% of one core`);
 
 const amp = withAmp - withoutAmp;
 const budget = 25;

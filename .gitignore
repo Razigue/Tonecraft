@@ -54,3 +54,6 @@ Thumbs.db
 *.user.toml
 # Local Emscripten install (~1.7 GB). CI installs its own, pinned.
 .toolchain/
+
+# Copied from assets/ by the build. The source lives in assets/ and is committed.
+public/*.tcir

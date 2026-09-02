@@ -61,6 +61,7 @@ export class EngineError extends Error {
 
 const WASM_URL = '/tonecraft.wasm';
 const PROCESSOR_URL = '/tonecraft-processor.js';
+const IR_URL = '/cab.tcir';
 
 export class Engine {
   #context: AudioContext | null = null;
@@ -74,6 +75,7 @@ export class Engine {
   #dropouts = 0;
   #peak = 0;
   #brightness = 0;
+  #cabTaps = 0;
   /** Wall-clock arrival of each metering frame; the source of the jitter figure. */
   #meterArrivals: number[] = [];
   readonly #onMeters: ((meters: Meters) => void) | undefined;
@@ -88,6 +90,11 @@ export class Engine {
 
   get info(): EngineInfo | null {
     return this.#info;
+  }
+
+  /** Taps in the loaded cabinet impulse response, zero if none loaded. */
+  get cabTaps(): number {
+    return this.#cabTaps;
   }
 
   /**
@@ -260,6 +267,28 @@ export class Engine {
     // inserted here, ever — every node boundary is a buffer copy.
     context.createMediaStreamSource(stream).connect(node).connect(context.destination);
 
+    // The cabinet is content, not code, so its absence is survivable: without
+    // it the stage passes audio through, which sounds wrong but is honestly
+    // distinguishable from a dead chain.
+    await this.#loadIr(node);
+
+  }
+
+  async #loadIr(node: AudioWorkletNode): Promise<void> {
+    const response = await fetch(IR_URL);
+    if (!response.ok) return;
+    const bytes = await response.arrayBuffer();
+    const settled = new Promise<number>((resolve) => {
+      const previous = node.port.onmessage;
+      node.port.onmessage = (event: MessageEvent): void => {
+        const data = event.data as Record<string, unknown>;
+        if (data['type'] === 'ir-loaded') resolve(data['taps'] as number);
+        else if (data['type'] === 'ir-failed') resolve(0);
+        previous?.call(node.port, event);
+      };
+    });
+    node.port.postMessage({ type: 'ir', bytes }, [bytes]);
+    this.#cabTaps = await settled;
   }
 
   /** Continuous values go through AudioParam so they interpolate (FR-19, AD-20). */

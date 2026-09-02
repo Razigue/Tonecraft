@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "amp/amp.h"
+#include "cab/cab.h"
 #include "gate/gate.h"
 #include "oversample/window.h"
 #include "probe.h"
@@ -25,6 +26,7 @@ class Chain {
   float param(uint32_t index) const;
 
   Amp& amp() { return amp_; }
+  Cab& cab() { return cab_; }
   InputProbe& probe() { return probe_; }
   const InputProbe& probe() const { return probe_; }
 
@@ -45,6 +47,7 @@ class Chain {
   InputProbe probe_;
   Gate gate_;
   Amp amp_;
+  Cab cab_;
   OversampleWindow window_;
   Limiter limiter_;
   float params_[kParamCount];
@@ -54,5 +57,6 @@ class Chain {
 static_assert(Stage<Limiter>, "Limiter must satisfy the AD-19 stage contract");
 static_assert(Stage<Amp>, "Amp must satisfy the AD-19 stage contract");
 static_assert(Stage<Gate>, "Gate must satisfy the AD-19 stage contract");
+static_assert(Stage<Cab>, "Cab must satisfy the AD-19 stage contract");
 
 }  // namespace tonecraft
