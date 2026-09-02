@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "amp/amp.h"
+#include "gate/gate.h"
 #include "oversample/window.h"
 #include "limiter/limiter.h"
 #include "params.generated.h"
@@ -24,6 +25,10 @@ class Chain {
 
   Amp& amp() { return amp_; }
 
+  /// Whether a stage is bypassed, resolved through the bypass parameter id the
+  /// schema declares for it — never through its position in the chain (AD-21).
+  bool bypassed(uint32_t stage) const;
+
   /// Extra round-trip delay the oversampling window costs, in base-rate samples.
   static constexpr float oversampleLatencySamples() {
     return OversampleWindow::latencySamples();
@@ -34,6 +39,7 @@ class Chain {
  private:
   void meterInto(uint32_t slot, const float* buffer, uint32_t frames);
 
+  Gate gate_;
   Amp amp_;
   OversampleWindow window_;
   Limiter limiter_;
@@ -43,5 +49,6 @@ class Chain {
 
 static_assert(Stage<Limiter>, "Limiter must satisfy the AD-19 stage contract");
 static_assert(Stage<Amp>, "Amp must satisfy the AD-19 stage contract");
+static_assert(Stage<Gate>, "Gate must satisfy the AD-19 stage contract");
 
 }  // namespace tonecraft

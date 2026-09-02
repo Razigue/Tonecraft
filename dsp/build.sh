@@ -26,7 +26,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${ROOT}/public/tonecraft.wasm"
 
-EXPORTS='_tc_init,_tc_process,_tc_set_param,_tc_get_param,_tc_input_ptr,_tc_output_ptr,_tc_meter_ptr,_tc_param_count,_tc_meter_count,_tc_block_frames,_tc_internal_sample_rate,_tc_added_latency_frames,_tc_resampling,_tc_load_weights,_tc_weights_ptr,_tc_weights_capacity,_tc_weights_float_count,_tc_amp_loaded,_tc_oversample_latency_samples'
+EXPORTS='_tc_init,_tc_process,_tc_set_param,_tc_get_param,_tc_input_ptr,_tc_output_ptr,_tc_meter_ptr,_tc_param_count,_tc_meter_count,_tc_block_frames,_tc_internal_sample_rate,_tc_added_latency_frames,_tc_resampling,_tc_load_weights,_tc_weights_ptr,_tc_weights_capacity,_tc_weights_float_count,_tc_amp_loaded,_tc_oversample_latency_samples,_tc_bypass_mask'
 
 mkdir -p "$(dirname "${OUT}")"
 

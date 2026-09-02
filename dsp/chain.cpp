@@ -38,6 +38,7 @@ void Chain::init() {
 
 void Chain::reset() {
   window_.reset();
+  gate_.reset();
   amp_.reset();
   limiter_.reset();
   for (uint32_t i = 0; i < kMeterSlotCount; ++i) meters_[i] = 0.0f;
@@ -56,6 +57,13 @@ void Chain::setParam(uint32_t index, float value) {
 
 float Chain::param(uint32_t index) const {
   return index < kParamCount ? params_[index] : 0.0f;
+}
+
+bool Chain::bypassed(uint32_t stage) const {
+  if (stage >= kStageCount) return false;
+  const int32_t which = kStages[stage].bypass_param;
+  // -1 where bypass is forbidden — the input, the output and its limiter.
+  return which >= 0 && params_[static_cast<uint32_t>(which)] >= 0.5f;
 }
 
 // RMS of a block, written to a stage's declared meter slot (AD-21). The samples
@@ -78,9 +86,19 @@ void Chain::process(const float* in, float* out, uint32_t frames) {
   for (uint32_t i = 0; i < frames; ++i) a[i] = in[i] * trim;
   meterInto(METER_INPUT, a, frames);
 
-  // --- Gate, drive -------------------------------------------------------
-  // Stories 1.9 and 1.10.
+  // --- Gate --------------------------------------------------------------
+  // A bypassed stage is skipped outright rather than run with a neutral
+  // setting: it must cost nothing, and its meter then reports the level that
+  // passed through it untouched.
+  if (!bypassed(STAGE_GATE)) {
+    gate_.setThreshold(dbToLinear(params_[PARAM_GATE_THRESHOLD]));
+    gate_.process(a, b, frames);
+    float* swap = a; a = b; b = swap;
+  }
   meterInto(METER_GATE, a, frames);
+
+  // --- Drive -------------------------------------------------------------
+  // Story 1.10. It joins the oversampling window below, not here.
   meterInto(METER_DRIVE, a, frames);
 
   // --- The non-linear window ---------------------------------------------
@@ -90,11 +108,13 @@ void Chain::process(const float* in, float* out, uint32_t frames) {
   // no amount of EQ can remove. The drive's waveshaper joins this window in
   // story 1.10 and costs only its own arithmetic, because the resampling is
   // already paid for.
-  window_.process(a, b, frames, [this](const float* osIn, float* osOut, uint32_t osFrames) {
-    amp_.process(osIn, osOut, osFrames);
-  });
-  meterInto(METER_AMP, b, frames);
-  float* tmp = a; a = b; b = tmp;
+  if (!bypassed(STAGE_AMP)) {
+    window_.process(a, b, frames, [this](const float* osIn, float* osOut, uint32_t osFrames) {
+      amp_.process(osIn, osOut, osFrames);
+    });
+    float* swap = a; a = b; b = swap;
+  }
+  meterInto(METER_AMP, a, frames);
 
   // --- Cab, reverb -------------------------------------------------------
   // Stories 1.8 and 1.10.

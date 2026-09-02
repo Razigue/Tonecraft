@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { PARAMS, BLOCK_FRAMES, INTERNAL_SAMPLE_RATE } from '../schema/params.ts';
+import { PARAMS, STAGES, BLOCK_FRAMES, INTERNAL_SAMPLE_RATE } from '../schema/params.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CEILING = 0.944060876;
@@ -35,6 +35,7 @@ interface Chain {
   tc_weights_float_count(): number;
   tc_amp_loaded(): number;
   tc_oversample_latency_samples(): number;
+  tc_bypass_mask(): number;
 }
 
 const failures: string[] = [];
@@ -75,6 +76,43 @@ const ampGain = PARAMS.findIndex((p) => p.id === 'amp_gain');
 check('defaults are established without the loader calling _initialize',
   chain.tc_get_param(ampGain) === PARAMS[ampGain]!.default,
   `amp_gain ${chain.tc_get_param(ampGain)}, expected ${PARAMS[ampGain]!.default}`);
+
+// The stronger form of the same rule, and the one that catches it wherever it
+// hides. A value computed by a static initialiser reads as zero when the loader
+// skips `_initialize` — and a zero coefficient does not crash, it misbehaves
+// quietly. It has already happened twice: once in Chain and Limiter, once in
+// Gate, where a hysteresis ratio of zero held the gate open for every signal
+// while every other test still passed.
+//
+// So rather than grep for the pattern, run the module both ways and compare
+// the audio. Nothing that changes behaviour can escape this.
+{
+  const renderSignature = async (callInitialize: boolean): Promise<Float32Array> => {
+    const fresh = await WebAssembly.instantiate(bytes, {});
+    const mod = fresh.instance.exports as unknown as Chain & { _initialize?: () => void };
+    if (callInitialize) mod._initialize?.();
+    mod.tc_init(INTERNAL_SAMPLE_RATE);
+    const heapB = mod.memory.buffer;
+    const inB = new Float32Array(heapB, mod.tc_input_ptr(), BLOCK_FRAMES);
+    const outB = new Float32Array(heapB, mod.tc_output_ptr(), BLOCK_FRAMES);
+    // Deliberately quiet: this is the level at which a wrongly-zeroed gate
+    // threshold shows up, and loud signals would hide it behind the limiter.
+    for (let b = 0; b < 80; b += 1) {
+      for (let i = 0; i < BLOCK_FRAMES; i += 1) {
+        const n = b * BLOCK_FRAMES + i;
+        inB[i] = 0.0008 * Math.sin((2 * Math.PI * 440 * n) / INTERNAL_SAMPLE_RATE);
+      }
+      mod.tc_process(BLOCK_FRAMES);
+    }
+    return Float32Array.from(outB);
+  };
+
+  const withInit = await renderSignature(true);
+  const withoutInit = await renderSignature(false);
+  check('the module renders identically with and without _initialize',
+    withInit.every((v, i) => v === withoutInit[i]),
+    'a value somewhere is computed by a static initialiser');
+}
 
 const heap = chain.memory.buffer;
 const input = new Float32Array(heap, chain.tc_input_ptr(), BLOCK_FRAMES);
@@ -173,6 +211,76 @@ chain.tc_init(INTERNAL_SAMPLE_RATE);
 run(sine, 4);
 check('the same input and state produce identical output (NFR-9)',
   first.every((v, i) => v === output[i]));
+
+// --- the gate and bypass (FR-11, FR-20, AD-21) -----------------------------
+
+chain.tc_init(INTERNAL_SAMPLE_RATE);
+setDefaults();
+chain.tc_set_param(index('in_trim'), 0);
+chain.tc_set_param(index('out_master'), 0);
+
+const quiet = (n: number): number =>
+  0.0005 * Math.sin((2 * Math.PI * 440 * n) / INTERNAL_SAMPLE_RATE);
+const loud = (n: number): number =>
+  0.4 * Math.sin((2 * Math.PI * 440 * n) / INTERNAL_SAMPLE_RATE);
+
+const peakOf = (): number => {
+  let peak = 0;
+  for (let i = 0; i < BLOCK_FRAMES; i += 1) peak = Math.max(peak, Math.abs(output[i]!));
+  return peak;
+};
+
+chain.tc_set_param(index('gate_threshold'), -40);
+run(quiet, 60);
+const gatedPeak = peakOf();
+check('the gate silences a signal below its threshold', gatedPeak < 1e-4,
+  `peak ${gatedPeak.toExponential(2)}`);
+
+chain.tc_init(INTERNAL_SAMPLE_RATE);
+setDefaults();
+chain.tc_set_param(index('in_trim'), 0);
+chain.tc_set_param(index('out_master'), 0);
+chain.tc_set_param(index('gate_threshold'), -40);
+run(loud, 60);
+check('and passes one above it', peakOf() > 0.3, `peak ${peakOf().toFixed(3)}`);
+
+// Bypassed, the same quiet signal must come straight through.
+chain.tc_init(INTERNAL_SAMPLE_RATE);
+setDefaults();
+chain.tc_set_param(index('in_trim'), 0);
+chain.tc_set_param(index('out_master'), 0);
+chain.tc_set_param(index('gate_threshold'), -40);
+chain.tc_set_param(index('gate_bypass'), 1);
+run(quiet, 60);
+check('bypassing the gate stops it processing entirely', peakOf() > 4e-4,
+  `peak ${peakOf().toExponential(2)}`);
+
+// A bypassed stage's meter reports what passed through it untouched.
+const gateSlot = STAGES.findIndex((st) => st.id === 'gate');
+const inputSlot = STAGES.findIndex((st) => st.id === 'input');
+check('a bypassed stage meters the level that passed through it',
+  Math.abs(meters[gateSlot]! - meters[inputSlot]!) < 1e-6,
+  `${meters[gateSlot]} vs ${meters[inputSlot]}`);
+
+// AD-21: the bypass belongs to the stage the schema says it belongs to, and is
+// found through that declared id rather than through a position in the chain.
+for (const stage of STAGES) {
+  setDefaults();
+  if (stage.bypassParam === null) continue;
+  chain.tc_set_param(index(stage.bypassParam), 1);
+  const expected = 1 << STAGES.indexOf(stage);
+  check(`bypassing ${stage.id} marks ${stage.id} and nothing else`,
+    chain.tc_bypass_mask() === expected,
+    `mask ${chain.tc_bypass_mask().toString(2)}, expected ${expected.toString(2)}`);
+}
+
+setDefaults();
+check('no stage is bypassed by default', chain.tc_bypass_mask() === 0);
+check('the input and the output cannot be bypassed at all (FR-18)',
+  STAGES.filter((st) => st.bypassParam === null).map((st) => st.id).join(',') === 'input,output');
+
+chain.tc_init(INTERNAL_SAMPLE_RATE);
+setDefaults();
 
 // --- the weights loader (FR-17, AD-14) -------------------------------------
 // Every way this can fail is detected at init and named. process() has no

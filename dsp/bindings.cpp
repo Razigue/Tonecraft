@@ -70,6 +70,17 @@ uint32_t tc_weights_capacity() { return sizeof(g_weights); }
 uint32_t tc_weights_float_count() { return tonecraft::kWeightsFloatCount; }
 uint32_t tc_amp_loaded() { return g_boundary.chain().amp().loaded() ? 1u : 0u; }
 
+// A bitmask of bypassed stages, resolved through declared ids (AD-21). The UI
+// already owns the parameters; this exists so a test can assert that the chain
+// and the schema agree about which stage a bypass belongs to.
+uint32_t tc_bypass_mask() {
+  uint32_t mask = 0;
+  for (uint32_t s = 0; s < tonecraft::kStageCount; ++s) {
+    if (g_boundary.chain().bypassed(s)) mask |= (1u << s);
+  }
+  return mask;
+}
+
 void tc_set_param(uint32_t index, float value) {
   g_boundary.chain().setParam(index, value);
 }
