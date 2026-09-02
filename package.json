@@ -7,11 +7,15 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "npm run schema:generate && astro build",
+    "build": "npm run schema:generate && npm run build:worklet && astro build",
     "preview": "astro preview",
     "astro": "astro",
     "schema:generate": "tsx schema/generate.ts",
-    "schema:check": "tsx schema/generate.ts --check"
+    "schema:check": "tsx schema/generate.ts --check",
+    "build:wasm": "bash dsp/build.sh",
+    "build:worklet": "tsx engine/build-worklet.ts",
+    "check:flags": "bash scripts/check-build-flags.sh",
+    "test:wasm": "tsx engine/wasm.test.ts"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",

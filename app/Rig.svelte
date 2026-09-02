@@ -1,0 +1,145 @@
+<script lang="ts">
+  /**
+   * The bare harness for story 1.3. Deliberately plain: the design system, the
+   * faders and the cord are epic 2, and building them against an engine that
+   * does not exist yet would be building against nothing.
+   *
+   * What this proves is the path — guitar to headphones through real WASM — and
+   * that the numbers coming back are real.
+   */
+  import { Engine, EngineError, type Meters } from '../engine/engine.ts';
+  import { STAGES } from '../schema/params.ts';
+
+  type State = 'idle' | 'starting' | 'running' | 'failed';
+
+  let state = $state<State>('idle');
+  let problem = $state<{ cause: string; fix: string } | null>(null);
+  let rms = $state<number[]>(new Array(STAGES.length).fill(0));
+  let dropouts = $state(0);
+  let roundTrip = $state<number | null>(null);
+
+  let engine: Engine | null = null;
+
+  function onMeters(meters: Meters): void {
+    rms = Array.from(meters.rms);
+    dropouts = meters.dropouts;
+  }
+
+  async function start(): Promise<void> {
+    state = 'starting';
+    problem = null;
+    engine = new Engine({ onMeters });
+    try {
+      await engine.start();
+      roundTrip = engine.roundTripMs;
+      state = 'running';
+    } catch (error) {
+      // Cause in one sentence, fix in one sentence. No apology, and nothing
+      // blocks: the button stays available.
+      if (error instanceof EngineError) {
+        const [cause, fix] = error.message.split(/(?<=\.)\s+/, 2);
+        problem = { cause: cause ?? error.message, fix: fix ?? '' };
+      } else {
+        problem = { cause: 'The audio engine did not start.', fix: 'Reload the page and try again.' };
+      }
+      state = 'failed';
+    }
+  }
+
+  async function stop(): Promise<void> {
+    await engine?.stop();
+    engine = null;
+    state = 'idle';
+    roundTrip = null;
+  }
+</script>
+
+<section>
+  <header>
+    <h2>Pass-through harness</h2>
+    <p>
+      Story 1.3. Your signal crosses the real WebAssembly chain and comes back
+      unaltered, except for the output limiter — which is always on and has no
+      control, here or anywhere else.
+    </p>
+  </header>
+
+  <div class="controls">
+    {#if state === 'running'}
+      <button type="button" onclick={stop}>Stop</button>
+    {:else}
+      <button type="button" onclick={start} disabled={state === 'starting'}>
+        {state === 'starting' ? 'Starting…' : 'Start'}
+      </button>
+    {/if}
+
+    {#if roundTrip !== null}
+      <span class="readout">{roundTrip.toFixed(1)} ms round trip</span>
+    {/if}
+    {#if state === 'running'}
+      <span class="readout">{dropouts} dropouts</span>
+    {/if}
+  </div>
+
+  {#if problem !== null}
+    <p class="problem">
+      <span>{problem.cause}</span>
+      {#if problem.fix !== ''}<span class="fix">{problem.fix}</span>{/if}
+    </p>
+  {/if}
+
+  {#if state === 'running'}
+    <ol class="meters">
+      {#each STAGES as stage, i (stage.id)}
+        <li>
+          <span class="label">{stage.label}</span>
+          <span class="bar" style="--level: {Math.min(1, (rms[i] ?? 0) * 3)}"></span>
+          <span class="value">{(rms[i] ?? 0).toFixed(3)}</span>
+        </li>
+      {/each}
+    </ol>
+    <p class="note">
+      Every stage between the input and the output reports the same level: there
+      is no DSP between them yet. Stories 1.6 to 1.10 change that.
+    </p>
+  {/if}
+</section>
+
+<style>
+  section { display: flex; flex-direction: column; gap: 1.5rem; }
+  header { display: flex; flex-direction: column; gap: 0.5rem; }
+  h2 { font-size: 1rem; font-weight: 500; margin: 0; }
+  p { margin: 0; color: var(--muted); max-width: 34rem; }
+
+  .controls { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+
+  button {
+    font: inherit;
+    padding: 0.5rem 1.25rem;
+    min-height: 40px;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  .readout {
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+
+  .problem { display: flex; flex-direction: column; gap: 0.25rem; }
+  .fix { color: var(--muted); }
+
+  .meters { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+  .meters li { display: grid; grid-template-columns: 4rem 1fr 4rem; gap: 0.75rem; align-items: center; }
+  .label { font-size: 13px; }
+  .bar { height: 4px; background: currentColor; opacity: calc(0.15 + var(--level) * 0.85); }
+  .value { font-family: ui-monospace, monospace; font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+
+  .note { font-size: 13px; }
+</style>

@@ -50,7 +50,24 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-      # Story 1.3 adds the WASM build, using EMSDK_VERSION above.
+      # AD-4: relaxed SIMD must appear in no build configuration, ever.
+      - name: Check build flags
+        run: npm run check:flags
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache
+
+      - name: Build the DSP chain to WebAssembly
+        run: npm run build:wasm
+
+      # Drives the compiled chain directly and asserts on what comes back:
+      # pass-through, a limiter nothing can defeat, and identical output for
+      # identical input (NFR-9).
+      - name: Verify the compiled chain
+        run: npm run test:wasm
+
       # Story 4.1 adds the Node renderer between the WASM build and astro build.
 
       - run: npm run build
