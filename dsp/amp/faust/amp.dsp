@@ -47,12 +47,20 @@ master = hslider("master", -6, -24, 12, 0.001);
 // and a hard one. It sounded saturated and felt dead, and no amount of gain
 // tuning could fix it, because the flat region *is* the dead zone.
 //
-// x / (1 + |x|) never goes flat. It approaches unity and keeps approaching it,
-// so playing harder always gives more, and the guitar's volume knob still
-// cleans it up. Its knee is softer than tanh's, which means it starts
-// distorting earlier and more gradually — which is what a cascade of valve
-// stages does anyway. One divide and one absolute value.
-saturate(x) = x / (1.0 + abs(x));
+// x / (1 + |x|) fixed the flat region but replaced it with a different problem:
+// its knee is so soft that it starts compressing immediately and reaches its
+// asymptote early. With every stage sitting up there it flat-topped the output
+// at a fixed level whatever came in — measured at over a thousand flat-topped
+// samples on a plucked low E, and the peak pinned at 0.348 from a 0.21 input to
+// a 0.69 one. That is heard as the bass clipping, and simultaneously as *less*
+// distortion, because a soft curve held at its asymptote rounds a waveform off
+// rather than enriching it.
+//
+// x / sqrt(1 + x^2) stays near-linear to about 0.5, bends through a defined
+// knee, and still never goes flat. That gives a breakup point: below it the
+// amp follows your picking, above it it distorts. One multiply, one add, one
+// reciprocal square root — and WebAssembly has that as an instruction.
+saturate(x) = x / sqrt(1.0 + x * x);
 
 // Asymmetric soft clipping. The offset pushes the signal off centre so the two
 // halves of the wave clip differently, which is what produces even harmonics;
@@ -74,7 +82,10 @@ stage(g, hp, lp, offset) =
 // The exponent decides how hard each stage is driven. At 0.25 the first two
 // stages barely clipped and the third harmonic sat 15 dB below the fundamental
 // — audibly a crunch, not a high-gain amp. At 0.45 every stage is working.
-drive = ba.db2linear(gain * 0.40);
+// Lower than it was, because the knee moved. The stages have to *work* in the
+// bend rather than sit past it: pinned stages measure as heavy saturation and
+// sound like a compressor.
+drive = ba.db2linear(gain * 0.30);
 
 // Corners chosen against a measured response, not by feel. Four first-order
 // highpasses cascade: at 100 Hz, corners of 110/95/120/140 stacked up to about
@@ -105,10 +116,27 @@ preamp =
 // 28-52 Hz gave a fat but undistorted tone; all four at 45-85 Hz — with the
 // rate bug on top — deleted the bottom octave and produced the thin, boxy
 // five-watt sound this is fixing.
-    stage(drive * 1.00, 28, 10000, 0.12)   // bright and forgiving
-  : stage(drive * 0.92, 34,  7000, 0.08)
-  : stage(drive * 0.86, 95,  5500, 0.04)   // tighter as the gain builds
-  : stage(drive * 0.78, 130, 4500, 0.00);  // last stage symmetric
+// The gain is deliberately lopsided, and this is the whole trick.
+//
+// Stages one and two see the full instrument and are driven gently: they add
+// warmth and keep the low end intact, because clipping a full bottom end is
+// what makes bass fart out. Stages three and four see a signal cut below 95 Hz
+// and are driven hard: that is where the distortion comes from, in the range a
+// lead actually occupies. The cabinet's resonance puts the weight back after.
+//
+// Driving all four evenly is the trap. It forces a choice between a tight amp
+// with no gain and a saturated one whose bass collapses, and it is why the
+// earlier attempts could never have both.
+// The offsets are what bend the curve off centre and produce even harmonics —
+// the difference between a valve stage sounding warm and sounding like a fuzz
+// box. They were set when these stages were driven three times harder; at the
+// gentler drive they barely tilted the curve at all and the second harmonic
+// fell to 42 dB below the fundamental. Asymmetry belongs in the early stages,
+// where the signal is still whole.
+    stage(drive * 0.50,  28, 10000, 0.34)   // gentle, keeps the instrument whole
+  : stage(drive * 0.60,  34,  7000, 0.24)
+  : stage(drive * 1.45,  95,  5500, 0.10)   // this is where the gain lives
+  : stage(drive * 1.70, 130,  4500, 0.00);  // last stage symmetric
 
 // Tone stack after the preamp, where a real one sits. The mid is a bell rather
 // than a shelf: a lead tone lives or dies on what happens around 650 Hz.
@@ -122,10 +150,10 @@ toneStack =
   : fi.peak_eq(mid, 650, 700)
   : fi.highshelf(3, treble, 3200);
 
-// Power stage. Driven properly rather than politely: this is where the weight
-// comes from, and at 1.8 in and 0.55 out it was doing almost nothing while
-// throwing away 5 dB. A power amp that never works is what makes a model sound
-// like a five-watt practice combo.
-powerAmp = *(3.2) : saturate : *(0.85);
+// Power stage. It has to work on peaks and let quieter playing through, which
+// at 3.2 in it did not — it was saturated continuously and was most of the
+// flat-topping. This drives it into the knee on a hard pick and leaves it
+// alone below that, which is what gives an amplifier its bloom.
+powerAmp = *(1.6) : saturate : *(1.1);
 
 process = fi.highpass(1, 22) : preamp : toneStack : powerAmp : *(ba.db2linear(master));

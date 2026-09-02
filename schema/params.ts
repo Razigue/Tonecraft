@@ -159,11 +159,12 @@ export const PARAMS: readonly Param[] = [
     min: 0, max: 1, default: 0, taper: 'switch' },
 
   // --- Amp ---------------------------------------------------------------
-  // 28 is saturated with a few dB of picking dynamics still in it. Past about
-  // 32 the amp stops responding to how hard you play at all — which measures
-  // as more distortion and sounds like less.
+  // 27 sits where saturation and feel cross: about 3 dB of picking dynamics
+  // left, and the third harmonic 13 dB under the fundamental. Below 18 it is a
+  // crunch; past 32 the amp stops responding to how hard you play at all, which
+  // measures as more distortion and is heard as less.
   { id: 'amp_gain', stage: 'amp', label: 'Gain', unit: 'dB',
-    min: 0, max: 40, default: 28, taper: 'linear' },
+    min: 0, max: 40, default: 27, taper: 'linear' },
   { id: 'amp_bass', stage: 'amp', label: 'Bass', unit: 'dB',
     min: -12, max: 12, default: 0, taper: 'linear' },
   // Not scooped. A scoop plus the cabinet's own dip around 700 Hz took all the
@@ -176,7 +177,7 @@ export const PARAMS: readonly Param[] = [
   // whole signal — a limiter working continuously is a compressor nobody asked
   // for.
   { id: 'amp_master', stage: 'amp', label: 'Master', unit: 'dB',
-    min: -24, max: 12, default: -4, taper: 'linear' },
+    min: -24, max: 12, default: -7, taper: 'linear' },
   { id: 'amp_bypass', stage: 'amp', label: 'Bypass', unit: 'bool',
     min: 0, max: 1, default: 0, taper: 'switch' },
 
