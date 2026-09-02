@@ -1,0 +1,837 @@
+<title>Tout part de l'écoute</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@125,300&family=IBM+Plex+Mono:wght@400&family=Inter+Tight:wght@400;500&display=swap">
+
+<style>
+/* Palette et typographie reprises telles quelles de DESIGN.md — six tokens,
+   pas de dégradé, une seule ombre d'élévation. Le mode sombre suit la règle
+   du document : --ink et --chalk échangent leurs rôles, --celadon monte. */
+:root {
+  --paper: #E7E8E2;
+  --raised: #F4F4F0;
+  --text: #16181B;
+  --muted: #767A78;
+  --accent: #8FB09A;
+  --focus: #4A46D9;
+  --alert: #B24A34;
+  --line: rgba(22, 24, 27, 0.13);
+  --line-strong: rgba(22, 24, 27, 0.28);
+  --shadow: 0 1px 2px rgba(22, 24, 27, 0.06);
+  --accent-wash: rgba(143, 176, 154, 0.16);
+  --alert-wash: rgba(178, 74, 52, 0.10);
+
+  --display: "Anybody", "Arial Narrow", system-ui, sans-serif;
+  --body: "Inter Tight", "Inter", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --u: 8px;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #16181B;
+    --raised: #1E2125;
+    --text: #E7E8E2;
+    --muted: #8E9391;
+    --accent: #A6C4B0;
+    --focus: #7A77E8;
+    --alert: #C9614A;
+    --line: rgba(231, 232, 226, 0.13);
+    --line-strong: rgba(231, 232, 226, 0.3);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+    --accent-wash: rgba(166, 196, 176, 0.13);
+    --alert-wash: rgba(201, 97, 74, 0.13);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #16181B;
+  --raised: #1E2125;
+  --text: #E7E8E2;
+  --muted: #8E9391;
+  --accent: #A6C4B0;
+  --focus: #7A77E8;
+  --alert: #C9614A;
+  --line: rgba(231, 232, 226, 0.13);
+  --line-strong: rgba(231, 232, 226, 0.3);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --accent-wash: rgba(166, 196, 176, 0.13);
+  --alert-wash: rgba(201, 97, 74, 0.13);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.shell {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: calc(var(--u) * 7) calc(var(--u) * 3) calc(var(--u) * 12);
+}
+
+/* ---- Le cordon. Rail unique à gauche, un nœud par étage de la séance.
+       Son opacité suit le défilement, comme celle du vrai cordon suit
+       l'amplitude. Jamais de canvas. ---- */
+.chain {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: calc(var(--u) * 3);
+}
+
+.rail {
+  position: relative;
+  grid-column: 1;
+  grid-row: 1 / -1;
+  justify-self: center;
+  width: 1px;
+  background: var(--line);
+}
+
+.rail-live {
+  position: absolute;
+  inset: 0 0 auto 0;
+  width: 1px;
+  height: 0;
+  background: var(--accent);
+  transition: height 90ms linear;
+}
+
+.stage { grid-column: 2; }
+
+.node {
+  grid-column: 1;
+  justify-self: center;
+  position: relative;
+  z-index: 1;
+  width: 7px;
+  height: 7px;
+  margin-top: calc(var(--u) * 3.5);
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  transition: background 240ms var(--ease), box-shadow 240ms var(--ease);
+}
+
+.node.lit {
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* ---- Typographie ---- */
+.eyebrow {
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 300;
+  line-height: 1.2;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+
+h1 {
+  font-family: var(--display);
+  font-weight: 300;
+  font-size: clamp(30px, 6.4vw, 52px);
+  line-height: 1.04;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-wrap: balance;
+  margin: calc(var(--u) * 2.5) 0 0;
+}
+
+h2 {
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 300;
+  line-height: 1.2;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text);
+  margin: 0;
+}
+
+h3 {
+  font-family: var(--body);
+  font-weight: 500;
+  font-size: 20px;
+  line-height: 1.3;
+  text-wrap: balance;
+  margin: calc(var(--u)) 0 0;
+}
+
+p { margin: calc(var(--u) * 1.5) 0 0; max-width: 62ch; }
+.lede { font-size: 17px; color: var(--muted); max-width: 58ch; }
+.small { font-size: 13px; color: var(--muted); }
+strong { font-weight: 500; }
+
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* ---- Modules ---- */
+.module {
+  background: var(--raised);
+  border-radius: 2px;
+  box-shadow: var(--shadow);
+  padding: calc(var(--u) * 4);
+  margin-top: calc(var(--u) * 3);
+}
+
+.module:first-of-type { margin-top: 0; }
+
+.module-head {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 2);
+  flex-wrap: wrap;
+}
+
+.step {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+header.masthead { margin-bottom: calc(var(--u) * 7); }
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 4);
+  margin-top: calc(var(--u) * 4);
+  padding-top: calc(var(--u) * 3);
+  border-top: 1px solid var(--line);
+}
+
+.stat-v {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 26px;
+  line-height: 1;
+  display: block;
+}
+
+.stat-k {
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 300;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: block;
+  margin-top: var(--u);
+}
+
+/* ---- Citations de l'utilisateur ---- */
+.said {
+  margin: calc(var(--u) * 3) 0 0;
+  padding-left: calc(var(--u) * 2.5);
+  border-left: 2px solid var(--accent);
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+.said .who {
+  display: block;
+  margin-top: var(--u);
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 300;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.asked {
+  margin: calc(var(--u) * 3) 0 0;
+  padding-left: calc(var(--u) * 2.5);
+  border-left: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* ---- La décomposition en cinq bandes ---- */
+.strips {
+  list-style: none;
+  margin: calc(var(--u) * 3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.strips li {
+  background: var(--raised);
+  padding: calc(var(--u) * 1.75) calc(var(--u) * 2);
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 2);
+  font-size: 14px;
+}
+
+.strips li.is-number { background: var(--accent-wash); }
+
+.strips .tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ---- Paires de contradictions ---- */
+.pairs {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 3);
+  margin-top: calc(var(--u) * 3);
+}
+
+.pair { border-top: 1px solid var(--line); padding-top: calc(var(--u) * 2); }
+
+.pair-sides {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.5);
+  flex-wrap: wrap;
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 300;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.versus { color: var(--muted); letter-spacing: 0.05em; }
+
+/* ---- Renversement : deux moments face à face ---- */
+.flip {
+  display: grid;
+  gap: calc(var(--u) * 2);
+  grid-template-columns: 1fr;
+  margin-top: calc(var(--u) * 3);
+}
+
+@media (min-width: 680px) { .flip { grid-template-columns: 1fr 1fr; } }
+
+.moment {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: calc(var(--u) * 2.5);
+}
+
+.moment.after { border-color: var(--accent); background: var(--accent-wash); }
+.moment q { font-size: 15px; line-height: 1.45; quotes: "«\00a0" "\00a0»"; }
+
+/* ---- Tableaux ---- */
+.scroller { overflow-x: auto; margin-top: calc(var(--u) * 3); }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 460px;
+  font-size: 14px;
+}
+
+th {
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 300;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  padding: 0 calc(var(--u) * 2) var(--u) 0;
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+
+td {
+  padding: calc(var(--u) * 1.5) calc(var(--u) * 2) calc(var(--u) * 1.5) 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+td:last-child, th:last-child { padding-right: 0; }
+td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+
+.verdict {
+  display: inline-block;
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 300;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* ---- MoSCoW ---- */
+.tiers {
+  display: grid;
+  gap: calc(var(--u) * 2);
+  grid-template-columns: 1fr;
+  margin-top: calc(var(--u) * 3);
+}
+
+@media (min-width: 720px) { .tiers { grid-template-columns: 1fr 1fr; } }
+
+.tier {
+  border-top: 2px solid var(--line-strong);
+  padding-top: calc(var(--u) * 2);
+}
+
+.tier.must { border-top-color: var(--accent); }
+.tier.wont { border-top-color: var(--alert); }
+
+.tier ul {
+  margin: calc(var(--u) * 1.5) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 0.75);
+  font-size: 14px;
+}
+
+.tier li { padding-left: calc(var(--u) * 2); position: relative; }
+
+.tier li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.6em;
+  width: 6px;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+.tier.wont li { color: var(--muted); }
+
+/* ---- Synthèse, le climax ---- */
+.synthesis {
+  margin-top: calc(var(--u) * 3);
+  padding: calc(var(--u) * 6) calc(var(--u) * 4);
+  background: var(--text);
+  color: var(--paper);
+  border-radius: 2px;
+}
+
+.synthesis .eyebrow, .synthesis h2 { color: var(--accent); }
+.synthesis p { color: var(--paper); opacity: 0.82; }
+
+.thesis {
+  font-family: var(--display);
+  font-weight: 300;
+  font-size: clamp(26px, 5.4vw, 44px);
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-wrap: balance;
+  margin: calc(var(--u) * 2) 0 0;
+}
+
+.causal {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.5);
+  margin-top: calc(var(--u) * 5);
+  padding-bottom: var(--u);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.causal .link { flex: 0 0 auto; max-width: 15ch; opacity: 0.85; }
+.causal .link:last-child { color: var(--accent); opacity: 1; }
+
+.causal .hop {
+  flex: 0 0 22px;
+  height: 1px;
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+/* ---- Le piège ---- */
+.trap {
+  margin-top: calc(var(--u) * 3);
+  border-left: 2px solid var(--alert);
+  background: var(--alert-wash);
+  border-radius: 0 2px 2px 0;
+  padding: calc(var(--u) * 3) calc(var(--u) * 4);
+}
+
+.trap h2 { color: var(--alert); }
+
+footer {
+  margin-top: calc(var(--u) * 8);
+  padding-top: calc(var(--u) * 3);
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+footer code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* ---- Séquence de chargement : modules en ordre de signal, 40 ms d'écart,
+       240 ms chacun. Reprise de DESIGN.md §7. ---- */
+@media (prefers-reduced-motion: no-preference) {
+  .stage {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: rise 240ms var(--ease) forwards;
+  }
+  .stage:nth-of-type(1) { animation-delay: 0ms; }
+  .stage:nth-of-type(2) { animation-delay: 40ms; }
+  .stage:nth-of-type(3) { animation-delay: 80ms; }
+  .stage:nth-of-type(4) { animation-delay: 120ms; }
+  .stage:nth-of-type(5) { animation-delay: 160ms; }
+  .stage:nth-of-type(6) { animation-delay: 200ms; }
+  .stage:nth-of-type(7) { animation-delay: 240ms; }
+  .stage:nth-of-type(8) { animation-delay: 280ms; }
+  .stage:nth-of-type(9) { animation-delay: 320ms; }
+}
+
+@keyframes rise {
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 620px) {
+  .chain { grid-template-columns: minmax(0, 1fr); }
+  .rail, .node { display: none; }
+  .module { padding: calc(var(--u) * 3); }
+  .synthesis { padding: calc(var(--u) * 4) calc(var(--u) * 3); }
+}
+</style>
+
+<div class="shell">
+
+  <header class="masthead">
+    <p class="eyebrow">Tonecraft · séance de cadrage · 26 août 2026</p>
+    <h1>Tout part de l'écoute</h1>
+    <p class="lede">Quatre techniques passées sur trois documents qui se contredisaient. Ce qui en sort n'est pas une liste de fonctionnalités : c'est un produit dont le moteur n'est plus le produit.</p>
+    <div class="stats">
+      <div><span class="stat-v">83</span><span class="stat-k">entrées</span></div>
+      <div><span class="stat-v">4</span><span class="stat-k">techniques</span></div>
+      <div><span class="stat-v">8</span><span class="stat-k">contradictions</span></div>
+      <div><span class="stat-v">9</span><span class="stat-k">décisions</span></div>
+    </div>
+  </header>
+
+  <div class="chain">
+    <div class="rail" aria-hidden="true"><div class="rail-live" id="railLive"></div></div>
+
+    <div class="node" aria-hidden="true"></div>
+    <section class="stage">
+      <div class="module">
+        <div class="module-head">
+          <span class="step">00</span>
+          <h2>Point de départ</h2>
+        </div>
+        <h3>Trois documents cohérents chacun, en désaccord sur huit points</h3>
+        <p><code class="num">CLAUDE.md</code>, <code class="num">PRODUCT.md</code> et <code class="num">DESIGN.md</code> avaient été écrits séparément. Le plus grave des écarts : l'élément signature du produit — le cordon — reposait sur un <code class="num">SharedArrayBuffer</code>, un mécanisme que les règles du dépôt interdisent explicitement parce que l'hébergement ne peut pas poser les en-têtes qu'il exige.</p>
+        <p class="small">Posture retenue pour la séance : partenaire créatif. Toute idée est attribuée à son auteur dans le journal, ce qui rend le bilan honnête.</p>
+      </div>
+    </section>
+
+    <div class="node" aria-hidden="true"></div>
+    <section class="stage">
+      <div class="module">
+        <div class="module-head">
+          <span class="step">01</span>
+          <h2>Constraint Mapping</h2>
+        </div>
+        <h3>La contrainte défendue le plus fort était cinq contraintes empilées</h3>
+        <p class="asked">« Dans ta colonne décret, lequel défendrais-tu le plus violemment — tout en sachant, au fond, que tu ne l'as jamais réellement vérifié ? »</p>
+        <blockquote class="said">le coût d'infra zéro<span class="who">Shinkei</span></blockquote>
+        <ul class="strips">
+          <li class="is-number"><span class="tag">un chiffre</span><span>Ne pas payer</span></li>
+          <li><span class="tag">la vraie valeur</span><span>Ne pas administrer</span></li>
+          <li><span class="tag">la vraie valeur</span><span>Durer sans maintenance</span></li>
+          <li><span class="tag">la vraie valeur</span><span>Ne détenir aucune donnée de personne</span></li>
+          <li><span class="tag">la vraie valeur</span><span>Incarner l'argument « rien d'installé »</span></li>
+        </ul>
+        <p>Une seule des cinq est un montant. Tant qu'elles voyageaient groupées sous un même mot, elles bloquaient en bloc.</p>
+        <p><strong>Dissolution.</strong> Le cordon n'a jamais eu besoin d'un <code class="num">SharedArrayBuffer</code>. Le RMS de chaque étage est calculé dans le worklet unique — on y est déjà, c'est gratuit — écrit dans un <code class="num">Float32Array</code> pré-alloué et posté à <span class="num">30 Hz</span>. Trente messages par seconde, quelques dizaines d'octets. Plus de COOP/COEP, plus de canvas, et l'hébergement statique tient.</p>
+        <p><strong>Verdict.</strong> Une fois les comptes sortis du périmètre, la contrainte ne bloque plus rien. Elle change de nature : ce n'est plus une limite subie, c'est l'identité du produit.</p>
+      </div>
+    </section>
+
+    <div class="node" aria-hidden="true"></div>
+    <section class="stage">
+      <div class="module">
+        <div class="module-head">
+          <span class="step">02</span>
+          <h2>TRIZ Contradiction</h2>
+        </div>
+        <h3>Trois dilemmes, aucun n'a survécu intact</h3>
+        <div class="pairs">
+          <div class="pair">
+            <p class="pair-sides"><span>Latence</span><span class="versus">contre</span><span>coût CPU</span></p>
+            <p>Faux dilemme : dans un AudioWorklet le quantum est figé à <span class="num">128</span> frames, il n'existe aucun curseur où échanger l'un contre l'autre. Le CPU s'échange contre la marge anti-dropout. Chiffrage de l'oversampling 4x polyphase : <span class="num">~0,3 ms</span> aller-retour, <span class="num">~5x</span> le CPU du seul étage non linéaire. Le prix n'est pas en latence, il est en craquements.</p>
+          </div>
+          <div class="pair">
+            <p class="pair-sides"><span>Qualité fixe</span><span class="versus">contre</span><span>machine inconnue</span></p>
+            <blockquote class="said">le preset par défaut, la qualité s'adapte pas<span class="who">Shinkei</span></blockquote>
+            <p>C'est ce qui rend le tone link honnête : un rendu déterministe est la condition pour qu'un son partagé sonne pareil chez l'autre. Prix payé : dimensionner pour la machine plancher, LSTM hidden <span class="num">20</span>, et aucune dégradation gracieuse possible.</p>
+          </div>
+          <div class="pair">
+            <p class="pair-sides"><span>Charger sous 8 s</span><span class="versus">contre</span><span>tone link universel</span></p>
+            <blockquote class="said">ça ne dérange pas que le tone soit lent à ouvrir<span class="who">Shinkei</span></blockquote>
+            <p>Ce permis est exactement ce qu'il fallait pour <code class="num">OfflineAudioContext</code> : rendre la boucle une fois plus vite que le temps réel, puis jouer le buffer. Aucune contrainte de latence, aucun risque de dropout.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="node" aria-hidden="true"></div>
+    <section class="stage">
+      <div class="module">
+        <div class="module-head">
+          <span class="step">03</span>
+          <h2>Assumption Reversal</h2>
+        </div>
+        <h3>La latence a changé de camp en cours de séance</h3>
+        <div class="flip">
+          <div class="moment">
+            <p class="eyebrow">Début de séance</p>
+            <p><q>la latence c'est le plus important, le coût c'est moins grave</q></p>
+          </div>
+          <div class="moment after">
+            <p class="eyebrow">Après le basculement</p>
+            <p><q>c'est secondaire la latence, pile poil ce qu'il faut pour que le décalage ne soit pas trop perceptible en jouant</q></p>
+          </div>
+        </div>
+        <p>Rien n'a été imposé entre les deux. Ce qui a bougé, c'est la proportion de visiteurs qui n'ont pas de guitare dans les mains.</p>
+        <p><strong>L'appui factuel.</strong> Le son parcourt <span class="num">34 cm</span> par milliseconde : jouer à trois mètres d'un vrai ampli vaut déjà <span class="num">~9 ms</span>, et personne n'a jamais trouvé ça injouable. La cible <span class="num">&lt; 15 ms</span> était un chiffre de studio importé sans être re-dérivé.</p>
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th scope="col">Aller-retour mesuré</th><th scope="col">Comportement</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="n">&lt; 20 ms</td><td>Rien n'est dit.</td></tr>
+              <tr><td class="n">20 – 35 ms</td><td>Le chiffre est affiché, cliquable pour l'explication. Ça se joue.</td></tr>
+              <tr><td class="n">&gt; 35 ms</td><td>Message honnête sur la cause matérielle. Jamais bloquant.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><strong>Le gain réel.</strong> Firefox n'était « dégradé » et Safari « best effort » que sur des critères de latence. Les deux passent en première classe — ce qui vaut bien plus que trois millisecondes.</p>
+        <p><strong>Le vrai critère devient la stabilité.</strong> Un décalage constant de <span class="num">20 ms</span> s'oublie en une minute. Un décalage qui varie, ou qui craque, est injouable pour toujours.</p>
+      </div>
+    </section>
+
+    <div class="node" aria-hidden="true"></div>
+    <section class="stage">
+      <div class="module">
+        <div class="module-head">
+          <span class="step">04</span>
+          <h2>Job to Be Done</h2>
+        </div>
+        <h3>Deux scènes, une seule justifie encore d'écrire du DSP</h3>
+        <div class="flip">
+          <div class="moment after">
+            <p class="eyebrow">Scène A · retenue</p>
+            <p>La guitare dans les mains depuis dix minutes, un morceau travaillé à sec, et marre d'entendre du bois.</p>
+          </div>
+          <div class="moment">
+            <p class="eyebrow">Scène B · en aval</p>
+            <p>Sur son téléphone, quelqu'un a partagé un lien, curieux trente secondes. Ne touche pas sa guitare.</p>
+          </div>
+        </div>
+        <p><strong>A d'abord n'est pas un arbitrage, c'est une dépendance.</strong> Les fichiers pré-rendus de la scène B sont un artefact de build du moteur de la scène A. On ne peut pas rendre B sans avoir construit A.</p>
+        <p><strong>Le concurrent n'est pas Neural DSP.</strong> C'est le petit combo dans le coin de la pièce, l'app ampli du téléphone, et surtout la décision de reposer la guitare. Le référentiel de comparaison est le son de la guitare débranchée.</p>
+        <p>D'où le déplacement du critère de succès : non pas « ça sonne comme un plugin payant » en général, mais <em>meilleur qu'à sec, et assez vite pour ne pas perdre le fil de ce que je travaillais</em>. Le niveau reste haut ; il s'applique à un son, pas à un catalogue.</p>
+      </div>
+    </section>
+
+    <div class="node" aria-hidden="true"></div>
+    <section class="stage">
+      <div class="module">
+        <div class="module-head">
+          <span class="step">05</span>
+          <h2>Les huit contradictions</h2>
+        </div>
+        <h3>Toutes soldées</h3>
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th scope="col">№</th><th scope="col">Conflit</th><th scope="col">Verdict</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="n">1</td><td>Cordon sur <code class="num">SharedArrayBuffer</code> contre COOP/COEP interdits</td><td><span class="verdict">Dissoute</span><br>RMS par étage posté à 30 Hz</td></tr>
+              <tr><td class="n">2</td><td>Tonecraft Plus contre aucun serveur, jamais</td><td><span class="verdict">Dissoute</span><br>Aucun compte en v1</td></tr>
+              <tr><td class="n">3</td><td>Knobs en arcs fins contre faders verticaux</td><td><span class="verdict">DESIGN.md</span><br>Zéro knob rond</td></tr>
+              <tr><td class="n">4</td><td>Fond crème chaud contre gris-vert froid</td><td><span class="verdict">DESIGN.md</span><br>--chalk #E7E8E2</td></tr>
+              <tr><td class="n">5</td><td>Canvas spectre et oscilloscope contre aucun canvas</td><td><span class="verdict">Supprimée</span><br>Le cordon porte tout</td></tr>
+              <tr><td class="n">6</td><td>Aucun chargement mobile contre démo sur téléphone</td><td><span class="verdict">Dissoute</span><br>La démo ne charge aucun moteur</td></tr>
+              <tr><td class="n">7</td><td>Seuil d'échec à 25 ms contre 30 ms</td><td><span class="verdict">Caduques</span><br>Trois paliers, dropouts comme critère</td></tr>
+              <tr><td class="n">8</td><td>« Comme un plugin payant » contre le niveau de la scène A</td><td><span class="verdict">Recadrée</span><br>Un son, pas un catalogue</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <div class="node" aria-hidden="true"></div>
+    <section class="stage">
+      <div class="module">
+        <div class="module-head">
+          <span class="step">06</span>
+          <h2>Périmètre v1</h2>
+        </div>
+        <h3>MoSCoW, validé</h3>
+        <div class="tiers">
+          <div class="tier must">
+            <h2>Must</h2>
+            <ul>
+              <li>Worklet unique, WASM SIMD, oversampling 4x sur la seule fenêtre non linéaire</li>
+              <li>Un ampli, une IR, noise gate, limiteur non désactivable</li>
+              <li>Accordeur, métronome</li>
+              <li>Onboarding : calibration et diagnostic d'entrée onboard</li>
+              <li>Latence affichée en permanence</li>
+              <li>Chemin écoute pré-rendu, 0 kB de JS</li>
+              <li>Tone link et persistance <code class="num">localStorage</code></li>
+              <li>i18n FR/EN</li>
+              <li>Le cordon</li>
+            </ul>
+          </div>
+          <div class="tier">
+            <h2>Should</h2>
+            <ul>
+              <li>Amplis 2 et 3, les trois drives, comp, reverb — en lazy load</li>
+              <li>Les 12 presets d'usine et leurs pages SEO</li>
+              <li><code class="num">OfflineAudioContext</code> pour les liens custom sans interface</li>
+            </ul>
+          </div>
+          <div class="tier">
+            <h2>Could</h2>
+            <ul>
+              <li>Preset browser complet</li>
+              <li>Images OG générées au build</li>
+              <li>Mode sombre</li>
+            </ul>
+          </div>
+          <div class="tier wont">
+            <h2>Won't — v1</h2>
+            <ul>
+              <li>Comptes, Plus, synchronisation</li>
+              <li>Delay, enregistrement, export</li>
+              <li>Upload d'IR, réordonnancement de chaîne</li>
+              <li>Mobile jouable</li>
+              <li><code class="num">SharedArrayBuffer</code>, <code class="num">coi-serviceworker</code></li>
+              <li>Spectre, oscilloscope</li>
+            </ul>
+          </div>
+        </div>
+        <p class="small"><strong>Pourquoi le cordon est en Must</strong>, contre la coupe JTBD qui l'aurait rétrogradé : c'est la seule chose strictement identique sur les deux chemins de chargement. Sans lui, deux sites qui partagent un nom.</p>
+      </div>
+    </section>
+
+    <div class="node" aria-hidden="true"></div>
+    <section class="stage">
+      <div class="synthesis">
+        <p class="eyebrow">Synthèse</p>
+        <p class="thesis">Les neuf décisions n'en sont qu'une</p>
+        <p>Aucune ne portait sur une fonctionnalité. Le moteur DSP n'est plus le produit : il est le rendeur qui fabrique le produit. Il tourne au build pour produire ce que la majorité entendra, et en temps réel pour la minorité qui branche.</p>
+        <div class="scroller">
+          <div class="causal">
+            <span class="link">Coût d'infra zéro</span>
+            <span class="hop" aria-hidden="true"></span>
+            <span class="link">Demo pré-rendu</span>
+            <span class="hop" aria-hidden="true"></span>
+            <span class="link">L'écoute devient majoritaire</span>
+            <span class="hop" aria-hidden="true"></span>
+            <span class="link">La latence devient secondaire</span>
+            <span class="hop" aria-hidden="true"></span>
+            <span class="link">La scène A devient un ordre de construction</span>
+          </div>
+        </div>
+        <p>La contrainte défendue le plus fort, et jamais vérifiée, est précisément celle qui a engendré la forme réelle du produit. Elle n'a pas limité le projet, elle l'a dessiné.</p>
+        <p>Et trois idées n'en étaient qu'une : le demo pré-rendu, les pages preset et le rendu hors ligne des liens custom sont le même mécanisme — rendre hors ligne, rejouer un buffer. Seul le moment du rendu change.</p>
+      </div>
+    </section>
+
+    <div class="node" aria-hidden="true"></div>
+    <section class="stage">
+      <div class="trap">
+        <h2>Le piège encore ouvert</h2>
+        <h3>Un rendu hors ligne n'a aucun budget CPU</h3>
+        <p>Rien n'empêche d'y mettre <span class="num">16x</span> d'oversampling et un modèle trois fois plus gros. Ce serait meilleur, gratuit, et tentant. Sauf que la démo sonnerait alors mieux que le temps réel : quelqu'un écoute, adore, branche sa guitare, et le produit se dégrade sous ses doigts.</p>
+        <p><strong>Règle à inscrire noir sur blanc : les fichiers pré-rendus utilisent exactement les mêmes réglages que le moteur temps réel.</strong> Du headroom délibérément non utilisé, pour la même raison que le tone link doit être déterministe.</p>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <p>Journal de séance complet : <code>_bmad-output/brainstorming/brainstorm-tonecraft-2026-08-03/.memlog.md</code> — 83 entrées, statut <span class="num">complete</span>. Techniques : Constraint Mapping, TRIZ Contradiction, Assumption Reversal, Job to Be Done. Convergence par MoSCoW.</p>
+    <p>Palette, typographie et séquence de chargement de cette page reprises de <code>DESIGN.md</code>. Le rail à gauche est le cordon : son opacité suit le défilement, comme celle du vrai suit l'amplitude.</p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var rail = document.getElementById('railLive');
+  var chain = document.querySelector('.chain');
+  var nodes = Array.prototype.slice.call(document.querySelectorAll('.node'));
+  var stages = Array.prototype.slice.call(document.querySelectorAll('.stage'));
+  if (!rail || !chain) return;
+
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var ticking = false;
+
+  function paint() {
+    ticking = false;
+    var box = chain.getBoundingClientRect();
+    // Le cordon se remplit jusqu'au point de lecture, à mi-écran.
+    var read = window.innerHeight * 0.5;
+    var filled = Math.min(Math.max(read - box.top, 0), box.height);
+    rail.style.height = filled + 'px';
+
+    for (var i = 0; i < nodes.length; i++) {
+      var s = stages[i];
+      if (!s) continue;
+      var top = s.getBoundingClientRect().top;
+      var lit = top < read;
+      nodes[i].classList.toggle('lit', lit);
+    }
+  }
+
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(paint);
+  }
+
+  if (reduced) {
+    // Sous prefers-reduced-motion le cordon tient une moyenne, il ne suit rien.
+    rail.style.transition = 'none';
+    rail.style.height = '100%';
+    rail.style.opacity = '0.4';
+    nodes.forEach(function (n) { n.classList.add('lit'); });
+    return;
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll);
+  paint();
+})();
+</script>
