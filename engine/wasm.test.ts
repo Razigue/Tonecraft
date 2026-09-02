@@ -7,7 +7,7 @@
  * never be defeated" checkable rather than asserted.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,7 +49,18 @@ const check = (name: string, ok: boolean, detail = ''): void => {
   console.log(`  FAIL  ${name}${detail === '' ? '' : ` — ${detail}`}`);
 };
 
-const bytes = readFileSync(join(ROOT, 'public', 'tonecraft.wasm'));
+const artifact = join(ROOT, 'public', 'tonecraft.wasm');
+if (!existsSync(artifact)) {
+  // Cause and fix, one line each — the same rule the product's own errors
+  // follow. An ENOENT stack trace tells a contributor nothing about which of
+  // the several build steps they skipped.
+  console.error(
+    'public/tonecraft.wasm has not been built, so there is no artifact to test.\n' +
+    'Run: npm run build:wasm   (needs Emscripten; see README)',
+  );
+  process.exit(1);
+}
+const bytes = readFileSync(artifact);
 const { instance } = await WebAssembly.instantiate(bytes, {});
 const chain = instance.exports as unknown as Chain;
 

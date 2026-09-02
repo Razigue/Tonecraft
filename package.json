@@ -17,12 +17,13 @@
     "check:flags": "bash scripts/check-build-flags.sh",
     "test:wasm": "tsx engine/wasm.test.ts",
     "test:input": "tsx engine/input.test.ts",
-    "test": "npm run check:invariants && npm run test:native && npm run test:diagnosis && npm run test:input && npm run test:wasm",
+    "test": "npm run generate && npm run check:invariants && npm run test:native && npm run test:diagnosis && npm run test:input && npm run test:wasm",
     "check:invariants": "bash scripts/check-build-flags.sh && bash scripts/check-stage-isolation.sh",
     "bench": "tsx engine/bench.ts",
     "test:native": "bash scripts/test-native.sh",
     "test:diagnosis": "tsx engine/diagnosis.test.ts",
-    "build:amp": "bash scripts/build-amp.sh"
+    "build:amp": "bash scripts/build-amp.sh",
+    "generate": "npm run schema:generate && npm run build:amp"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",

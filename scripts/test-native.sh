@@ -9,6 +9,16 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# These compile against generated headers. Depending on some earlier step
+# having produced them is how a suite passes on a warm tree and fails on a cold
+# one — which is exactly what happened on the first CI run.
+for generated in "${ROOT}/dsp/params.generated.h" "${ROOT}/dsp/amp/faust/amp.generated.h"; do
+  if [[ ! -f "${generated}" ]]; then
+    printf '%s is missing. Run: npm run generate\n' "${generated#"${ROOT}/"}" >&2
+    exit 1
+  fi
+done
 OUT="$(mktemp -d)"
 trap 'rm -rf "${OUT}"' EXIT
 
