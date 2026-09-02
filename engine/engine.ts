@@ -22,6 +22,8 @@ export interface EngineOptions {
 export type EngineFailure =
   | { kind: 'no-input-device' }
   | { kind: 'permission-denied' }
+  | { kind: 'engine-missing' }
+  | { kind: 'engine-broken'; detail: string }
   | { kind: 'unsupported-sample-rate'; deviceRate: number; internalRate: number };
 
 export class EngineError extends Error {
@@ -107,6 +109,15 @@ export class Engine {
           case 'ready':
             resolve();
             break;
+          case 'instantiate-failed':
+            reject(
+              new EngineError(
+                { kind: 'engine-broken', detail: String(data['detail']) },
+                'The audio engine could not be loaded. Reload the page; if it ' +
+                  'persists the build is incomplete.',
+              ),
+            );
+            break;
           case 'error':
             reject(
               new EngineError(
@@ -137,7 +148,18 @@ export class Engine {
 
     // The bytes are fetched here and handed over. The worklet never fetches:
     // its global scope has no business doing I/O (AD-13).
-    const bytes = await (await fetch(WASM_URL)).arrayBuffer();
+    const response = await fetch(WASM_URL);
+    if (!response.ok) {
+      // Without this the worklet would fail to instantiate a 404 page and the
+      // promise below would never settle — the UI would sit on "Starting…"
+      // forever with nothing said. Silence is the one failure mode this
+      // product must not have.
+      throw new EngineError(
+        { kind: 'engine-missing' },
+        'The audio engine is not built. Run `npm run build:wasm` and reload.',
+      );
+    }
+    const bytes = await response.arrayBuffer();
     node.port.postMessage({ type: 'module', bytes }, [bytes]);
     await ready;
 

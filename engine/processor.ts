@@ -100,8 +100,21 @@ class TonecraftProcessor extends AudioWorkletProcessor {
   async #onMessage(data: Record<string, unknown>): Promise<void> {
     if (data['type'] === 'module') {
       const bytes = data['bytes'] as ArrayBuffer;
-      const { instance } = await WebAssembly.instantiate(bytes, {});
-      const exports = instance.exports as unknown as ChainExports;
+
+      let exports: ChainExports;
+      try {
+        const { instance } = await WebAssembly.instantiate(bytes, {});
+        exports = instance.exports as unknown as ChainExports;
+      } catch (cause) {
+        // Outside the audio path, so a throw here is safe — but it must be
+        // reported. An unhandled rejection would leave the main thread waiting
+        // on a promise that never settles.
+        this.port.postMessage({
+          type: 'instantiate-failed',
+          detail: cause instanceof Error ? cause.message : String(cause),
+        });
+        return;
+      }
 
       const status = exports.tc_init(sampleRate);
       if (status !== 0) {

@@ -6,7 +6,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "astro dev",
+    "dev": "npm run schema:generate && npm run build:worklet && astro dev",
     "build": "npm run schema:generate && npm run build:worklet && astro build",
     "preview": "astro preview",
     "astro": "astro",
