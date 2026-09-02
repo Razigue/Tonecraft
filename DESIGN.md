@@ -76,22 +76,26 @@ Sentence case everywhere except the display face, which is always uppercase. No 
 |                                                                          |
 +--------------------------------------------------------------------------+
 |                                                                          |
-|   IN      GATE     COMP     DRIVE      AMP       CAB      REVERB    OUT   |
-|  +----+  +----+  +-----+  +-------+  +-------+  +-----+  +------+  +---+  |
-|  | ▮  |  | |  |  |  |  |  | | | | |  | | | | |  |  |  |  |  | | |  | ▮ |  |
-|  | ▮  |--| ▯  |--|  ▯  |--| ▯ ▯ ▯ |--| ▯ ▯ ▯ |--|  ▯  |--|  ▯ ▯ |--| ▮ |  |
-|  | ▮  |  | |  |  |  |  |  | | | | |  | | | | |  |  |  |  |  | | |  | ▮ |  |
-|  +----+  +----+  +-----+  +-------+  +-------+  +-----+  +------+  +---+  |
-|   -6.2    thr     amt      gn tn lv   gn b m t    mix      mix     -3.0   |
+|      IN      GATE      DRIVE        AMP        CAB      REVERB     OUT    |
+|    +----+   +----+   +-------+   +-------+   +-----+   +------+   +---+   |
+|    | ▮  |   | |  |   | | | | |   | | | | |   |  |  |   |  | | |   | ▮ |   |
+|    | ▮  |---| ▯  |---| ▯ ▯ ▯ |---| ▯ ▯ ▯ |---|  ▯  |---|  ▯ ▯ |---| ▮ |   |
+|    | ▮  |   | |  |   | | | | |   | | | | |   |  |  |   |  | | |   | ▮ |   |
+|    +----+   +----+   +-------+   +-------+   +-----+   +------+   +---+   |
+|     -6.2     thr     gn tn lv    gn b m t      mix       mix      -3.0    |
 |                                                                          |
 +--------------------------------------------------------------------------+
 ```
+
+The compressor is not in v1 — it joins the strand in v1.1, between the gate and the drive.
 
 The strand is vertically centred and occupies roughly the middle third of the viewport. Above it, only the preset name and its one-line description. Below it, nothing. The emptiness is the point: this is a product about not having a cluttered plugin window.
 
 **Grid:** 8px base unit. Module cards are `--bone` on `--chalk`, 2px radius (almost square, not sharp), one elevation shadow at `0 1px 2px rgba(22,24,27,0.06)`. Gap between modules is 24px, filled by the cord.
 
-**Responsive:** below 1100px the chain wraps to two rows, still in order, cord continuing across the break. Below 720px the chain becomes a vertical stack and the product shows a notice that playing through the browser on a phone is not supported, with demo mode still fully available.
+**Responsive:** below 1100px the chain wraps to two rows, still in order, cord continuing across the break. Below 720px the chain becomes a vertical stack and the product shows a notice that playing through the browser on a phone is not supported.
+
+**The listen path has its own layout**, and it is the one most visitors will see. A preset page is the chain rendered read-only — same modules, same fader positions, same cord — over a single play control. It ships no JS engine, so it works identically on a phone. Nothing on it is draggable, and nothing pretends to be.
 
 ---
 
@@ -101,7 +105,15 @@ The strand is vertically centred and occupies roughly the middle third of the vi
 
 This is the one thing people will screenshot, and it does real work: it makes the signal chain legible to a beginner who has never thought about gain staging, and it turns troubleshooting into something you can see. No signal reaching the amp is instantly obvious, because the cord is dark before it.
 
-**Constraints:** driven by CSS custom properties updated at 30 fps from a `requestAnimationFrame` loop reading a `SharedArrayBuffer`. Never per-sample, never a canvas redraw, never a message from the audio thread. Under `prefers-reduced-motion` the cord holds a steady average instead of tracking transients.
+**The cord is the whole visualisation layer.** There is no spectrum analyser, no oscilloscope, no `AnalyserNode` and no `<canvas>` anywhere in the product. Everything that needs to be seen about the signal is seen here.
+
+**Constraints, play path:** per-stage RMS is computed inside the single audio worklet — it is already there, so the measurement is free — written into a pre-allocated `Float32Array` and posted at 30 Hz. The UI reads it in a `requestAnimationFrame` loop and writes CSS custom properties. Thirty messages a second carrying a few dozen bytes is negligible on both threads. Never per-sample, never a canvas redraw. **No `SharedArrayBuffer` and no cross-origin isolation** — the hosting cannot provide them and the cord does not need them.
+
+**Constraints, listen path:** on a pre-rendered preset page there is no audio graph at all. The per-stage RMS envelope is computed at build time, shipped as a small JSON file, and animated from `audio.currentTime`. Identical visual behaviour, zero JS engine.
+
+That symmetry is the point. The cord is the only element strictly identical on both load paths — it is what makes someone who listened to a preset page and then plugged in a guitar recognise the same product rather than two sites sharing a name.
+
+Under `prefers-reduced-motion` the cord holds a steady average instead of tracking transients.
 
 Everything else in the interface stays quiet so this can be the loud thing.
 
@@ -115,7 +127,7 @@ Everything else in the interface stays quiet so this can be the loud thing.
 
 **Toggle and selector.** Segmented control, no rounded pills. Selected segment gets an `--ink` underline 2px, not a filled background. Filled backgrounds fight the calm.
 
-**Latency badge.** Top right, always visible, Plex Mono. Under 15 ms it is `--graphite`. Between 15 and 30 ms it stays `--graphite` but gains a subtle underline that opens an explanation on click. Over 30 ms it turns `--ember`. It never nags and it never hides.
+**Latency badge.** Top right, always visible, Plex Mono. Under 20 ms it is `--graphite` and says nothing. Between 20 and 35 ms it stays `--graphite` but gains a subtle underline that opens an explanation on click. Over 35 ms it turns `--ember` and the explanation names the hardware cause — most often a guitar plugged into the laptop's mic input. It never nags, it never hides, and **it never blocks**.
 
 **Tuner.** Full-screen sheet over `--chalk`. Note name in Anybody at 120px, cents deviation in Plex Mono at 44px, and a single horizontal hairline that shifts left and right of centre. In tune is `--celadon` and holds for 400ms so it registers. No strobe animation, no needle.
 
