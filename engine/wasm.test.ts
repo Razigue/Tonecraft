@@ -36,6 +36,10 @@ interface Chain {
   tc_amp_loaded(): number;
   tc_oversample_latency_samples(): number;
   tc_bypass_mask(): number;
+  tc_input_peak(): number;
+  tc_input_brightness(): number;
+  tc_probe_frames(): number;
+  tc_probe_clear(): void;
 }
 
 const failures: string[] = [];
@@ -336,6 +340,48 @@ const shaped = Float32Array.from(output);
 check('a loaded amp changes the signal', shaped.some((v, i) => v !== input[i]));
 check('and it stays bounded — no runaway recurrent state',
   shaped.every((v) => Number.isFinite(v) && Math.abs(v) <= 1));
+
+// --- the calibration probe (FR-10) -----------------------------------------
+// Level and bandwidth, measured without an AnalyserNode and without an FFT,
+// because the product has neither. These are what tell a pickup on a 1 MOhm
+// instrument input from one on a few kOhm microphone input.
+
+chain.tc_init(INTERNAL_SAMPLE_RATE);
+setDefaults();
+chain.tc_set_param(index('in_trim'), 0);
+chain.tc_set_param(index('gate_bypass'), 1);
+chain.tc_set_param(index('amp_bypass'), 1);
+
+const probe = (fill: (n: number) => number, blocks = 200): { peak: number; brightness: number } => {
+  chain.tc_probe_clear();
+  run(fill, blocks);
+  return { peak: chain.tc_input_peak(), brightness: chain.tc_input_brightness() };
+};
+
+const loudLow = probe((n) => 0.5 * Math.sin((2 * Math.PI * 200 * n) / INTERNAL_SAMPLE_RATE));
+check('the probe reports the peak it saw', Math.abs(loudLow.peak - 0.5) < 0.02,
+  `${loudLow.peak.toFixed(3)}`);
+
+const quietLow = probe((n) => 0.005 * Math.sin((2 * Math.PI * 200 * n) / INTERNAL_SAMPLE_RATE));
+check('and a quiet signal as quiet', quietLow.peak < 0.02, `${quietLow.peak.toFixed(4)}`);
+
+// A dull signal and a bright one at the same level must separate clearly, or
+// the impedance diagnosis has nothing to stand on.
+const dull = probe((n) => 0.4 * Math.sin((2 * Math.PI * 150 * n) / INTERNAL_SAMPLE_RATE));
+const bright = probe((n) =>
+  0.4 * Math.sin((2 * Math.PI * 150 * n) / INTERNAL_SAMPLE_RATE) +
+  0.4 * Math.sin((2 * Math.PI * 6000 * n) / INTERNAL_SAMPLE_RATE));
+check('a signal with overtones reads far brighter than one without',
+  bright.brightness > dull.brightness * 3,
+  `${bright.brightness.toFixed(3)} vs ${dull.brightness.toFixed(3)}`);
+check('and a dull one falls under the impedance threshold',
+  dull.brightness < 0.10, `${dull.brightness.toFixed(3)}`);
+check('while a bright one does not', bright.brightness >= 0.10,
+  `${bright.brightness.toFixed(3)}`);
+check('the probe counts what it measured', chain.tc_probe_frames() > 0);
+
+chain.tc_init(INTERNAL_SAMPLE_RATE);
+setDefaults();
 
 // --- the same tone at two device rates (AC3, NFR-9) ------------------------
 // An LSTM amp is a rate-dependent non-linear system, so a stage running at the

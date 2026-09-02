@@ -7,7 +7,7 @@
    * What this proves is the path — guitar to headphones through real WASM — and
    * that the numbers coming back are real.
    */
-  import { Engine, EngineError, type Meters } from '../engine/engine.ts';
+  import { Engine, EngineError, type Meters, type Health } from '../engine/engine.ts';
   import { probeEnvironment, canRunEngine, type EnvironmentReport } from '../engine/input.ts';
   import { STAGES, PARAMS } from '../schema/params.ts';
 
@@ -20,6 +20,8 @@
   let roundTrip = $state<number | null>(null);
   let info = $state<import('../engine/engine.ts').EngineInfo | null>(null);
   let ampLoaded = $state(false);
+  let health = $state<Health | null>(null);
+  let showLatencyDetail = $state(false);
 
   // Enough control to judge by ear what is actually built. The real interface —
   // faders, the cord, the design system — is epic 2.
@@ -57,6 +59,7 @@
   function onMeters(meters: Meters): void {
     rms = Array.from(meters.rms);
     dropouts = meters.dropouts;
+    health = engine?.health ?? null;
   }
 
   async function start(): Promise<void> {
@@ -137,20 +140,57 @@
       </button>
     {/if}
 
-    {#if roundTrip !== null}
-      <span class="readout">{roundTrip.toFixed(1)} ms round trip</span>
+    {#if roundTrip !== null && health !== null}
+      <!-- Three tiers: silent, explains itself on click, names the cause. It
+           never nags, never hides, and never blocks (FR-35). -->
+      {#if health.latency.tier === 'quiet'}
+        <span class="readout">{roundTrip.toFixed(1)} ms</span>
+      {:else if health.latency.tier === 'explained'}
+        <button class="readout link" type="button"
+                onclick={() => (showLatencyDetail = !showLatencyDetail)}>
+          {roundTrip.toFixed(1)} ms
+        </button>
+      {:else}
+        <span class="readout alert">{roundTrip.toFixed(1)} ms</span>
+      {/if}
     {/if}
-    {#if state === 'running'}
-      <span class="readout">{dropouts} dropouts</span>
+    {#if state === 'running' && health !== null}
+      <span class="readout">
+        {dropouts} dropouts · ±{health.jitter.deviationMs.toFixed(1)} ms jitter
+      </span>
     {/if}
     {#if info !== null}
       <span class="readout">
         {info.deviceRate} Hz{info.resampling
-          ? ` · +${info.conversionLatencyMs.toFixed(1)} ms converting to 48 kHz`
-          : ' · no conversion'}
+          ? ` · +${info.conversionLatencyMs.toFixed(1)} ms converting`
+          : ''}
       </span>
     {/if}
+    {#if health?.timeToFirstNoteMs != null}
+      <span class="readout">{(health.timeToFirstNoteMs / 1000).toFixed(1)} s to first note</span>
+    {/if}
   </div>
+
+  {#if health !== null}
+    {#if health.latency.tier === 'named' || (health.latency.tier === 'explained' && showLatencyDetail)}
+      <p class="problem" class:alert={health.latency.tier === 'named'}>
+        <span>{health.latency.cause}</span>
+        <span class="fix">{health.latency.remedy}</span>
+      </p>
+    {/if}
+    {#if health.input.problem !== null}
+      <p class="problem">
+        <span>{health.input.cause}</span>
+        <span class="fix">{health.input.remedy}</span>
+      </p>
+    {/if}
+    {#if health.dropouts.audible}
+      <p class="problem alert">
+        <span>{health.dropouts.cause}</span>
+        <span class="fix">{health.dropouts.remedy}</span>
+      </p>
+    {/if}
+  {/if}
 
   {#if problem !== null}
     <p class="problem">
@@ -243,7 +283,13 @@
     color: var(--muted);
   }
 
-  .problem { display: flex; flex-direction: column; gap: 0.25rem; }
+  .problem { display: flex; flex-direction: column; gap: 0.25rem; max-width: 40rem; }
+  .alert { color: #B24A34; }
+  .readout.link {
+    background: none; border: 0; border-bottom: 1px solid currentColor;
+    padding: 0; min-height: 0; cursor: pointer; color: inherit; font: inherit;
+    font-family: ui-monospace, monospace; font-size: 13px;
+  }
   .fix { color: var(--muted); }
 
   .meters { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.25rem; }

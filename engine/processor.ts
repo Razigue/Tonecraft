@@ -34,6 +34,9 @@ interface ChainExports {
   tc_weights_ptr(): number;
   tc_weights_capacity(): number;
   tc_amp_loaded(): number;
+  tc_input_peak(): number;
+  tc_input_brightness(): number;
+  tc_probe_frames(): number;
 }
 
 /** Metering cadence (AD-12). Thirty small messages a second is negligible. */
@@ -250,6 +253,11 @@ class TonecraftProcessor extends AudioWorkletProcessor {
           type: 'meters',
           meters: this.#meterMessage,
           dropouts: this.#dropouts,
+          // Calibration rides along rather than opening a second channel: the
+          // measurement is already made, and one message a frame is the budget.
+          peak: exports.tc_input_peak(),
+          brightness: exports.tc_input_brightness(),
+          probeFrames: exports.tc_probe_frames(),
         });
       }
     }

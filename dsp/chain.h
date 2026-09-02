@@ -5,6 +5,7 @@
 #include "amp/amp.h"
 #include "gate/gate.h"
 #include "oversample/window.h"
+#include "probe.h"
 #include "limiter/limiter.h"
 #include "params.generated.h"
 #include "stage.h"
@@ -24,6 +25,8 @@ class Chain {
   float param(uint32_t index) const;
 
   Amp& amp() { return amp_; }
+  InputProbe& probe() { return probe_; }
+  const InputProbe& probe() const { return probe_; }
 
   /// Whether a stage is bypassed, resolved through the bypass parameter id the
   /// schema declares for it — never through its position in the chain (AD-21).
@@ -39,6 +42,7 @@ class Chain {
  private:
   void meterInto(uint32_t slot, const float* buffer, uint32_t frames);
 
+  InputProbe probe_;
   Gate gate_;
   Amp amp_;
   OversampleWindow window_;

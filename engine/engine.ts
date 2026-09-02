@@ -8,11 +8,27 @@
  */
 
 import { PARAMS, INTERNAL_SAMPLE_RATE } from '../schema/params.ts';
-import { openInput, InputError } from './input.ts';
+import { openInput, InputError, type DeviceKind, classifyDevice } from './input.ts';
+import {
+  judgeLatency, judgeDropouts, jitterOf, judgeInput,
+  type LatencyVerdict, type DropoutVerdict, type JitterStats, type InputVerdict,
+} from './diagnosis.ts';
 
 export interface Meters {
   readonly rms: Float32Array;
   readonly dropouts: number;
+  readonly peak: number;
+  readonly brightness: number;
+}
+
+/** Everything the product knows about how well it is running (FR-35 to FR-38). */
+export interface Health {
+  readonly latency: LatencyVerdict;
+  readonly dropouts: DropoutVerdict;
+  readonly jitter: JitterStats;
+  readonly input: InputVerdict;
+  /** Cold load to first audible note, in ms. NFR-3 targets a median under 8 s. */
+  readonly timeToFirstNoteMs: number | null;
 }
 
 export interface EngineOptions {
@@ -53,6 +69,15 @@ export class Engine {
   #stream: MediaStream | null = null;
   #info: EngineInfo | null = null;
   #ampLoaded = false;
+  #deviceKind: DeviceKind = 'unknown';
+  #deviceLabel = '';
+  #startedAt = 0;
+  #firstAudioAt: number | null = null;
+  #dropouts = 0;
+  #peak = 0;
+  #brightness = 0;
+  /** Wall-clock arrival of each metering frame; the source of the jitter figure. */
+  #meterArrivals: number[] = [];
   readonly #onMeters: ((meters: Meters) => void) | undefined;
 
   constructor(options: EngineOptions = {}) {
@@ -70,6 +95,34 @@ export class Engine {
   /** False while the amp is passing audio through untouched. */
   get ampLoaded(): boolean {
     return this.#ampLoaded;
+  }
+
+  /**
+   * The whole picture, judged. Nothing here decides anything — every verdict is
+   * informational and the play path is never refused on any of it (FR-37).
+   */
+  get health(): Health | null {
+    const ms = this.roundTripMs;
+    if (ms === null) return null;
+    const elapsed = (performance.now() - this.#startedAt) / 1000;
+    const intervals: number[] = [];
+    for (let i = 1; i < this.#meterArrivals.length; i += 1) {
+      intervals.push(this.#meterArrivals[i]! - this.#meterArrivals[i - 1]!);
+    }
+    return {
+      latency: judgeLatency(ms, this.#deviceKind),
+      dropouts: judgeDropouts(this.#dropouts, elapsed),
+      jitter: jitterOf(intervals),
+      input: judgeInput({
+        deviceKind: this.#deviceKind,
+        deviceLabel: this.#deviceLabel,
+        roundTripMs: ms,
+        peak: this.#peak,
+        brightness: this.#brightness,
+      }),
+      timeToFirstNoteMs:
+        this.#firstAudioAt === null ? null : this.#firstAudioAt - this.#startedAt,
+    };
   }
 
   /**
@@ -91,6 +144,9 @@ export class Engine {
    */
   async start(): Promise<void> {
     if (this.#context !== null) return;
+    // NFR-3 measures from the gesture, not from when the engine happens to be
+    // ready: the permission prompt is part of what the player waits through.
+    this.#startedAt = performance.now();
 
     // The constraints, the error mapping and the test that asserts each flag
     // all live in engine/input.ts.
@@ -105,6 +161,9 @@ export class Engine {
     // Read the device's rate BEFORE the context exists, then create the context
     // at exactly that rate. Letting the browser resample implicitly costs both
     // latency and quality, and neither is visible from here (FR-9).
+    this.#deviceLabel = track.label;
+    this.#deviceKind = classifyDevice(track.label);
+
     const deviceRate = track.getSettings().sampleRate ?? INTERNAL_SAMPLE_RATE;
 
     const context = new AudioContext({
@@ -158,12 +217,29 @@ export class Engine {
               ),
             );
             break;
-          case 'meters':
+          case 'meters': {
+            this.#dropouts = data['dropouts'] as number;
+            this.#peak = data['peak'] as number;
+            this.#brightness = data['brightness'] as number;
+
+            const now = performance.now();
+            // A rolling window: jitter is a property of how things are going
+            // now, not an average over the whole session.
+            this.#meterArrivals.push(now);
+            if (this.#meterArrivals.length > 90) this.#meterArrivals.shift();
+
+            // First audible note: the first frame carrying real signal, not the
+            // first frame at all — silence is not a note.
+            if (this.#firstAudioAt === null && this.#peak > 0.01) this.#firstAudioAt = now;
+
             this.#onMeters?.({
               rms: data['meters'] as Float32Array,
-              dropouts: data['dropouts'] as number,
+              dropouts: this.#dropouts,
+              peak: this.#peak,
+              brightness: this.#brightness,
             });
             break;
+          }
           default:
             break;
         }

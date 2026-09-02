@@ -73,6 +73,12 @@ uint32_t tc_amp_loaded() { return g_boundary.chain().amp().loaded() ? 1u : 0u; }
 // A bitmask of bypassed stages, resolved through declared ids (AD-21). The UI
 // already owns the parameters; this exists so a test can assert that the chain
 // and the schema agree about which stage a bypass belongs to.
+// Calibration reads these; nothing in the audio path does (FR-10).
+float tc_input_peak() { return g_boundary.chain().probe().peak(); }
+float tc_input_brightness() { return g_boundary.chain().probe().brightness(); }
+uint32_t tc_probe_frames() { return g_boundary.chain().probe().counted(); }
+void tc_probe_clear() { g_boundary.chain().probe().clear(); }
+
 uint32_t tc_bypass_mask() {
   uint32_t mask = 0;
   for (uint32_t s = 0; s < tonecraft::kStageCount; ++s) {

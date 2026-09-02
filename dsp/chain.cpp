@@ -37,6 +37,7 @@ void Chain::init() {
 }
 
 void Chain::reset() {
+  probe_.reset();
   window_.reset();
   gate_.reset();
   amp_.reset();
@@ -82,6 +83,10 @@ void Chain::process(const float* in, float* out, uint32_t frames) {
   float* b = g_scratch_b;
 
   // --- Input -------------------------------------------------------------
+  // Measured before the trim: calibration is asking about what arrived at the
+  // interface, not about what the player has since compensated for.
+  probe_.process(in, frames);
+
   const float trim = dbToLinear(params_[PARAM_IN_TRIM]);
   for (uint32_t i = 0; i < frames; ++i) a[i] = in[i] * trim;
   meterInto(METER_INPUT, a, frames);
