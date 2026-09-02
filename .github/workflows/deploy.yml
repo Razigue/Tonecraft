@@ -39,7 +39,17 @@ jobs:
 
       - run: npm ci
 
-      # Story 1.2 adds the generated-header sync check here (AD-7).
+      # AD-7: schema/params.ts is the single source of truth. Generate the C++
+      # header, then assert it matches — catching a header edited by hand, and
+      # a generator that is not deterministic.
+      - name: Generate and verify the parameter header
+        run: |
+          npm run schema:generate
+          npm run schema:check
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
       # Story 1.3 adds the WASM build, using EMSDK_VERSION above.
       # Story 4.1 adds the Node renderer between the WASM build and astro build.
 

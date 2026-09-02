@@ -7,9 +7,11 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "npm run schema:generate && astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "schema:generate": "tsx schema/generate.ts",
+    "schema:check": "tsx schema/generate.ts --check"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",
