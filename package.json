@@ -1,0 +1,32 @@
+{
+  "name": "tonecraft",
+  "type": "module",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.4",
+    "@astrojs/svelte": "^9.0.1",
+    "astro": "^7.2.10",
+    "nanostores": "^1.5.2",
+    "svelte": "^5.57.0"
+  },
+  "allowScripts": {
+    "esbuild": true
+  },
+  "description": "Guitar amp and effects in a browser tab. No install, no plugin, no account, no server.",
+  "private": true,
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.13",
+    "typescript": "^6.0.3"
+  }
+}

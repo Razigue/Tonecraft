@@ -206,7 +206,7 @@ Verified against the web on 2026-09-02.
 | Astro | 7.2.x |
 | Svelte | 5.57.x |
 | Vite | bundled with Astro 7 |
-| TypeScript | 5.x, `strict` |
+| TypeScript | 6.0.x, `strict` |
 | nanostores | 1.5.x |
 | Tailwind CSS | 4.3.x |
 | Emscripten | 6.0.x, pinned exactly in CI |
