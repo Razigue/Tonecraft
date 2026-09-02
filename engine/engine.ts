@@ -44,6 +44,7 @@ export class EngineError extends Error {
 }
 
 const WASM_URL = '/tonecraft.wasm';
+const WEIGHTS_URL = '/amp-placeholder.tcw';
 const PROCESSOR_URL = '/tonecraft-processor.js';
 
 export class Engine {
@@ -51,6 +52,7 @@ export class Engine {
   #node: AudioWorkletNode | null = null;
   #stream: MediaStream | null = null;
   #info: EngineInfo | null = null;
+  #ampLoaded = false;
   readonly #onMeters: ((meters: Meters) => void) | undefined;
 
   constructor(options: EngineOptions = {}) {
@@ -63,6 +65,11 @@ export class Engine {
 
   get info(): EngineInfo | null {
     return this.#info;
+  }
+
+  /** False while the amp is passing audio through untouched. */
+  get ampLoaded(): boolean {
+    return this.#ampLoaded;
   }
 
   /**
@@ -183,6 +190,29 @@ export class Engine {
     // AD-1: exactly one node between input and output. Nothing else is
     // inserted here, ever — every node boundary is a buffer copy.
     context.createMediaStreamSource(stream).connect(node).connect(context.destination);
+
+    // Weights are content, not code (AD-14), so they are fetched separately and
+    // their absence is survivable: the amp passes audio through rather than
+    // going silent, which keeps a missing model distinguishable from a dead
+    // interface.
+    await this.#loadWeights(node);
+  }
+
+  async #loadWeights(node: AudioWorkletNode): Promise<void> {
+    const response = await fetch(WEIGHTS_URL);
+    if (!response.ok) return;
+    const bytes = await response.arrayBuffer();
+    const settled = new Promise<boolean>((resolve) => {
+      const previous = node.port.onmessage;
+      node.port.onmessage = (event: MessageEvent): void => {
+        const data = event.data as Record<string, unknown>;
+        if (data['type'] === 'weights-loaded') resolve(true);
+        else if (data['type'] === 'weights-failed') resolve(false);
+        previous?.call(node.port, event);
+      };
+    });
+    node.port.postMessage({ type: 'weights', bytes }, [bytes]);
+    this.#ampLoaded = await settled;
   }
 
   /** Continuous values go through AudioParam so they interpolate (FR-19, AD-20). */

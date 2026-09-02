@@ -60,6 +60,10 @@ jobs:
           version: ${{ env.EMSDK_VERSION }}
           actions-cache-folder: emsdk-cache
 
+      # RTNeural and xsimd, pinned by commit. Not committed to this repository.
+      - name: Fetch vendored C++ dependencies
+        run: npm run deps
+
       - name: Build the DSP chain to WebAssembly
         run: npm run build:wasm
 

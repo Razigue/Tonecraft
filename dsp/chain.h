@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "amp/amp.h"
 #include "limiter/limiter.h"
 #include "params.generated.h"
 #include "stage.h"
@@ -20,16 +21,20 @@ class Chain {
   void setParam(uint32_t index, float value);
   float param(uint32_t index) const;
 
+  Amp& amp() { return amp_; }
+
   const float* meters() const { return meters_; }
 
  private:
   void meterInto(uint32_t slot, const float* buffer, uint32_t frames);
 
+  Amp amp_;
   Limiter limiter_;
   float params_[kParamCount];
   float meters_[kMeterSlotCount];
 };
 
 static_assert(Stage<Limiter>, "Limiter must satisfy the AD-19 stage contract");
+static_assert(Stage<Amp>, "Amp must satisfy the AD-19 stage contract");
 
 }  // namespace tonecraft

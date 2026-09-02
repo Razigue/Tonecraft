@@ -29,6 +29,11 @@ interface Chain {
   tc_param_count(): number;
   tc_added_latency_frames(): number;
   tc_resampling(): number;
+  tc_load_weights(byteCount: number): number;
+  tc_weights_ptr(): number;
+  tc_weights_capacity(): number;
+  tc_weights_float_count(): number;
+  tc_amp_loaded(): number;
 }
 
 const failures: string[] = [];
@@ -153,6 +158,61 @@ chain.tc_init(INTERNAL_SAMPLE_RATE);
 run(sine, 4);
 check('the same input and state produce identical output (NFR-9)',
   first.every((v, i) => v === output[i]));
+
+// --- the weights loader (FR-17, AD-14) -------------------------------------
+// Every way this can fail is detected at init and named. process() has no
+// error path, so nothing about loading may be discoverable later (AD-13).
+
+const MAGIC = 0x31574354;
+const floatCount = chain.tc_weights_float_count();
+const blobBytes = 12 + floatCount * 4;
+const weightsArea = new Uint8Array(heap, chain.tc_weights_ptr(), chain.tc_weights_capacity());
+
+const makeBlob = (magic: number, version: number, count: number, floats = count): Uint8Array => {
+  const buf = new Uint8Array(12 + floats * 4);
+  const view = new DataView(buf.buffer);
+  view.setUint32(0, magic, true);
+  view.setUint32(4, version, true);
+  view.setUint32(8, count, true);
+  for (let i = 0; i < floats; i += 1) view.setFloat32(12 + i * 4, 0.01, true);
+  return buf;
+};
+
+const tryLoad = (blob: Uint8Array): number => {
+  weightsArea.fill(0);
+  weightsArea.set(blob.subarray(0, Math.min(blob.length, weightsArea.length)));
+  return chain.tc_load_weights(blob.length);
+};
+
+check('the schema and the model agree on the float count',
+  floatCount === 4 * 20 * 1 + 20 * 4 * 20 + 4 * 20 + 20 + 1,
+  `${floatCount}`);
+check('the amp passes audio through before any weights are loaded',
+  chain.tc_amp_loaded() === 0);
+check('a truncated blob is refused', tryLoad(makeBlob(MAGIC, 1, floatCount).subarray(0, 8)) !== 0);
+check('a bad magic is refused', tryLoad(makeBlob(0xdeadbeef, 1, floatCount)) !== 0);
+check('an unsupported version is refused', tryLoad(makeBlob(MAGIC, 99, floatCount)) !== 0);
+check('a different model shape is refused rather than loaded',
+  tryLoad(makeBlob(MAGIC, 1, floatCount + 1)) !== 0);
+check('a blob whose header lies about its length is refused',
+  tryLoad(makeBlob(MAGIC, 1, floatCount, 4)) !== 0);
+check('no failed load leaves the amp half-loaded', chain.tc_amp_loaded() === 0);
+
+const real = readFileSync(join(ROOT, 'assets', 'amp-placeholder.tcw'));
+check('the placeholder blob is exactly the size the model needs',
+  real.length === blobBytes, `${real.length} vs ${blobBytes}`);
+check('a well-formed blob loads', tryLoad(new Uint8Array(real)) === 0 && chain.tc_amp_loaded() === 1);
+
+// The amp is in the signal path once loaded: identical input must now give a
+// different output than it did before, or the stage is not wired in.
+chain.tc_init(INTERNAL_SAMPLE_RATE);
+tryLoad(new Uint8Array(real));
+setDefaults();
+run(sine, 4);
+const shaped = Float32Array.from(output);
+check('a loaded amp changes the signal', shaped.some((v, i) => v !== input[i]));
+check('and it stays bounded — no runaway recurrent state',
+  shaped.every((v) => Number.isFinite(v) && Math.abs(v) <= 1));
 
 // --- the same tone at two device rates (AC3, NFR-9) ------------------------
 // An LSTM amp is a rate-dependent non-linear system, so a stage running at the

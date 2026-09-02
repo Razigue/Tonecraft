@@ -18,7 +18,10 @@
     "test:wasm": "tsx engine/wasm.test.ts",
     "test:input": "tsx engine/input.test.ts",
     "test": "npm run check:invariants && npm run test:input && npm run test:wasm",
-    "check:invariants": "bash scripts/check-build-flags.sh && bash scripts/check-stage-isolation.sh"
+    "check:invariants": "bash scripts/check-build-flags.sh && bash scripts/check-stage-isolation.sh",
+    "weights:placeholder": "tsx scripts/make-placeholder-weights.ts",
+    "bench": "tsx engine/bench.ts",
+    "deps": "bash scripts/fetch-deps.sh"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",

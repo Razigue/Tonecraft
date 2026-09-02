@@ -36,6 +36,7 @@ void Chain::init() {
 }
 
 void Chain::reset() {
+  amp_.reset();
   limiter_.reset();
   for (uint32_t i = 0; i < kMeterSlotCount; ++i) meters_[i] = 0.0f;
 }
@@ -75,13 +76,22 @@ void Chain::process(const float* in, float* out, uint32_t frames) {
   for (uint32_t i = 0; i < frames; ++i) a[i] = in[i] * trim;
   meterInto(METER_INPUT, a, frames);
 
-  // --- Gate, drive, amp, cab, reverb -------------------------------------
-  // Stories 1.6 through 1.10. Until they exist the signal crosses untouched,
-  // which is the point of this story: the pipeline is proven before any DSP
-  // can be blamed for how it sounds.
+  // --- Gate, drive -------------------------------------------------------
+  // Stories 1.9 and 1.10.
   meterInto(METER_GATE, a, frames);
   meterInto(METER_DRIVE, a, frames);
-  meterInto(METER_AMP, a, frames);
+
+  // --- Amp ---------------------------------------------------------------
+  // Gain and the tone stack are story 1.10; this is the model itself. Without
+  // weights it passes through rather than going silent — a silent chain is
+  // indistinguishable from a dead interface, and the player could not tell
+  // which they were looking at.
+  amp_.process(a, b, frames);
+  meterInto(METER_AMP, b, frames);
+  float* tmp = a; a = b; b = tmp;
+
+  // --- Cab, reverb -------------------------------------------------------
+  // Stories 1.8 and 1.10.
   meterInto(METER_CAB, a, frames);
   meterInto(METER_REVERB, a, frames);
 
