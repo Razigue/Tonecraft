@@ -9,7 +9,7 @@
    */
   import { Engine, EngineError, type Meters } from '../engine/engine.ts';
   import { probeEnvironment, canRunEngine, type EnvironmentReport } from '../engine/input.ts';
-  import { STAGES } from '../schema/params.ts';
+  import { STAGES, PARAMS } from '../schema/params.ts';
 
   type State = 'idle' | 'starting' | 'running' | 'failed';
 
@@ -19,6 +19,21 @@
   let dropouts = $state(0);
   let roundTrip = $state<number | null>(null);
   let info = $state<import('../engine/engine.ts').EngineInfo | null>(null);
+  let ampLoaded = $state(false);
+
+  // Enough control to judge by ear what is actually built. The real interface —
+  // faders, the cord, the design system — is epic 2.
+  const CONTROLS = ['in_trim', 'gate_threshold', 'out_master'] as const;
+  const BYPASSES = STAGES.filter((st) => st.bypassParam !== null);
+
+  let values = $state<Record<string, number>>(
+    Object.fromEntries(PARAMS.map((p) => [p.id, p.default])),
+  );
+
+  function setParam(id: string, value: number): void {
+    values = { ...values, [id]: value };
+    engine?.setParam(id, value);
+  }
 
   let engine: Engine | null = null;
   let env = $state<EnvironmentReport | null>(null);
@@ -52,6 +67,7 @@
       await engine.start();
       roundTrip = engine.roundTripMs;
       info = engine.info;
+      ampLoaded = engine.ampLoaded;
       state = 'running';
     } catch (error) {
       // Cause in one sentence, fix in one sentence. No apology, and nothing
@@ -144,6 +160,46 @@
   {/if}
 
   {#if state === 'running'}
+    {#if ampLoaded}
+      <p class="warn">
+        <span>The amp is running placeholder weights — deterministic noise, not
+        an amplifier.</span>
+        <span class="fix">Bypass it below to hear the chain without a model.
+        Real weights need a captured amplifier and do not exist yet.</span>
+      </p>
+    {/if}
+
+    <div class="controls-grid">
+      {#each CONTROLS as id (id)}
+        {@const p = PARAMS.find((q) => q.id === id)!}
+        <label>
+          <span class="name">{p.label}</span>
+          <input
+            type="range"
+            min={p.min}
+            max={p.max}
+            step={(p.max - p.min) / 200}
+            value={values[id]}
+            oninput={(e) => setParam(id, Number(e.currentTarget.value))}
+          />
+          <span class="value">{values[id]?.toFixed(1)} {p.unit}</span>
+        </label>
+      {/each}
+    </div>
+
+    <div class="bypasses">
+      {#each BYPASSES as stage (stage.id)}
+        <label class="bypass">
+          <input
+            type="checkbox"
+            checked={values[stage.bypassParam!] === 1}
+            onchange={(e) => setParam(stage.bypassParam!, e.currentTarget.checked ? 1 : 0)}
+          />
+          bypass {stage.label}
+        </label>
+      {/each}
+    </div>
+
     <ol class="meters">
       {#each STAGES as stage, i (stage.id)}
         <li>
@@ -154,8 +210,8 @@
       {/each}
     </ol>
     <p class="note">
-      Every stage between the input and the output reports the same level: there
-      is no DSP between them yet. Stories 1.6 to 1.10 change that.
+      Drive, cab and reverb do not exist yet, so those stages report the level
+      that passed through them. Stories 1.8 and 1.10.
     </p>
   {/if}
 </section>
@@ -197,6 +253,17 @@
   .value { font-family: ui-monospace, monospace; font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
 
   .note { font-size: 13px; }
+
+  .warn { display: flex; flex-direction: column; gap: 0.25rem; }
+
+  .controls-grid { display: flex; flex-direction: column; gap: 0.5rem; }
+  label { display: grid; grid-template-columns: 6rem 1fr 5rem; gap: 0.75rem; align-items: center; }
+  .name { font-size: 13px; }
+  input[type="range"] { width: 100%; min-height: 40px; }
+
+  .bypasses { display: flex; flex-wrap: wrap; gap: 1rem; }
+  .bypass { display: flex; gap: 0.4rem; align-items: center; font-size: 13px; grid-template-columns: none; }
+  input[type="checkbox"] { width: 18px; height: 18px; }
 
   .env { display: flex; flex-wrap: wrap; gap: 0 2rem; margin: 0; }
   .env div { display: flex; gap: 0.5rem; align-items: baseline; }
