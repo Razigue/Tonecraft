@@ -5,13 +5,17 @@
 // The page carries nothing of its own: the chain is the interface, and the page
 // is the rig (DESIGN.md section 4).
 import Rig from '../../app/Rig.svelte';
+
+// Same reason the engine resolves its URLs against the base: GitHub Pages
+// serves a project repository under /<repo>/, and an absolute path 404s there.
+const base = import.meta.env.BASE_URL;
 ---
 
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
     <meta name="generator" content={Astro.generator} />
     <!-- Not indexed while the chain is incomplete. -->
     <meta name="robots" content="noindex" />
