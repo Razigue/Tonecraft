@@ -34,6 +34,7 @@ interface Chain {
   tc_weights_capacity(): number;
   tc_weights_float_count(): number;
   tc_amp_loaded(): number;
+  tc_oversample_latency_samples(): number;
 }
 
 const failures: string[] = [];
@@ -98,13 +99,27 @@ chain.tc_set_param(index('in_trim'), 0);
 chain.tc_set_param(index('out_master'), 0);
 
 const sine = (n: number): number => 0.25 * Math.sin((2 * Math.PI * 440 * n) / INTERNAL_SAMPLE_RATE);
-run(sine, 8);
 
+// The oversampling window is a linear-phase filter pair, so it delays the
+// signal by its group delay and changes nothing else. The chain is therefore
+// compared against the input delayed by exactly that much — a comparison that
+// would fail if the window altered the signal as well as delaying it.
+const latency = chain.tc_oversample_latency_samples();
+check('the window reports its own group delay', latency > 0 && latency < 32, `${latency}`);
+
+const blocks = 8;
+run(sine, blocks);
+const base = (blocks - 1) * BLOCK_FRAMES;
 let worst = 0;
 for (let i = 0; i < BLOCK_FRAMES; i += 1) {
-  worst = Math.max(worst, Math.abs(output[i]! - input[i]!));
+  worst = Math.max(worst, Math.abs(output[i]! - sine(base + i - latency)));
 }
-check('a quiet signal crosses the chain unaltered', worst < 1e-6, `max deviation ${worst}`);
+check('a quiet signal crosses the chain delayed but unaltered',
+  worst < 5e-3, `max deviation ${worst.toFixed(6)} against a ${latency}-sample delay`);
+
+check('and the window costs under 0.5 ms of round trip',
+  (latency / INTERNAL_SAMPLE_RATE) * 1000 < 0.5,
+  `${((latency / INTERNAL_SAMPLE_RATE) * 1000).toFixed(3)} ms`);
 
 // --- the limiter cannot be defeated ---------------------------------------
 // Every parameter pushed to its most extreme value at once, then a full-scale

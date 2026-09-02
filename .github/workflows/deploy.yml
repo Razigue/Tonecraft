@@ -70,7 +70,7 @@ jobs:
       # Drives the compiled chain directly and asserts on what comes back:
       # pass-through, a limiter nothing can defeat, and identical output for
       # identical input (NFR-9).
-      - name: Verify the compiled chain and the input path
+      - name: Verify the DSP, the compiled chain and the input path
         run: npm test
 
       # Story 4.1 adds the Node renderer between the WASM build and astro build.

@@ -89,4 +89,10 @@ uint32_t tc_internal_sample_rate() { return tonecraft::kInternalSampleRate; }
 uint32_t tc_added_latency_frames() { return g_boundary.addedLatencyFrames(); }
 uint32_t tc_resampling() { return g_boundary.bypassed() ? 0u : 1u; }
 
+// Base-rate samples of delay the 4x window costs. Part of the round trip the
+// player sees, rather than something quietly absorbed (FR-35).
+float tc_oversample_latency_samples() {
+  return tonecraft::Chain::oversampleLatencySamples();
+}
+
 }  // extern "C"

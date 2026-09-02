@@ -29,6 +29,7 @@ float dbToLinear(float db) { return std::pow(10.0f, db * 0.05f); }
 }  // namespace
 
 void Chain::init() {
+  window_.init();
   for (uint32_t i = 0; i < kParamCount; ++i) {
     params_[i] = kParams[i].default_value;
   }
@@ -36,6 +37,7 @@ void Chain::init() {
 }
 
 void Chain::reset() {
+  window_.reset();
   amp_.reset();
   limiter_.reset();
   for (uint32_t i = 0; i < kMeterSlotCount; ++i) meters_[i] = 0.0f;
@@ -81,12 +83,16 @@ void Chain::process(const float* in, float* out, uint32_t frames) {
   meterInto(METER_GATE, a, frames);
   meterInto(METER_DRIVE, a, frames);
 
-  // --- Amp ---------------------------------------------------------------
-  // Gain and the tone stack are story 1.10; this is the model itself. Without
-  // weights it passes through rather than going silent — a silent chain is
-  // indistinguishable from a dead interface, and the player could not tell
-  // which they were looking at.
-  amp_.process(a, b, frames);
+  // --- The non-linear window ---------------------------------------------
+  // Drive and amp, at 4x, inside one window. Aliasing is the first cause of a
+  // "cheap" sounding amp simulator: a non-linearity generates harmonics above
+  // Nyquist, and without headroom they fold back down as inharmonic tones that
+  // no amount of EQ can remove. The drive's waveshaper joins this window in
+  // story 1.10 and costs only its own arithmetic, because the resampling is
+  // already paid for.
+  window_.process(a, b, frames, [this](const float* osIn, float* osOut, uint32_t osFrames) {
+    amp_.process(osIn, osOut, osFrames);
+  });
   meterInto(METER_AMP, b, frames);
   float* tmp = a; a = b; b = tmp;
 

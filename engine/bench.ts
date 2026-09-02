@@ -60,16 +60,22 @@ function measure(label: string): number {
 console.log(`\nBlock: ${BLOCK_FRAMES} frames at ${INTERNAL_SAMPLE_RATE} Hz = ${BLOCK_MS.toFixed(3)} ms of wall clock`);
 console.log(`Budget: 25% of one core = ${(BLOCK_MS * 0.25).toFixed(4)} ms per block\n`);
 
-const withoutAmp = measure('chain without the amp');
+// The window runs either way; what changes is whether there is a model inside
+// it. So this is the cost of everything except the model itself.
+const withoutAmp = measure('chain, no model in the window');
 
 const weights = readFileSync(join(ROOT, 'assets', 'amp-placeholder.tcw'));
 new Uint8Array(heap, chain.tc_weights_ptr(), weights.length).set(weights);
 const status = chain.tc_load_weights(weights.length);
 console.log(`\n  weights load status: ${status} (0 = ok), amp loaded: ${chain.tc_amp_loaded() === 1}\n`);
 
-const withAmp = measure(`chain with LSTM-${LSTM_HIDDEN_SIZE}`);
+const withAmp = measure(`chain with LSTM-${LSTM_HIDDEN_SIZE} at 4x`);
 
-console.log(`\n  the amp alone                      ${(withAmp - withoutAmp).toFixed(1)}% of one core`);
-console.log(`  projected at 4x oversampling       ${((withAmp - withoutAmp) * 4).toFixed(1)}% of one core  (story 1.7)`);
-console.log(`\n  This machine, in Node. The floor machine is a 2019-2020 mid-range`);
-console.log(`  laptop and a browser, both of which will be slower.\n`);
+const amp = withAmp - withoutAmp;
+const budget = 25;
+console.log(`\n  the model alone, inside the window  ${amp.toFixed(1)}% of one core`);
+console.log(`  headroom left against ${budget}%          ${(budget - withAmp).toFixed(1)}% for drive, cab, reverb, gate`);
+console.log(`\n  A machine 2x slower would put the whole chain at ${(withAmp * 2).toFixed(1)}%,`);
+console.log(`  and 3x slower at ${(withAmp * 3).toFixed(1)}%. The floor machine is a 2019-2020`);
+console.log(`  mid-range laptop running a browser; this is Node on this machine.`);
+console.log(`  Treat these as a ratio between stages, not a verdict.\n`);

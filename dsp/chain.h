@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "amp/amp.h"
+#include "oversample/window.h"
 #include "limiter/limiter.h"
 #include "params.generated.h"
 #include "stage.h"
@@ -23,12 +24,18 @@ class Chain {
 
   Amp& amp() { return amp_; }
 
+  /// Extra round-trip delay the oversampling window costs, in base-rate samples.
+  static constexpr float oversampleLatencySamples() {
+    return OversampleWindow::latencySamples();
+  }
+
   const float* meters() const { return meters_; }
 
  private:
   void meterInto(uint32_t slot, const float* buffer, uint32_t frames);
 
   Amp amp_;
+  OversampleWindow window_;
   Limiter limiter_;
   float params_[kParamCount];
   float meters_[kMeterSlotCount];
