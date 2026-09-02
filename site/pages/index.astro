@@ -1,22 +1,10 @@
 ---
-// The rig is a single Svelte island on a single route (FR-21). client:only
+// The app is a single Svelte island on a single route (FR-21). client:only
 // because it owns an AudioContext, which cannot exist during a static build.
+//
+// The page carries nothing of its own: the chain is the interface, and the page
+// is the rig (DESIGN.md section 4).
 import Rig from '../../app/Rig.svelte';
-
-const stories = [
-  { id: '1.1', title: 'A deploy that is a pure function of the commit', done: true },
-  { id: '1.2', title: 'One source of truth for every parameter', done: true },
-  { id: '1.3', title: 'Audio survives a round trip through WASM', done: true },
-  { id: '1.4', title: 'The guitar signal arrives intact', done: true },
-  { id: '1.5', title: 'The same tone on a 44.1 kHz interface', done: true },
-  { id: '1.6', title: 'The first real tone', done: true },
-  { id: '1.7', title: 'The tone stops sounding cheap', done: true },
-  { id: '1.8', title: 'It sounds like an amp in a room', done: true },
-  { id: '1.9', title: 'Silence between the notes', done: true },
-  { id: '1.11', title: 'The number is on the screen', done: true },
-  { id: '1.12', title: 'Honest when it glitches, and never a refusal', done: true },
-  { id: '1.13', title: 'Told before the first note, not after', done: true },
-];
 ---
 
 <html lang="en">
@@ -25,60 +13,19 @@ const stories = [
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta name="generator" content={Astro.generator} />
+    <!-- Not indexed while the chain is incomplete. -->
     <meta name="robots" content="noindex" />
-    <title>Tonecraft — build pipeline</title>
-    <style>
-      :root { color-scheme: light; }
-      body {
-        margin: 0;
-        padding: 4rem 1.5rem;
-        font: 15px/1.55 "Inter Tight", "Helvetica Neue", system-ui, sans-serif;
-        background: #E7E8E2;
-        color: #16181B;
-      }
-      main { max-width: 40rem; margin: 0 auto; }
-      h1.wordmark {
-        font-family: "Anybody", "Arial Narrow", system-ui, sans-serif;
-        font-size: 28px; font-weight: 300; letter-spacing: 0.32em;
-        text-transform: uppercase; margin: 0 0 1rem;
-      }
-      p { color: #767A78; margin: 0 0 2rem; max-width: 34rem; }
-      main { display: flex; flex-direction: column; gap: 2.5rem; }
-      h2.section { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
-                   color: #767A78; font-weight: 400; margin: 0 0 -0.5rem; }
-      :global(:root) { --muted: #767A78; }
-      ol { list-style: none; padding: 0; margin: 0; }
-      li {
-        display: flex; gap: 1rem; align-items: baseline;
-        padding: 0.75rem 0; border-top: 1px solid rgba(22,24,27,0.12);
-      }
-      .id { font-family: ui-monospace, monospace; font-size: 13px; color: #767A78; min-width: 2.5rem; }
-      .done { color: #16181B; }
-      .todo { color: #767A78; }
+    <title>Tonecraft</title>
+    <style is:global>
       /* Light only. DESIGN.md section 2 puts dark mode in v1.1 and says why:
-         a half-inverted palette looks worse than none. */
+         doing it properly means re-deriving the whole system, and a
+         half-inverted palette looks worse than none. */
+      :root { color-scheme: light; }
+      html, body { margin: 0; background: #e7e8e2; color: #16181b; }
+      body { -webkit-font-smoothing: antialiased; }
     </style>
   </head>
   <body>
-    <main>
-      <h1 class="wordmark">Tonecraft</h1>
-      <p>
-        Plug in and press start. There is an amplifier now: four gain stages, a
-        tone stack, a power stage at four times the sample rate, and a speaker
-        cabinet. No drive and no reverb yet. The design system arrives in epic 2,
-        so this page is deliberately plain and is not indexed.
-      </p>
-      <Rig client:only="svelte" />
-
-      <h2 class="section">Epic 1</h2>
-      <ol>
-        {stories.map((s) => (
-          <li>
-            <span class="id">{s.id}</span>
-            <span class={s.done ? 'done' : 'todo'}>{s.title}</span>
-          </li>
-        ))}
-      </ol>
-    </main>
+    <Rig client:only="svelte" />
   </body>
 </html>
