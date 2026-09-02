@@ -27,6 +27,8 @@ interface Chain {
   tc_meter_ptr(): number;
   tc_meter_count(): number;
   tc_param_count(): number;
+  tc_added_latency_frames(): number;
+  tc_resampling(): number;
 }
 
 const failures: string[] = [];
@@ -47,10 +49,18 @@ const chain = instance.exports as unknown as Chain;
 // still limits. Nothing in this module may depend on that call.
 
 // --- init ------------------------------------------------------------------
-check('rejects a device rate the stages were not designed for (AD-18)',
-  chain.tc_init(44_100) !== 0);
 check('accepts the internal design rate',
   chain.tc_init(INTERNAL_SAMPLE_RATE) === 0);
+check('at the internal rate nothing is resampled and no latency is added',
+  chain.tc_resampling() === 0 && chain.tc_added_latency_frames() === 0);
+check('accepts 44.1 kHz and converts at the boundary (AD-18)',
+  chain.tc_init(44_100) === 0 && chain.tc_resampling() === 1);
+check('and reports the latency that conversion costs rather than hiding it',
+  chain.tc_added_latency_frames() > 0,
+  `${chain.tc_added_latency_frames()} frames`);
+check('rejects a rate no real interface offers',
+  chain.tc_init(7_999) !== 0 && chain.tc_init(400_000) !== 0);
+chain.tc_init(INTERNAL_SAMPLE_RATE);
 check('exports the parameter count the schema declares (AD-7)',
   chain.tc_param_count() === PARAMS.length,
   `wasm ${chain.tc_param_count()} vs schema ${PARAMS.length}`);
@@ -143,6 +153,47 @@ chain.tc_init(INTERNAL_SAMPLE_RATE);
 run(sine, 4);
 check('the same input and state produce identical output (NFR-9)',
   first.every((v, i) => v === output[i]));
+
+// --- the same tone at two device rates (AC3, NFR-9) ------------------------
+// An LSTM amp is a rate-dependent non-linear system, so a stage running at the
+// device rate would make two players with different interfaces hear different
+// amplifiers from the same tone link. This is the check that the boundary
+// actually prevents that.
+const rmsAt = (rate: number, freq: number): number => {
+  chain.tc_init(rate);
+  setDefaults();
+  chain.tc_set_param(index('in_trim'), 0);
+  chain.tc_set_param(index('out_master'), 0);
+  const blocks = Math.round((rate * 0.5) / BLOCK_FRAMES);
+  let sum = 0;
+  let counted = 0;
+  let n = 0;
+  for (let b = 0; b < blocks; b += 1) {
+    for (let i = 0; i < BLOCK_FRAMES; i += 1, n += 1) {
+      input[i] = 0.2 * Math.sin((2 * Math.PI * freq * n) / rate);
+    }
+    chain.tc_process(BLOCK_FRAMES);
+    if (b > blocks / 2) {
+      for (let i = 0; i < BLOCK_FRAMES; i += 1) { sum += output[i]! ** 2; counted += 1; }
+    }
+  }
+  return Math.sqrt(sum / counted);
+};
+
+for (const freq of [110, 440, 2000, 5000]) {
+  const at48 = rmsAt(48_000, freq);
+  const at441 = rmsAt(44_100, freq);
+  check(`${freq} Hz renders the same at 44.1 kHz as at 48 kHz`,
+    Math.abs(at48 - at441) / at48 < 0.02,
+    `48k ${at48.toFixed(5)} vs 44.1k ${at441.toFixed(5)}`);
+}
+
+for (const rate of [88_200, 96_000]) {
+  const ref = rmsAt(48_000, 440);
+  const got = rmsAt(rate, 440);
+  check(`${rate} Hz matches 48 kHz`, Math.abs(ref - got) / ref < 0.02,
+    `${got.toFixed(5)} vs ${ref.toFixed(5)}`);
+}
 
 console.log('');
 if (failures.length > 0) {

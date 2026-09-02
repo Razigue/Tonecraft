@@ -18,6 +18,7 @@
   let rms = $state<number[]>(new Array(STAGES.length).fill(0));
   let dropouts = $state(0);
   let roundTrip = $state<number | null>(null);
+  let info = $state<import('../engine/engine.ts').EngineInfo | null>(null);
 
   let engine: Engine | null = null;
   let env = $state<EnvironmentReport | null>(null);
@@ -50,6 +51,7 @@
     try {
       await engine.start();
       roundTrip = engine.roundTripMs;
+      info = engine.info;
       state = 'running';
     } catch (error) {
       // Cause in one sentence, fix in one sentence. No apology, and nothing
@@ -69,6 +71,7 @@
     engine = null;
     state = 'idle';
     roundTrip = null;
+    info = null;
   }
 </script>
 
@@ -76,9 +79,11 @@
   <header>
     <h2>Pass-through harness</h2>
     <p>
-      Story 1.3. Your signal crosses the real WebAssembly chain and comes back
-      unaltered, except for the output limiter — which is always on and has no
-      control, here or anywhere else.
+      Your signal crosses the real WebAssembly chain and comes back unaltered,
+      except for the output limiter — which is always on and has no control,
+      here or anywhere else. Any interface rate works: the chain runs at 48 kHz
+      and converts at its boundary, so no stage ever learns what your hardware
+      runs at.
     </p>
   </header>
 
@@ -121,6 +126,13 @@
     {/if}
     {#if state === 'running'}
       <span class="readout">{dropouts} dropouts</span>
+    {/if}
+    {#if info !== null}
+      <span class="readout">
+        {info.deviceRate} Hz{info.resampling
+          ? ` · +${info.conversionLatencyMs.toFixed(1)} ms converting to 48 kHz`
+          : ' · no conversion'}
+      </span>
     {/if}
   </div>
 

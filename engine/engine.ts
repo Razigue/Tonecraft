@@ -25,7 +25,16 @@ export type EngineFailure =
   | { kind: 'permission-denied' }
   | { kind: 'engine-missing' }
   | { kind: 'engine-broken'; detail: string }
-  | { kind: 'unsupported-sample-rate'; deviceRate: number; internalRate: number };
+  | { kind: 'unsupported-sample-rate'; deviceRate: number };
+
+/** What the engine found once it was running. Shown, never used to decide. */
+export interface EngineInfo {
+  readonly deviceRate: number;
+  /** False when the device already runs at the chain's internal rate. */
+  readonly resampling: boolean;
+  /** Cost of that conversion, in milliseconds. Zero when not resampling. */
+  readonly conversionLatencyMs: number;
+}
 
 export class EngineError extends Error {
   constructor(readonly failure: EngineFailure, message: string) {
@@ -41,6 +50,7 @@ export class Engine {
   #context: AudioContext | null = null;
   #node: AudioWorkletNode | null = null;
   #stream: MediaStream | null = null;
+  #info: EngineInfo | null = null;
   readonly #onMeters: ((meters: Meters) => void) | undefined;
 
   constructor(options: EngineOptions = {}) {
@@ -51,6 +61,10 @@ export class Engine {
     return this.#context;
   }
 
+  get info(): EngineInfo | null {
+    return this.#info;
+  }
+
   /**
    * Round trip, as the browser reports it (FR-35). Shown permanently, never
    * used to decide anything: quality never adapts to the machine (AD-5).
@@ -59,7 +73,9 @@ export class Engine {
     const ctx = this.#context;
     if (ctx === null) return null;
     const output = 'outputLatency' in ctx ? ctx.outputLatency : 0;
-    return (ctx.baseLatency + output) * 1000;
+    // Sample-rate conversion is part of the round trip the player feels, so it
+    // is added here rather than quietly omitted from the figure on screen.
+    return (ctx.baseLatency + output) * 1000 + (this.#info?.conversionLatencyMs ?? 0);
   }
 
   /**
@@ -104,9 +120,17 @@ export class Engine {
       node.port.onmessage = (event: MessageEvent): void => {
         const data = event.data as Record<string, unknown>;
         switch (data['type']) {
-          case 'ready':
+          case 'ready': {
+            const rate = data['sampleRate'] as number;
+            const frames = data['addedLatencyFrames'] as number;
+            this.#info = {
+              deviceRate: rate,
+              resampling: data['resampling'] === true,
+              conversionLatencyMs: (frames / rate) * 1000,
+            };
             resolve();
             break;
+          }
           case 'instantiate-failed':
             reject(
               new EngineError(
@@ -119,16 +143,11 @@ export class Engine {
           case 'error':
             reject(
               new EngineError(
-                {
-                  kind: 'unsupported-sample-rate',
-                  deviceRate: data['sampleRate'] as number,
-                  internalRate: INTERNAL_SAMPLE_RATE,
-                },
+                { kind: 'unsupported-sample-rate', deviceRate: data['sampleRate'] as number },
                 // Honest about the cause and the fix, one sentence each.
-                `This engine build runs at ${INTERNAL_SAMPLE_RATE} Hz and your ` +
-                  `interface is at ${String(data['sampleRate'])} Hz. Set the ` +
-                  `interface to ${INTERNAL_SAMPLE_RATE} Hz until the boundary ` +
-                  `resampler ships.`,
+                `Your interface reports ${String(data['sampleRate'])} Hz, which ` +
+                  `is outside anything real hardware offers. Set it to a ` +
+                  `standard rate such as ${INTERNAL_SAMPLE_RATE} Hz and reload.`,
               ),
             );
             break;
@@ -192,6 +211,7 @@ export class Engine {
     this.#stream = null;
     this.#node = null;
     this.#context = null;
+    this.#info = null;
   }
 
   async #open(): Promise<MediaStream> {

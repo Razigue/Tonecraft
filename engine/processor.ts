@@ -28,6 +28,8 @@ interface ChainExports {
   tc_meter_ptr(): number;
   tc_meter_count(): number;
   tc_param_count(): number;
+  tc_added_latency_frames(): number;
+  tc_resampling(): number;
 }
 
 /** Metering cadence (AD-12). Thirty small messages a second is negligible. */
@@ -133,7 +135,15 @@ class TonecraftProcessor extends AudioWorkletProcessor {
       this.#exports = exports;
       this.#ready = true;
 
-      this.port.postMessage({ type: 'ready', meterCount });
+      this.port.postMessage({
+        type: 'ready',
+        meterCount,
+        // Zero at the internal rate. Reported so the round trip the player sees
+        // is the whole truth, including what conversion costs them (FR-35).
+        addedLatencyFrames: exports.tc_added_latency_frames(),
+        resampling: exports.tc_resampling() === 1,
+        sampleRate,
+      });
       return;
     }
 

@@ -17,7 +17,8 @@
     "check:flags": "bash scripts/check-build-flags.sh",
     "test:wasm": "tsx engine/wasm.test.ts",
     "test:input": "tsx engine/input.test.ts",
-    "test": "npm run test:input && npm run test:wasm"
+    "test": "npm run check:invariants && npm run test:input && npm run test:wasm",
+    "check:invariants": "bash scripts/check-build-flags.sh && bash scripts/check-stage-isolation.sh"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",

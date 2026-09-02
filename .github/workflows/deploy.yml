@@ -50,9 +50,10 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-      # AD-4: relaxed SIMD must appear in no build configuration, ever.
-      - name: Check build flags
-        run: npm run check:flags
+      # AD-4: relaxed SIMD in no build configuration, ever.
+      # AD-18: no stage may read a device sample rate.
+      - name: Check architecture invariants
+        run: npm run check:invariants
 
       - uses: mymindstorm/setup-emsdk@v14
         with:
