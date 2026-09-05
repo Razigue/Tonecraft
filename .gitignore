@@ -57,3 +57,8 @@ Thumbs.db
 
 # Copied from assets/ by the build. The source lives in assets/ and is committed.
 public/*.tcir
+
+# Reference audio used to tune by measurement: DI takes and the output of a
+# commercial plugin on the same guitar. Not ours to redistribute, tens of
+# megabytes, and audio in git history is there forever (AD-15). Kept locally.
+sample_guitar/
