@@ -148,8 +148,14 @@ export const PARAMS: readonly Param[] = [
 
   // --- Drive -------------------------------------------------------------
   // A boost in front of high gain tightens the low end and defines the attack.
+  // 16 rather than 12: measured against a reference chain on the same DI, this
+  // is where the whole chain keeps 24.9 dB of level between the softest and
+  // loudest attack of a palm-muted run against the reference's 20.7, with the
+  // crest factor at 6.2 dB against 6.7. Below it the clipper never reaches its
+  // knee on a passive humbucker at -25 dBFS; above it the chain starts trading
+  // pick response for harmonics, which is the trade this amp must not make.
   { id: 'drive_gain', stage: 'drive', label: 'Gain', unit: 'dB',
-    min: 0, max: 40, default: 12, taper: 'linear' },
+    min: 0, max: 40, default: 16, taper: 'linear' },
   // Cutoff of the post-clip lowpass, the control a screamer actually offers.
   { id: 'drive_tone', stage: 'drive', label: 'Tone', unit: 'Hz',
     min: 400, max: 6000, default: 2200, taper: 'logarithmic' },
@@ -159,12 +165,13 @@ export const PARAMS: readonly Param[] = [
     min: 0, max: 1, default: 0, taper: 'switch' },
 
   // --- Amp ---------------------------------------------------------------
-  // 27 sits where saturation and feel cross: about 3 dB of picking dynamics
-  // left, and the third harmonic 13 dB under the fundamental. Below 18 it is a
-  // crunch; past 32 the amp stops responding to how hard you play at all, which
-  // measures as more distortion and is heard as less.
+  // Lower than it was, because the drive stage now sits in front of it and the
+  // two are set together. Measured on the same DI, 17 here with the boost at 16
+  // holds the dynamics above: at 23 the attack spread has fallen to 13 dB and
+  // at 27 to 8, against the reference's 20.7. What that buys in harmonics is
+  // real but small — two decibels across the top — and it is not worth the feel.
   { id: 'amp_gain', stage: 'amp', label: 'Gain', unit: 'dB',
-    min: 0, max: 40, default: 27, taper: 'linear' },
+    min: 0, max: 40, default: 17, taper: 'linear' },
   { id: 'amp_bass', stage: 'amp', label: 'Bass', unit: 'dB',
     min: -12, max: 12, default: 0, taper: 'linear' },
   // Not scooped. A scoop plus the cabinet's own dip around 700 Hz took all the

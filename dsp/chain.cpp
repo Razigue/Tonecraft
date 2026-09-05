@@ -24,6 +24,11 @@ namespace {
 alignas(16) float g_scratch_a[kOversampledBlockFrames];
 alignas(16) float g_scratch_b[kOversampledBlockFrames];
 
+// Where the drive hands its output to the amp, inside the window. It has to be
+// separate from the two above: those hold base-rate audio for the whole block
+// and are still live while the window runs.
+alignas(16) float g_scratch_oversampled[kOversampledBlockFrames];
+
 float dbToLinear(float db) { return std::pow(10.0f, db * 0.05f); }
 
 }  // namespace
@@ -41,6 +46,7 @@ void Chain::reset() {
   probe_.reset();
   window_.reset();
   gate_.reset();
+  drive_.reset();
   amp_.reset();
   cab_.reset();
   limiter_.reset();
@@ -104,23 +110,46 @@ void Chain::process(const float* in, float* out, uint32_t frames) {
   }
   meterInto(METER_GATE, a, frames);
 
-  // --- Drive -------------------------------------------------------------
-  // Story 1.10. It joins the oversampling window below, not here.
-  meterInto(METER_DRIVE, a, frames);
-
   // --- The non-linear window ---------------------------------------------
   // Drive and amp, at 4x, inside one window. Aliasing is the first cause of a
   // "cheap" sounding amp simulator: a non-linearity generates harmonics above
   // Nyquist, and without headroom they fold back down as inharmonic tones that
-  // no amount of EQ can remove. The drive's waveshaper joins this window in
-  // story 1.10 and costs only its own arithmetic, because the resampling is
-  // already paid for.
-  if (!bypassed(STAGE_AMP)) {
-    amp_.setControls(params_[PARAM_AMP_GAIN], params_[PARAM_AMP_BASS],
-                     params_[PARAM_AMP_MID], params_[PARAM_AMP_TREBLE],
-                     params_[PARAM_AMP_MASTER]);
-    window_.process(a, b, frames, [this](const float* osIn, float* osOut, uint32_t osFrames) {
-      amp_.process(osIn, osOut, osFrames);
+  // no amount of EQ can remove. The drive costs only its own arithmetic here,
+  // because the resampling is already paid for — which is the whole reason the
+  // two non-linear stages have to stay adjacent (AD-2).
+  const bool drive_on = !bypassed(STAGE_DRIVE);
+  const bool amp_on = !bypassed(STAGE_AMP);
+
+  // A bypassed stage still reports the level that passed through it untouched.
+  // Measured before the window when the drive is off, and at 4x inside it when
+  // the drive is on: an RMS does not care what rate it was taken at, and the
+  // alternative is a second base-rate buffer for a number nobody hears.
+  if (!drive_on) meterInto(METER_DRIVE, a, frames);
+
+  if (drive_on || amp_on) {
+    if (drive_on) {
+      drive_.setGain(dbToLinear(params_[PARAM_DRIVE_GAIN]));
+      drive_.setTone(params_[PARAM_DRIVE_TONE]);
+      drive_.setLevel(dbToLinear(params_[PARAM_DRIVE_LEVEL]));
+    }
+    if (amp_on) {
+      amp_.setControls(params_[PARAM_AMP_GAIN], params_[PARAM_AMP_BASS],
+                       params_[PARAM_AMP_MID], params_[PARAM_AMP_TREBLE],
+                       params_[PARAM_AMP_MASTER]);
+    }
+    window_.process(a, b, frames, [this, drive_on, amp_on](
+        const float* osIn, float* osOut, uint32_t osFrames) {
+      const float* source = osIn;
+      if (drive_on) {
+        drive_.process(osIn, g_scratch_oversampled, osFrames);
+        source = g_scratch_oversampled;
+        meterInto(METER_DRIVE, g_scratch_oversampled, osFrames);
+      }
+      if (amp_on) {
+        amp_.process(source, osOut, osFrames);
+      } else {
+        for (uint32_t i = 0; i < osFrames; ++i) osOut[i] = source[i];
+      }
     });
     float* swap = a; a = b; b = swap;
   }

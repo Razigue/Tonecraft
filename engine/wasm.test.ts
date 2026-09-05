@@ -160,12 +160,18 @@ check('and it costs under 0.5 ms of round trip',
   `${((latency / INTERNAL_SAMPLE_RATE) * 1000).toFixed(3)} ms`);
 
 // With every stage bypassed the chain must be exactly transparent — same
-// samples, same alignment, no residual delay. Bypassing the amp skips the
-// oversampling window with it, which is the point: a bypassed stage costs
-// nothing, including its resampling. The window's own transparency is measured
-// directly in dsp/tests/oversample.test.cpp.
-chain.tc_set_param(index('gate_bypass'), 1);
-chain.tc_set_param(index('amp_bypass'), 1);
+// samples, same alignment, no residual delay. Bypassing the non-linear stages
+// skips the oversampling window with them, which is the point: a bypassed stage
+// costs nothing, including its resampling. The window's own transparency is
+// measured directly in dsp/tests/oversample.test.cpp.
+//
+// Derived from the schema rather than listed here. This test named the stages
+// it knew about, and adding the drive stage made it fail — not because the
+// chain stopped being transparent, but because a stage existed that nothing
+// had told it to bypass. A new stage must not be able to do that again.
+for (const stage of STAGES) {
+  if (stage.bypassParam !== null) chain.tc_set_param(index(stage.bypassParam), 1);
+}
 run(sine, 8);
 let worst = 0;
 for (let i = 0; i < BLOCK_FRAMES; i += 1) {

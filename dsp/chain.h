@@ -4,6 +4,7 @@
 
 #include "amp/amp.h"
 #include "cab/cab.h"
+#include "drive/drive.h"
 #include "gate/gate.h"
 #include "oversample/window.h"
 #include "probe.h"
@@ -27,6 +28,7 @@ class Chain {
 
   Amp& amp() { return amp_; }
   Cab& cab() { return cab_; }
+  Drive& drive() { return drive_; }
   InputProbe& probe() { return probe_; }
   const InputProbe& probe() const { return probe_; }
 
@@ -46,6 +48,7 @@ class Chain {
 
   InputProbe probe_;
   Gate gate_;
+  Drive drive_;
   Amp amp_;
   Cab cab_;
   OversampleWindow window_;
@@ -58,5 +61,6 @@ static_assert(Stage<Limiter>, "Limiter must satisfy the AD-19 stage contract");
 static_assert(Stage<Amp>, "Amp must satisfy the AD-19 stage contract");
 static_assert(Stage<Gate>, "Gate must satisfy the AD-19 stage contract");
 static_assert(Stage<Cab>, "Cab must satisfy the AD-19 stage contract");
+static_assert(Stage<Drive>, "Drive must satisfy the AD-19 stage contract");
 
 }  // namespace tonecraft
