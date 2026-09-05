@@ -56,11 +56,24 @@ master = hslider("master", -6, -24, 12, 0.001);
 // distortion, because a soft curve held at its asymptote rounds a waveform off
 // rather than enriching it.
 //
-// x / sqrt(1 + x^2) stays near-linear to about 0.5, bends through a defined
-// knee, and still never goes flat. That gives a breakup point: below it the
-// amp follows your picking, above it it distorts. One multiply, one add, one
-// reciprocal square root — and WebAssembly has that as an instruction.
-saturate(x) = x / sqrt(1.0 + x * x);
+// x / sqrt(1 + x^2) fixed the flat region and the early asymptote, and it was
+// still too soft. Measured against a commercial plugin on the same DI: driven
+// hard enough to compress 18 dB of input into 0.5 dB of output, it produced H3
+// at -12 dB and nothing at all past H5. It rounds the wave rather than
+// enriching it, which is heard as a compressor, and it left the whole chain 40
+// dB short of the reference above 1.6 kHz.
+//
+// x / (1 + x^4)^(1/4) is the same family with a sharper corner. Two things
+// improve at once, which is why this exponent rather than a different curve:
+// below the knee it is *more* linear than the square version, so picking
+// dynamics survive further up; through the knee it turns faster, so the
+// harmonic series extends instead of dying at H5. Higher exponents keep
+// helping, but by less than a decibel from here, and each one costs another
+// square root.
+//
+// Two multiplies for x^4, two square roots for the fourth root, one divide.
+// WebAssembly has sqrt as an instruction, so this stays cheap.
+saturate(x) = x / sqrt(sqrt(1.0 + x * x * x * x));
 
 // Asymmetric soft clipping. The offset pushes the signal off centre so the two
 // halves of the wave clip differently, which is what produces even harmonics;
@@ -79,13 +92,29 @@ stage(g, hp, lp, offset) =
 
 // Gain in dB spread across four stages rather than dumped into one.
 //
-// The exponent decides how hard each stage is driven. At 0.25 the first two
-// stages barely clipped and the third harmonic sat 15 dB below the fundamental
-// — audibly a crunch, not a high-gain amp. At 0.45 every stage is working.
-// Lower than it was, because the knee moved. The stages have to *work* in the
-// bend rather than sit past it: pinned stages measure as heavy saturation and
-// sound like a compressor.
-drive = ba.db2linear(gain * 0.30);
+// The exponent decides how hard each stage is driven, and it was an order of
+// magnitude too small. At 0.30 the whole cascade offered 8 dB at the default
+// gain: measured on a real DI, stage one saw 0.16 where its knee is at 1, so
+// the first three stages were operating as linear amplifiers and only the
+// fourth did anything — and it was pinned past its knee, which is the failure
+// the saturator comment above describes.
+//
+// Raising it far enough to fill the spectrum overshot in the other direction,
+// and the measurement named the wall: at 38 dB the harmonic content was close
+// but the amp kept only 3.9 dB of level between the softest and loudest attack
+// of a palm-muted run, where the reference keeps 20.7. That is the compressor
+// this file has already been accused of being twice.
+//
+// The usable window is narrow and it was measured, not guessed. Below about 6
+// dB the cascade is clean; above about 20 it stops responding to the pick. At
+// 14 dB the amp keeps 21.6 dB of attack spread — the reference's own figure —
+// and that is where the default now sits.
+//
+// The consequence is that drive alone cannot produce this amplifier's top end,
+// and it should not: what remains is a smooth tilt, which is a linear problem
+// and therefore the cabinet's. Trading dynamics for brightness in the
+// non-linear stages is what makes a model sound like a pedal.
+drive = ba.db2linear(gain * 0.5);
 
 // Corners chosen against a measured response, not by feel. Four first-order
 // highpasses cascade: at 100 Hz, corners of 110/95/120/140 stacked up to about
@@ -133,10 +162,22 @@ preamp =
 // gentler drive they barely tilted the curve at all and the second harmonic
 // fell to 42 dB below the fundamental. Asymmetry belongs in the early stages,
 // where the signal is still whole.
-    stage(drive * 0.50,  28, 10000, 0.34)   // gentle, keeps the instrument whole
-  : stage(drive * 0.60,  34,  7000, 0.24)
-  : stage(drive * 1.45,  95,  5500, 0.10)   // this is where the gain lives
-  : stage(drive * 1.70, 130,  4500, 0.00);  // last stage symmetric
+// The lowpass corners moved up by more than an octave, and this is an
+// architectural correction rather than a taste one. At 10k/7k/5.5k/4.5k the
+// preamp removed its own fizz — and the cabinet then removed it again, from a
+// signal that no longer had it. Measured against a reference chain with both
+// cabinets bypassed, ours was 40 dB down above 1.6 kHz: the top was being
+// filtered twice, once by a stage that should not be doing that job and once
+// by the stage whose job it is.
+//
+// A cabinet is what turns a bright preamp into an amplifier. So the preamp now
+// stays bright, each stage still rolling off a little further than the last
+// because a real one loses top at every coupling, and the cliff above 5 kHz
+// belongs to the cabinet alone.
+    stage(drive * 0.50,  28, 20000, 0.34)   // gentle, keeps the instrument whole
+  : stage(drive * 0.60,  34, 18000, 0.24)
+  : stage(drive * 1.45,  95, 16000, 0.10)   // this is where the gain lives
+  : stage(drive * 1.70, 130, 14000, 0.00);  // last stage symmetric
 
 // Tone stack after the preamp, where a real one sits. The mid is a bell rather
 // than a shelf: a lead tone lives or dies on what happens around 650 Hz.
@@ -154,6 +195,12 @@ toneStack =
 // at 3.2 in it did not — it was saturated continuously and was most of the
 // flat-topping. This drives it into the knee on a hard pick and leaves it
 // alone below that, which is what gives an amplifier its bloom.
-powerAmp = *(1.6) : saturate : *(1.1);
+//
+// Lower than 1.6 now, because the preamp above hands it a much hotter signal
+// than it used to. At 1.6 the tone stack was being flattened by the stage
+// behind it: a 12 dB mid setting came out as 3.7 dB, which is a tone control
+// that lies. Measured here, the whole chain's crest factor lands at 6.2 dB
+// against the reference's 6.7.
+powerAmp = *(1.2) : saturate : *(1.1);
 
 process = fi.highpass(1, 22) : preamp : toneStack : powerAmp : *(ba.db2linear(master));
