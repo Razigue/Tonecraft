@@ -309,7 +309,15 @@ const integrate = (ms) => page.evaluate(async (d) => {
   return sum / n;
 }, ms);
 
-const monitor = (label) => page.locator('.bar-right .segmented button', { hasText: label }).click();
+/**
+ * One button, so this asks for a state rather than clicking a named option: it
+ * reads what the button says it is and flips it only if it has to.
+ */
+async function monitor(want) {
+  const button = page.locator('button.chain');
+  const on = (await button.getAttribute('aria-pressed')) === 'true';
+  if (on !== (want === 'Amp')) await button.click();
+}
 
 /**
  * Both passes have to cover the same audio. The take is a performance, not a
@@ -359,6 +367,17 @@ check('a message does not move the rig', moved < 1, `${moved.toFixed(1)} px`);
 
 // FR-18: the limiter has no control anywhere, in any mode, on any path.
 const bypasses = await page.locator('.strand button[aria-label^="Bypass"]').allTextContents();
+// The same A/B from the keyboard, which is what makes it usable more than twice.
+await monitor('Amp');
+const beforeKey = await page.locator('button.chain').getAttribute('aria-pressed');
+await page.locator('body').click({ position: { x: 5, y: 5 } });
+await page.keyboard.press('b');
+await page.waitForTimeout(300);
+const afterKey = await page.locator('button.chain').getAttribute('aria-pressed');
+check('B flips the chain from the keyboard', beforeKey !== afterKey,
+  `${beforeKey} then ${afterKey}`);
+await monitor('Amp');
+
 check('no stage offers a bypass that should not have one',
   !(await page.locator('button[aria-label="Bypass Amp"]').count()) &&
   !(await page.locator('button[aria-label="Bypass Cab"]').count()) &&

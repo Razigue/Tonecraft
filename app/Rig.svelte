@@ -56,14 +56,15 @@
   ] as const;
 
   /**
-   * The A/B. It is the fastest way to answer the only question a first-time
-   * visitor actually has — what does this do to my guitar — and the answer is
-   * far more convincing heard back to back than described.
+   * The A/B, as one button rather than two.
+   *
+   * It answers the only question a first-time visitor actually has — what does
+   * this do to my guitar — and the answer is far more convincing heard back to
+   * back than described. That means flipping it repeatedly, and a two-option
+   * selector makes you move the pointer between two targets to do it. One
+   * button in one place can be hammered.
    */
-  const MONITOR = [
-    { value: 'amp', label: 'Amp' },
-    { value: 'direct', label: 'Direct' },
-  ] as const;
+  const BYPASS_KEY = 'b';
 
   /**
    * A two-input interface puts its instrument jack on the second channel — a
@@ -244,9 +245,28 @@
     persist();
   }
 
-  function chooseMonitor(next: string): void {
-    direct = next === 'direct';
+  function toggleChain(): void {
+    direct = !direct;
     engine?.setDirect(direct);
+  }
+
+  /**
+   * The same thing from the keyboard, because an A/B you have to aim at is an
+   * A/B people do twice. Ignored while a control has focus, so it cannot fire
+   * while somebody is typing in a field or nudging a fader.
+   */
+  function onWindowKey(event: KeyboardEvent): void {
+    if (state !== 'running') return;
+    if (event.key.toLowerCase() !== BYPASS_KEY) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) {
+      const tag = active.tagName.toLowerCase();
+      if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+      if (active.getAttribute('role') === 'slider') return;
+    }
+    event.preventDefault();
+    toggleChain();
   }
 
   function chooseChannel(next: string): void {
@@ -333,7 +353,7 @@
     if (engine === null) return;
     try {
       const buffer = await engine.loadDemoTake();
-      fileName = 'Demo take';
+      fileName = 'Demo take (Tonecraft)';
       fileDuration = buffer.duration;
       filePeaks = peaksOf(buffer);
       filePosition = 0;
@@ -452,14 +472,31 @@
   });
 </script>
 
+<svelte:window onkeydown={onWindowKey} />
+
 <div class="page">
   <header class="bar">
     <span class="t-wordmark">Tonecraft</span>
 
     <div class="bar-right">
       {#if state === 'running'}
-        <Segmented label="Monitoring" options={MONITOR}
-                   value={direct ? 'direct' : 'amp'} onchange={chooseMonitor} />
+        <button
+          class="chain"
+          type="button"
+          aria-label="Amp simulation"
+          aria-pressed={!direct}
+          title="Hear the guitar with and without the chain (B)"
+          onclick={toggleChain}
+        >
+          <span class="chain-dot"></span>
+          <!-- Both labels occupy the same cell, so the button is always as wide
+               as the longer one. A control whose whole purpose is being hit
+               repeatedly must not move out from under the pointer. -->
+          <span class="chain-label">
+            <span class="chain-ghost" aria-hidden="true">Tonecraft</span>
+            <span>{direct ? 'Direct' : 'Tonecraft'}</span>
+          </span>
+        </button>
       {/if}
       {#if health !== null}
         <!-- Three tiers. Under 20 ms it is a number and nothing else; between 20
@@ -511,7 +548,10 @@
     </div>
   </div>
 
-  <div class="strand">
+  <!-- With the chain off, nothing in the strand is reaching the ears. Saying so
+       with the same 40% the bypassed modules use, rather than leaving a live
+       looking rig that is doing nothing. -->
+  <div class="strand" class:idle={direct}>
     {#each STRAND as block, i (block.stage)}
       {#if i > 0}
         <span
@@ -660,7 +700,7 @@
           </label>
           <!-- Reachable once a file is loaded too, or the demo is a one-way
                door: load your own take and there is no way back to it. -->
-          <button class="quiet demo" type="button" onclick={loadDemo}>Demo take</button>
+          <button class="quiet demo" type="button" onclick={loadDemo}>Load demo</button>
         </div>
       {/if}
     </section>
@@ -790,7 +830,46 @@
     align-items: center;
     justify-content: center;
     flex-wrap: wrap;
+    transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1);
   }
+
+  .strand.idle { opacity: 0.4; }
+
+  /* One target, hit as often as you like. The dot carries the state — the same
+     idiom as a module's bypass — and the label says what you are hearing. */
+  .chain {
+    display: flex;
+    align-items: center;
+    gap: var(--u);
+    min-height: 32px;
+    padding: 0 calc(var(--u) * 1.5) 0 var(--u);
+    background: none;
+    border: 1px solid var(--ink);
+    border-radius: var(--radius);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .chain:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
+
+  .chain-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid var(--graphite);
+    background: transparent;
+  }
+  .chain[aria-pressed='true'] .chain-dot { background: var(--celadon); }
+
+  .chain-label {
+    display: grid;
+    font-family: var(--display);
+    font-size: 11px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    text-align: left;
+  }
+  .chain-label > * { grid-area: 1 / 1; }
+  .chain-ghost { visibility: hidden; }
 
   /* The strand is joined by a hairline that carries the signal (UX-DR10). Only
      opacity animates, so it composites and costs the CPU nothing. */
@@ -966,9 +1045,27 @@
   }
   select:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
-  /* Below 1100px the chain wraps, still in order (UX-DR11). */
-  @media (max-width: 1100px) {
-    .strand { gap: calc(var(--u) * 2); }
+  /* The chain wraps rather than scrolls, still in order (UX-DR11). Two things
+     the wrap has to get right, and neither is automatic:
+
+     - a wrapped strand must not leave a cord pointing at nothing, so the cords
+       go once the row can break;
+     - left alone, flex fits as many as it can and drops the remainder, which at
+       a 1440px laptop — the commonest size there is — put seven modules on one
+       row and left Out orphaned underneath. Capping the width forces the break
+       near the middle instead.
+
+     The single-row threshold is where eight modules stop fitting; it moved up
+     from 1100px when the amp and cab gained their selectors. */
+  @media (max-width: 1599px) {
+    .strand {
+      gap: calc(var(--u) * 2);
+      max-width: 900px;
+    }
     .cord { display: none; }
+  }
+
+  @media (max-width: 950px) {
+    .strand { max-width: 100%; }
   }
 </style>
