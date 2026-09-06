@@ -402,10 +402,25 @@
 
   // --------------------------------------------------------------------------
 
-  async function start(): Promise<void> {
+  /**
+   * Two ways in, and they are not the same product.
+   *
+   * Someone with a guitar in their hands wants the input open and nothing in
+   * the way. Someone who arrived to find out what this is wants to hear it
+   * immediately, and asking them for microphone permission first is a toll gate
+   * in front of a demonstration — so the demo path never calls getUserMedia at
+   * all. No prompt, no device, nothing listening.
+   */
+  type Intent = 'play' | 'demo';
+
+  async function start(intent: Intent = 'play'): Promise<void> {
     state = 'starting';
     problem = null;
     engine = new Engine({ onMeters, onModel, onEngineError });
+    if (intent === 'demo') {
+      source = 'file';
+      await engine.setSource('file');
+    }
     try {
       captures = (await engine.loadCatalog()).models;
       settleCapture();
@@ -423,10 +438,17 @@
       state = 'running';
       // Labels are withheld until permission has been granted, so the device
       // list is only meaningful from here on.
-      devices = await engine.listInputs();
-      channelCount = engine.channelCount;
-      if (source === 'file' && filePeaks !== null) play();
+      // Only meaningful once permission has been granted, which the demo path
+      // deliberately never asks for.
+      if (intent === 'play') {
+        devices = await engine.listInputs();
+        channelCount = engine.channelCount;
+      }
       frame = requestAnimationFrame(tick);
+      // Straight into it: the chain is on, so the first thing heard is what
+      // Tonecraft does, and the button next to the clock takes it away again.
+      if (intent === 'demo') await loadDemo();
+      else if (source === 'file' && filePeaks !== null) play();
     } catch (error) {
       // Cause in one sentence, fix in one sentence, no apology. Nothing is
       // blocked: the control stays available (FR-12).
@@ -713,18 +735,34 @@
     <div class="wash">
       <div class="sheet" role="dialog" aria-modal="false" aria-label="Start playing">
         <p class="t-body">
-          Plug in a guitar and press start. The amplifier is a Neural Amp Modeler
-          capture; the cabinet is synthesised here, and without it a capture is
-          not an amp sound.
+          The amplifier is a Neural Amp Modeler capture; the cabinet is
+          synthesised here, and without it a capture is not an amp sound.
         </p>
-        <div class="sheet-actions">
-          <button class="start" type="button" onclick={start} disabled={state === 'starting'}>
-            {state === 'starting' ? 'Starting' : 'Start'}
+        <div class="choices">
+          <button
+            class="choice"
+            type="button"
+            onclick={() => start('play')}
+            disabled={state === 'starting'}
+          >
+            <span class="t-module">I have a guitar</span>
+            <span class="t-small">Opens your input. The browser will ask for
+              permission to use it.</span>
           </button>
-          <button class="quiet" type="button" onclick={() => (asking = false)}>
-            Look around first
+          <button
+            class="choice"
+            type="button"
+            onclick={() => start('demo')}
+            disabled={state === 'starting'}
+          >
+            <span class="t-module">Just let me hear it</span>
+            <span class="t-small">Plays a guitar take through the chain. Nothing
+              is asked for and nothing listens.</span>
           </button>
         </div>
+        <button class="quiet" type="button" onclick={() => (asking = false)}>
+          Look around first
+        </button>
       </div>
     </div>
   {/if}
@@ -951,7 +989,7 @@
     align-items: center;
     gap: calc(var(--u) * 3);
     text-align: center;
-    max-width: 38ch;
+    max-width: 60ch;
     animation: rise 200ms cubic-bezier(0.2, 0, 0, 1);
   }
 
@@ -964,13 +1002,35 @@
     .sheet { animation: none; }
   }
 
-  .sheet-actions {
+  /* Two doors, side by side and the same size, because neither is the lesser
+     one: half the people who arrive have a guitar and half want to know what
+     this is before they fetch it. */
+  .choices {
     display: flex;
-    align-items: center;
     gap: calc(var(--u) * 2);
     flex-wrap: wrap;
     justify-content: center;
+    align-items: stretch;
   }
+
+  .choice {
+    flex: 1 1 20ch;
+    max-width: 26ch;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--u);
+    text-align: left;
+    padding: calc(var(--u) * 2);
+    background: none;
+    border: 1px solid var(--ink);
+    border-radius: var(--radius);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .choice:hover { background: rgba(143, 176, 154, 0.12); }
+  .choice:disabled { opacity: 0.4; cursor: default; }
+  .choice:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
   .quiet {
     font-family: var(--body);

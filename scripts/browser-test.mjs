@@ -111,13 +111,15 @@ console.log('\nTonecraft — end-to-end\n');
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
 
 check('the page renders the rig', await page.locator('.strand').isVisible());
+check('the opening sheet offers both ways in',
+  (await page.locator('.choice').count()) === 2);
 check('the capture catalogue is read before starting',
   (await page.locator('select').first().locator('option').count()) > 0);
 
 // Start, from the opening sheet. A failure here must be reported as a failure
 // and not as a 30 second stack trace, so whatever the page said about it is
 // read back — the product's whole voice is that it names the cause.
-await page.locator('.sheet button.start').click();
+await page.locator('.choice', { hasText: 'I have a guitar' }).click();
 let started = true;
 try {
   await page.waitForSelector('.latency', { timeout: 30_000 });
@@ -438,6 +440,47 @@ check('no stage offers a bypass that should not have one',
   `${bypasses.length} bypasses in the strand`);
 
 check('nothing threw', errors.length === 0, errors[0]);
+
+/**
+ * The other way in, on its own page.
+ *
+ * Someone who arrived to find out what this is should not be met with a
+ * microphone permission prompt: that is a toll gate in front of a
+ * demonstration. The demo path must therefore never touch getUserMedia, and
+ * "never" is the kind of claim that needs counting rather than reading.
+ */
+const demoPage = await browser.newPage();
+await demoPage.addInitScript(() => {
+  window.__mic = 0;
+  const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+  navigator.mediaDevices.getUserMedia = (...args) => { window.__mic++; return real(...args); };
+});
+const demoErrors = [];
+demoPage.on('pageerror', (e) => demoErrors.push(String(e)));
+await demoPage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+await demoPage.locator('.choice', { hasText: 'Just let me hear it' }).click();
+await demoPage.waitForSelector('.wave svg', { timeout: 40_000 });
+await demoPage.waitForTimeout(2500);
+
+const asked = await demoPage.evaluate(() => window.__mic);
+check('the demo path never asks for a microphone', asked === 0, `${asked} request(s)`);
+check('and it is playing the take through the chain',
+  (await demoPage.locator('.marquee').getAttribute('data-capture')) === 'loaded' &&
+  (await demoPage.locator('.transport button.start').innerText()) === 'Pause');
+
+const demoLevel = await demoPage.evaluate(async () => {
+  let peak = 0;
+  const until = performance.now() + 8000;
+  while (performance.now() < until && peak <= 1) {
+    const bar = document.querySelector('.strand > section:last-child .meter rect:last-child');
+    peak = Math.max(peak, Number(bar?.getAttribute('height') ?? 0));
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  return peak;
+});
+check('and there is sound without anyone plugging anything in', demoLevel > 1,
+  `output peak ${demoLevel.toFixed(0)} of 96`);
+check('nothing threw on the demo path', demoErrors.length === 0, demoErrors[0]);
 
 await browser.close();
 server.close();

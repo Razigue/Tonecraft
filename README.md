@@ -9,8 +9,14 @@ cabinet, the boost, the correction and the reverb are ours. Plug a DI in, press
 start, and there is a tone — or drop an audio file in and hear the same chain on
 a take you already have.
 
-With no guitar and no interface, there is still something to hear: **a demo take
-ships with the site** (`public/di/demo-di.wav`, 1.6 MB, fetched only when asked
+The opening sheet asks which of those two you are, and they are not the same
+product: **I have a guitar** opens your input, **Just let me hear it** plays a
+take through the chain and **never calls `getUserMedia` at all** — no prompt, no
+device, nothing listening. A permission dialog in front of a demonstration is a
+toll gate, and the browser test counts the calls rather than trusting the claim.
+
+So with no guitar and no interface, there is still something to hear: **a demo
+take ships with the site** (`public/di/demo-di.wav`, 1.6 MB, fetched only when asked
 for), and one button in the top right — **Tonecraft / Direct**, or the **B** key —
 turns the whole simulation on and off so the difference is one click away rather
 than a description. Off means off: the chain is muted **and the live input is
