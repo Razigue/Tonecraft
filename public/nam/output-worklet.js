@@ -31,8 +31,13 @@ class OutputProcessor extends AudioWorkletProcessor {
     const inp = inputs[0] && inputs[0][0];
     const n = out.length;
 
-    if (!inp) { out.fill(0); return true; }
-    out.set(inp.subarray(0, n));
+    /* An input array with nothing in it is silence, not an absence of news.
+       Chrome hands one over whenever everything upstream is silent, and
+       returning early here left the meter frozen at its last reading — so with
+       the chain switched off the output appeared to sit at -59 dBFS forever,
+       unaffected by the master fader, because it was not a signal at all. */
+    if (inp) out.set(inp.subarray(0, n));
+    else out.fill(0);
 
     // A gap larger than a quantum and a half is a block the graph did not
     // render in time. Half a quantum of slack absorbs float jitter.
@@ -42,7 +47,7 @@ class OutputProcessor extends AudioWorkletProcessor {
     this.lastTime = currentTime;
 
     for (let i = 0; i < n; i++) {
-      const v = inp[i];
+      const v = out[i];
       const a = v < 0 ? -v : v;
       if (a > this.peak) this.peak = a;
       this.sum += v * v;

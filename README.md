@@ -11,9 +11,13 @@ a take you already have.
 
 With no guitar and no interface, there is still something to hear: **a demo take
 ships with the site** (`public/di/demo-di.wav`, 1.6 MB, fetched only when asked
-for), and one button in the top right — **Tonecraft / Direct**, or the **B** key — turns
-the whole chain on and off so the difference is one click away rather than a
-description.
+for), and one button in the top right — **Tonecraft / Direct**, or the **B** key —
+turns the whole simulation on and off so the difference is one click away rather
+than a description. Off means off: the chain is muted **and the live input is
+closed with it**, because monitoring a laptop's built-in microphone through the
+speakers is a feedback path, not a comparison. With a file loaded you hear that
+file raw; with the live input as the source there is nothing to hear, and the
+rig says so.
 The direct path carries 4.3 dB of measured makeup so the two match in level —
 otherwise the comparison is a loudness test, and louder wins every loudness test
 regardless of what it sounds like.

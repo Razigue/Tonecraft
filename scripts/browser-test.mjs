@@ -165,24 +165,77 @@ if (!started) {
 }
 
 // Chromium's fake device beeps periodically, so hold the maximum.
+/**
+ * Chromium's fake device emits a periodic beep, not a continuous tone, so a
+ * fixed window can land entirely in a gap and report a dead chain. This holds
+ * the maximum until every threshold is met, and only gives up after twenty
+ * seconds — which also makes it finish in about two when things are working.
+ */
 const levels = await page.evaluate(async () => {
   let cord = 0, input = 0, output = 0;
   // Two meters exist, In and Out. Reading them together would let the input
   // answer a question about the output.
   const bar = (sel) => document.querySelector(`${sel} .meter rect:last-child`);
-  for (let i = 0; i < 60; i++) {
+  const until = performance.now() + 20_000;
+  while (performance.now() < until) {
     for (const el of document.querySelectorAll('.cord')) {
       cord = Math.max(cord, Number(getComputedStyle(el).opacity));
     }
     input = Math.max(input, Number(bar('.strand > section:first-child')?.getAttribute('height') ?? 0));
     output = Math.max(output, Number(bar('.strand > section:last-child')?.getAttribute('height') ?? 0));
-    await new Promise((r) => setTimeout(r, 100));
+    if (cord > 0.2 && input > 1 && output > 1) break;
+    await new Promise((r) => setTimeout(r, 50));
   }
   return { cord, input, output };
 });
 check('signal reaches the cord', levels.cord > 0.2, `peak opacity ${levels.cord.toFixed(2)} of 1.00`);
 check('signal reaches the input meter', levels.input > 1, `peak height ${levels.input.toFixed(0)} of 96`);
 check('signal reaches the output meter', levels.output > 1, `peak height ${levels.output.toFixed(0)} of 96`);
+
+/**
+ * Off means off. With the live input as the source, switching the simulation off
+ * must leave nothing at all coming out — routing a laptop's built-in microphone
+ * back through the speakers is a feedback path, not a comparison.
+ *
+ * Both meters are read, because they answer different questions: the input one
+ * says the capture is closed, the output one says nothing is leaking past it.
+ */
+const meterPeak = (which, ms) => page.evaluate(async ([sel, d]) => {
+  let peak = 0;
+  const until = performance.now() + d;
+  while (performance.now() < until) {
+    const bar = document.querySelector(sel);
+    peak = Math.max(peak, Number(bar?.getAttribute('height') ?? 0));
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  return peak;
+}, [which === 'in'
+  ? '.strand > section:first-child .meter rect:last-child'
+  : '.strand > section:last-child .meter rect:last-child', ms]);
+
+await page.locator('button.chain').click();
+// Past the reverb tail, which is 1.3 s and legitimately still ringing.
+await page.waitForTimeout(2500);
+const mutedIn = await meterPeak('in', 2500);
+const mutedOut = await meterPeak('out', 2500);
+check('switching the simulation off closes the live input',
+  mutedIn === 0 && mutedOut === 0, `in ${mutedIn}, out ${mutedOut}, of 96`);
+check('and the rig says why it went quiet',
+  (await page.locator('.says').innerText()).includes('nothing is being monitored'));
+
+await page.locator('button.chain').click();
+await page.waitForTimeout(1200);
+const backIn = await page.evaluate(async () => {
+  let peak = 0;
+  const until = performance.now() + 20_000;
+  while (performance.now() < until && peak <= 1) {
+    const bar = document.querySelector('.strand > section:first-child .meter rect:last-child');
+    peak = Math.max(peak, Number(bar?.getAttribute('height') ?? 0));
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return peak;
+});
+check('switching it back on reopens the input', backIn > 1, `in ${backIn} of 96`);
 
 // The faders drive the engine.
 const fader = page.locator('.track').first();

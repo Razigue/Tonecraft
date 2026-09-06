@@ -485,7 +485,7 @@
           type="button"
           aria-label="Amp simulation"
           aria-pressed={!direct}
-          title="Hear the guitar with and without the chain (B)"
+          title="Turn the whole simulation, and the input with it, on and off (B)"
           onclick={toggleChain}
         >
           <span class="chain-dot"></span>
@@ -731,6 +731,16 @@
 
   <!-- Only what is wrong, and only while it is. -->
   <div class="says">
+    {#if direct && source === 'live'}
+      <!-- Not a fault, so it does not get the ember: it is the switch doing
+           exactly what it says, and the silence needs a reason. -->
+      <p class="note">
+        <span>The simulation is off, and so is the input — nothing is being
+          monitored.</span>
+        <span class="fix">Turn it back on, or load a file to hear a dry DI
+          against the chain.</span>
+      </p>
+    {/if}
     {#if problem !== null}
       <p class="note"><span>{problem.cause}</span><span class="fix">{problem.fix}</span></p>
     {/if}

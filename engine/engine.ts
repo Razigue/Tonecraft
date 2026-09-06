@@ -602,7 +602,17 @@ export class Engine {
   static readonly DIRECT_MAKEUP_DB = 4.3;
 
   /**
-   * Hear the guitar as it arrives, or as the chain leaves it.
+   * The whole simulation, on or off.
+   *
+   * Off means off: the chain is muted **and the live input is closed**. Leaving
+   * the input open would monitor whatever the machine is listening to — on a
+   * laptop that is the built-in microphone, straight back out of the speakers,
+   * which is a feedback path rather than a comparison. What is left is the file,
+   * raw, which is the point: the same DI, once through Tonecraft and once not.
+   *
+   * The consequence is deliberate and worth stating: with the live input as the
+   * source there is nothing to hear while this is off. The interface says so
+   * rather than leaving the silence to be puzzled over.
    *
    * Crossfaded rather than switched: a hard cut clicks, and a click is the
    * loudest thing in an A/B.
@@ -617,6 +627,35 @@ export class Engine {
     nodes.direct.gain.setTargetAtTime(
       direct ? dbToLinear(Engine.DIRECT_MAKEUP_DB) : 0, now, 0.02,
     );
+    this.#setLiveOpen(!direct);
+  }
+
+  /**
+   * Opens or closes the live capture.
+   *
+   * `enabled = false` stops the browser delivering samples at the source, which
+   * is what makes this an input that is actually off rather than one that is
+   * merely turned down. The track is not stopped: stopping releases the device
+   * and reopening it costs a few hundred milliseconds, which is far too slow
+   * for a control meant to be flipped a dozen times in a row.
+   */
+  #setLiveOpen(open: boolean): void {
+    const nodes = this.#nodes;
+    if (nodes === null) return;
+    this.#stream?.getAudioTracks().forEach((track) => { track.enabled = open; });
+    const source = this.#liveSource;
+    if (source === null) return;
+    try {
+      if (open) source.connect(nodes.bus);
+      else source.disconnect(nodes.bus);
+    } catch {
+      // Disconnecting something that is not connected throws; nothing to fix.
+    }
+  }
+
+  /** True when the live input is muted because the simulation is off. */
+  get liveMuted(): boolean {
+    return this.#direct && this.#source === 'live';
   }
 
   get direct(): boolean { return this.#direct; }
@@ -762,6 +801,8 @@ export class Engine {
     if (this.#source === 'live' && this.#stream !== null) {
       this.#liveSource = new MediaStreamAudioSourceNode(ctx, { mediaStream: this.#stream });
       this.#liveSource.connect(nodes.bus);
+      // Changing device while the simulation is off must not reopen the input.
+      this.#setLiveOpen(!this.#direct);
     }
   }
 
@@ -830,6 +871,7 @@ export class Engine {
       const track = this.#stream.getAudioTracks()[0];
       if (track !== undefined) this.#adopt(track);
       this.#wireSource();
+      this.#setLiveOpen(!this.#direct);
     }
   }
 

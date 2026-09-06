@@ -322,9 +322,13 @@ class FrontendProcessor extends AudioWorkletProcessor {
     const out = outputs[0][0];
     const n = out.length;
     const chans = inputs[0];
-    if (!chans || !chans[0]) { out.fill(0); return true; }
-
-    this.#pick(chans, n);
+    /* Silence, not an absence of news: Chrome hands over an empty input array
+       whenever everything upstream is silent, and returning early here would
+       leave the meters frozen at their last reading rather than falling to
+       zero. The stage still runs — its gate and its filters have state that has
+       to keep settling — it just runs on zeros. */
+    if (!chans || !chans[0]) this.mono.fill(0);
+    else this.#pick(chans, n);
     const inp = this.mono;
 
     const gTarget = params.inputGain[0];
@@ -409,7 +413,7 @@ class FrontendProcessor extends AudioWorkletProcessor {
         out: this.peakOut,
         gate: this.gg,
         brightness: this.eAll > 1e-12 ? Math.sqrt(this.eHigh / this.eAll) : 0,
-        channels: chans.length,
+        channels: chans && chans.length ? chans.length : 1,
         channelPeaks: [this.chPeak[0], this.chPeak[1]],
         following: this.channel === -2 ? this.autoPick : -1
       });
