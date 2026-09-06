@@ -56,6 +56,16 @@
   ] as const;
 
   /**
+   * The A/B. It is the fastest way to answer the only question a first-time
+   * visitor actually has — what does this do to my guitar — and the answer is
+   * far more convincing heard back to back than described.
+   */
+  const MONITOR = [
+    { value: 'amp', label: 'Amp' },
+    { value: 'direct', label: 'Direct' },
+  ] as const;
+
+  /**
    * A two-input interface puts its instrument jack on the second channel — a
    * Scarlett Solo carries the XLR left and the jack right — so the choice only
    * exists when there is one to make. "Follow" is the honest default: many
@@ -102,6 +112,8 @@
   let channel = $state<InputChannel>('follow');
   let channelCount = $state(1);
   let source = $state<Source>('live');
+  /** Hearing the guitar as it arrives rather than as the chain leaves it. */
+  let direct = $state(false);
 
   let meters = $state<Meters>({
     input: 0, drive: 0, output: 0, outputRms: 0, gate: 1, channelPeaks: [0], channels: 1,
@@ -232,6 +244,11 @@
     persist();
   }
 
+  function chooseMonitor(next: string): void {
+    direct = next === 'direct';
+    engine?.setDirect(direct);
+  }
+
   function chooseChannel(next: string): void {
     channel = next as InputChannel;
     engine?.setInputChannel(channel);
@@ -309,6 +326,21 @@
       if (source === 'file' && state === 'running') play();
     } catch (error) {
       notice = `That file could not be decoded: ${String((error as Error).message)}`;
+    }
+  }
+
+  async function loadDemo(): Promise<void> {
+    if (engine === null) return;
+    try {
+      const buffer = await engine.loadDemoTake();
+      fileName = 'Demo take';
+      fileDuration = buffer.duration;
+      filePeaks = peaksOf(buffer);
+      filePosition = 0;
+      notice = null;
+      if (source === 'file' && state === 'running') play();
+    } catch {
+      notice = 'The demo take is not installed. It lives in public/di/.';
     }
   }
 
@@ -425,6 +457,10 @@
     <span class="t-wordmark">Tonecraft</span>
 
     <div class="bar-right">
+      {#if state === 'running'}
+        <Segmented label="Monitoring" options={MONITOR}
+                   value={direct ? 'direct' : 'amp'} onchange={chooseMonitor} />
+      {/if}
       {#if health !== null}
         <!-- Three tiers. Under 20 ms it is a number and nothing else; between 20
              and 35 it explains itself on click; above 35 the cause is named. It
@@ -594,6 +630,11 @@
               onchange={(e) => loadFile(e.currentTarget.files?.[0])}
             />
           </label>
+          <!-- No guitar, no interface, no file to hand: there is still
+               something to listen to. -->
+          <button class="quiet demo" type="button" onclick={loadDemo}>
+            or use the demo take
+          </button>
         </div>
       {:else}
         <Waveform peaks={filePeaks} duration={fileDuration} position={filePosition} onseek={seek} />
@@ -617,6 +658,9 @@
               onchange={(e) => loadFile(e.currentTarget.files?.[0])}
             />
           </label>
+          <!-- Reachable once a file is loaded too, or the demo is a one-way
+               door: load your own take and there is no way back to it. -->
+          <button class="quiet demo" type="button" onclick={loadDemo}>Demo take</button>
         </div>
       {/if}
     </section>
@@ -850,6 +894,7 @@
     cursor: pointer;
   }
   .quiet:hover { color: var(--ink); }
+  .demo { border-bottom: 1px solid var(--graphite); min-height: 32px; }
   .quiet:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
   .start {
@@ -867,7 +912,20 @@
   .start:disabled { opacity: 0.4; cursor: default; }
   .start:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
-  .says { display: flex; flex-direction: column; gap: var(--u); }
+  /* The space is reserved whether or not anything is being said. These messages
+     appear and disappear on their own — a diagnosis arrives once the input has
+     been measured, a dropout warning comes and goes — and letting them push the
+     rig up and down every time makes the whole interface feel unstable. Two
+     lines is one message; beyond that they scroll in their own box rather than
+     growing into the strand. */
+  .says {
+    display: flex;
+    flex-direction: column;
+    gap: var(--u);
+    min-height: calc(var(--u) * 6);
+    max-height: calc(var(--u) * 16);
+    overflow-y: auto;
+  }
   .note {
     display: flex;
     flex-direction: column;

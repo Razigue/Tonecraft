@@ -269,6 +269,70 @@ await press('Master', 'Home');
 check('the master reaches the audio', flat - quiet > 10,
   `${flat.toFixed(0)} at -12.4 dB, ${quiet.toFixed(0)} at -40 dB, of 96`);
 
+// The take that ships. Someone with no guitar and no interface has to be able
+// to hear what this does, so it has to actually load and play.
+await page.locator('button.demo').click();
+await page.waitForSelector('.wave svg', { timeout: 20_000 });
+await page.waitForTimeout(1500);
+ok('the demo take loads and plays');
+
+/**
+ * The A/B has to compare tone, not loudness: louder wins every loudness test
+ * regardless of what it sounds like, so a direct path that is quietly 6 dB down
+ * would make the amp sound better than it is, for free.
+ *
+ * Integrated over a full pass of the take, because a guitar performance is not
+ * a steady tone and a peak reading would be measuring one note.
+ */
+const integrate = (ms) => page.evaluate(async (d) => {
+  let sum = 0, n = 0;
+  const until = performance.now() + d;
+  while (performance.now() < until) {
+    const bar = document.querySelector('.strand > section:last-child .meter rect:last-child');
+    // Inverts the meter's own min(1, sqrt(level) * 1.4) scaling.
+    sum += Math.pow(Number(bar?.getAttribute('height') ?? 0) / 96 / 1.4, 2);
+    n++;
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  return sum / n;
+}, ms);
+
+const monitor = (label) => page.locator('.bar-right .segmented button', { hasText: label }).click();
+
+await monitor('Amp');
+await page.waitForTimeout(800);
+const ampLevel = await integrate(12_000);
+await monitor('Direct');
+await page.waitForTimeout(800);
+const directLevel = await integrate(12_000);
+await monitor('Amp');
+
+check('the direct path carries the dry signal', directLevel > 1e-3,
+  `mean amplitude ${directLevel.toExponential(2)}`);
+const offset = 20 * Math.log10(ampLevel / directLevel);
+check('the A/B is level-matched, so it compares tone', Math.abs(offset) < 1.5,
+  `${offset.toFixed(2)} dB apart`);
+
+/**
+ * The messages below the rig arrive and leave on their own — a hardware
+ * diagnosis once the input has been measured, a dropout warning that comes and
+ * goes. If they push the strand around, the interface feels unstable at exactly
+ * the moment it is trying to tell somebody something.
+ */
+const before = await page.locator('.strand').boundingBox();
+await page.evaluate(() => {
+  const says = document.querySelector('.says');
+  const note = document.createElement('p');
+  note.className = 'note';
+  note.innerHTML = '<span>A message two lines long, appearing while playing.</span>' +
+    '<span class="fix">And the remedy that comes with it.</span>';
+  says.appendChild(note);
+});
+await page.waitForTimeout(300);
+const after = await page.locator('.strand').boundingBox();
+const moved = Math.abs(after.y - before.y);
+check('a message does not move the rig', moved < 1, `${moved.toFixed(1)} px`);
+
 // FR-18: the limiter has no control anywhere, in any mode, on any path.
 const bypasses = await page.locator('.strand button[aria-label^="Bypass"]').allTextContents();
 check('no stage offers a bypass that should not have one',

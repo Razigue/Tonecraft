@@ -160,6 +160,10 @@ interface Nodes {
   treble: BiquadFilterNode;
   presence: BiquadFilterNode;
   lowcut: BiquadFilterNode;
+  /** Everything the chain did, in one place, so the A/B can mute it. */
+  chain: GainNode;
+  /** The raw input, level-matched, for the A/B. */
+  direct: GainNode;
   dry: GainNode;
   reverb: ConvolverNode;
   wet: GainNode;
@@ -185,6 +189,7 @@ export class Engine {
   #cab = DEFAULT_CAB;
 
   #source: Source = 'live';
+  #direct = false;
   #buffer: AudioBuffer | null = null;
   #fileNode: AudioBufferSourceNode | null = null;
   #filePlaying = false;
@@ -344,6 +349,7 @@ export class Engine {
     this.#nodes = this.#build(context, wasmBinary);
     this.#wireSource();
     this.setInputChannel(this.#channel);
+    this.setDirect(this.#direct);
     this.#applyAll();
 
     const capture = this.#capture ?? this.#catalog.models[0] ?? null;
@@ -409,6 +415,8 @@ export class Engine {
     // Below the low E there is nothing but cone excursion and rumble.
     const lowcut = new BiquadFilterNode(context, { type: 'highpass', frequency: 55, Q: 0.707 });
 
+    const chain = new GainNode(context, { gain: 1 });
+    const direct = new GainNode(context, { gain: 0 });
     const dry = new GainNode(context, { gain: 1 });
     const reverb = new ConvolverNode(context, { disableNormalization: true });
     const wet = new GainNode(context, { gain: 0 });
@@ -435,11 +443,19 @@ export class Engine {
     treble.connect(presence);
     presence.connect(lowcut);
 
-    lowcut.connect(dry);
-    lowcut.connect(reverb);
+    lowcut.connect(chain);
+    chain.connect(dry);
+    chain.connect(reverb);
     reverb.connect(wet);
     dry.connect(master);
     wet.connect(master);
+
+    /* The A/B tap, taken at the very front — before the trim, the gate and the
+       boost — because the question it answers is "what does this do to my
+       guitar", and half an answer is worse than none. It rejoins at the master
+       so the volume fader and the limiter still apply to both. */
+    bus.connect(direct);
+    direct.connect(master);
 
     master.connect(limiter);
     limiter.connect(meter);
@@ -447,7 +463,7 @@ export class Engine {
 
     const nodes: Nodes = {
       bus, frontend, nam, trim, cab, bass, mid, treble, presence, lowcut,
-      dry, reverb, wet, master, limiter, meter,
+      chain, direct, dry, reverb, wet, master, limiter, meter,
     };
     nodes.cab.buffer = makeCabIR(context, this.#cab);
     return nodes;
@@ -565,6 +581,41 @@ export class Engine {
     nodes.trim.gain.setTargetAtTime(dbToLinear(capture.trimDb), ctx.currentTime, 0.05);
     return settled;
   }
+
+  /**
+   * Makeup gain on the direct path, in dB.
+   *
+   * Measured, not guessed: the demo take through the shipped preset against the
+   * same take raw, both integrated over a full pass off the output meter. The
+   * chain came out 6.1 dB ahead. Without this the A/B is a loudness test, and
+   * louder wins every loudness test regardless of what it sounds like.
+   *
+   * It is one number for one preset, so it drifts as the master or the preset
+   * moves — the alternative is matching the loudness continuously, which is a
+   * compressor nobody asked for sitting across the only honest comparison in
+   * the product.
+   */
+  static readonly DIRECT_MAKEUP_DB = 6.1;
+
+  /**
+   * Hear the guitar as it arrives, or as the chain leaves it.
+   *
+   * Crossfaded rather than switched: a hard cut clicks, and a click is the
+   * loudest thing in an A/B.
+   */
+  setDirect(direct: boolean): void {
+    this.#direct = direct;
+    const nodes = this.#nodes;
+    const ctx = this.#context;
+    if (nodes === null || ctx === null) return;
+    const now = ctx.currentTime;
+    nodes.chain.gain.setTargetAtTime(direct ? 0 : 1, now, 0.02);
+    nodes.direct.gain.setTargetAtTime(
+      direct ? dbToLinear(Engine.DIRECT_MAKEUP_DB) : 0, now, 0.02,
+    );
+  }
+
+  get direct(): boolean { return this.#direct; }
 
   /** Instant: the IR is synthesised in a few milliseconds, no file to fetch. */
   setCab(id: string): void {
@@ -727,6 +778,25 @@ export class Engine {
   // Playing a DI take through the same chain is how someone with no interface
   // hears the product at all, and how anyone compares two captures on the same
   // performance. It runs through the identical graph — there is no second path.
+
+  /**
+   * The take that ships with the product, so someone with no interface and no
+   * guitar to hand can still hear what this does. Fetched on demand: it is 1.6
+   * MB, and the page must not pay for it before anyone asks.
+   */
+  async loadDemoTake(): Promise<AudioBuffer> {
+    const response = await fetch(`${BASE}di/demo-di.wav`);
+    if (!response.ok) throw new Error('the demo take is not installed');
+    const bytes = await response.arrayBuffer();
+    const ctx = this.#context ?? new AudioContext();
+    try {
+      this.#buffer = await ctx.decodeAudioData(bytes);
+      this.#fileCursor = 0;
+      return this.#buffer;
+    } finally {
+      if (this.#context === null) await ctx.close();
+    }
+  }
 
   /** Decodes a file. Works before the engine is started. */
   async loadFile(file: File): Promise<AudioBuffer> {
