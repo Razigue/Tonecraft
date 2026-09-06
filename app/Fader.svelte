@@ -31,19 +31,41 @@
 
   const span = param.max - param.min;
 
+  /**
+   * The taper lives here and only here (AD-9). The wire format carries the
+   * value in its engineering unit, so retuning a taper changes how the fader
+   * feels and cannot change what an existing tone sounds like.
+   *
+   * A frequency control is logarithmic because hearing is: half of a 400 Hz to
+   * 6 kHz sweep laid out linearly would be spent above 3 kHz.
+   */
+  const log = $derived(param.taper === 'logarithmic' && param.min > 0);
+
   /** 0 at the bottom, 1 at the top. */
-  const position = $derived((value - param.min) / span);
+  const toTravel = (v: number): number =>
+    log
+      ? Math.log(v / param.min) / Math.log(param.max / param.min)
+      : (v - param.min) / span;
+
+  const fromTravel = (t: number): number =>
+    log ? param.min * Math.pow(param.max / param.min, t) : param.min + t * span;
+
+  const position = $derived(toTravel(value));
 
   function clamp(v: number): number {
     return Math.min(param.max, Math.max(param.min, v));
   }
+
+  /** One step of travel, so a keystroke moves the same distance everywhere. */
+  const stepAt = (v: number, fine: boolean): number =>
+    fromTravel(Math.min(1, toTravel(v) + 1 / (fine ? 400 : 60))) - v;
 
   function fromPointer(clientY: number): void {
     if (element === null) return;
     const rect = element.getBoundingClientRect();
     const top = rect.top + (rect.height - TRAVEL) / 2;
     const t = 1 - (clientY - top) / TRAVEL;
-    onchange(clamp(param.min + t * span));
+    onchange(clamp(fromTravel(Math.min(1, Math.max(0, t)))));
   }
 
   function onPointerDown(event: PointerEvent): void {
@@ -65,12 +87,12 @@
 
   function onWheel(event: WheelEvent): void {
     event.preventDefault();
-    const step = span / (event.shiftKey ? 400 : 60);
+    const step = stepAt(value, event.shiftKey);
     onchange(clamp(value - Math.sign(event.deltaY) * step));
   }
 
   function onKeyDown(event: KeyboardEvent): void {
-    const step = span / (event.shiftKey ? 400 : 60);
+    const step = stepAt(value, event.shiftKey);
     switch (event.key) {
       case 'ArrowUp':
       case 'ArrowRight': onchange(clamp(value + step)); break;
@@ -88,9 +110,27 @@
     onchange(param.default);
   }
 
-  const shown = $derived(
-    param.unit === 'ratio' ? value.toFixed(2) : value.toFixed(1),
-  );
+  /**
+   * Reads as an amount, not as a raw number. A fader marked `-72.9 dB` says
+   * nothing about a gate threshold; `-72.9` next to a unit does. Signs are
+   * explicit on dB, because whether the EQ is cutting or boosting is the whole
+   * information, and a ratio reads as a percentage because that is how anyone
+   * talks about a mix control.
+   */
+  const shown = $derived.by(() => {
+    switch (param.unit) {
+      case 'dB':
+        return `${value >= 0 ? '+' : '\u2212'}${Math.abs(value).toFixed(1)} dB`;
+      case 'Hz':
+        return value >= 1000 ? `${(value / 1000).toFixed(2)} kHz` : `${Math.round(value)} Hz`;
+      case 'ratio':
+        return `${Math.round(value * 100)}%`;
+      case 'ms':
+        return `${value.toFixed(1)} ms`;
+      default:
+        return value.toFixed(1);
+    }
+  });
 </script>
 
 <div class="fader">
@@ -105,7 +145,7 @@
     aria-valuemin={param.min}
     aria-valuemax={param.max}
     aria-valuenow={value}
-    aria-valuetext={`${shown} ${param.unit}`}
+    aria-valuetext={shown}
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}
@@ -138,7 +178,7 @@
 
   <!-- The value replaces the label while dragging, and only then. -->
   <span class="caption" class:numeric={dragging}>
-    {dragging ? `${shown} ${param.unit}` : param.label}
+    {dragging ? shown : param.label}
   </span>
 </div>
 

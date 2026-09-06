@@ -7,29 +7,24 @@ dist/
 .vercel/
 .netlify/
 
-# AD-15: no build output is ever committed. A .wasm and the audio rendered
-# from it must not be able to drift apart, and a binary in git history is
-# there forever — against the 1 GB repository limit.
+# AD-15: no build output is ever committed. A binary in git history is there
+# forever, against the 1 GB repository limit.
 build/
-*.o
-*.bc
 *.wasm
 *.wasm.map
+
+# Exception: the NAM engine is a pinned third-party artifact, not our build
+# output — scripts/vendor-nam.mjs fetches one exact version of
+# @opendaw/nam-wasm and patches it for the AudioWorklet scope. Committing it is
+# what makes a clean checkout deployable, and CI does not need network access to
+# publish. Re-fetch with `npm run vendor`.
+!public/nam/nam.wasm
 
 # Build-time renders: preset audio and its per-stage RMS envelope. Both are a
 # pure function of the .wasm plus the DI loop in assets/, so CI regenerates
 # them. Source assets in assets/ ARE committed.
 public/presets/
 site/**/*.generated.json
-
-# Generated from schema/params.ts — never edited by hand, never committed
-dsp/params.generated.h
-
-# Generated from dsp/amp/faust/amp.dsp by the Faust compiler
-dsp/amp/faust/amp.generated.h
-
-# Bundled from engine/processor.ts by esbuild
-public/tonecraft-processor.js
 
 # Astro generated types
 .astro/
@@ -52,11 +47,14 @@ Thumbs.db
 
 # BMAD — personal install answers (see _bmad/custom/.gitignore)
 *.user.toml
-# Local Emscripten install (~1.7 GB). CI installs its own, pinned.
+
+# Local Emscripten install (~1.7 GB), left over from the C++ chain the NAM
+# pivot retired. Nothing builds it any more; delete it when you are sure.
 .toolchain/
 
-# Copied from assets/ by the build. The source lives in assets/ and is committed.
-public/*.tcir
+# The proof of concept this repository was ported from. A local input, kept out
+# of history like the reference audio below.
+tonecraft-poc.zip
 
 # Reference audio used to tune by measurement: DI takes and the output of a
 # commercial plugin on the same guitar. Not ours to redistribute, tens of

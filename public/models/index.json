@@ -1,0 +1,71 @@
+{
+  "packs": [
+    {
+      "id": "metal",
+      "name": "Metal",
+      "order": 1
+    }
+  ],
+  "models": [
+    {
+      "file": "helga-b-5150-blockletter-boosted.nam",
+      "source": "Helga B 5150 BlockLetter - Boosted.nam",
+      "name": "5150 Block Letter — boosted",
+      "pack": "metal",
+      "cab": "v30mod",
+      "note": "The modern metal standard. Sharp attack, tight bottom.",
+      "arch": "WaveNet",
+      "weights": 13802,
+      "rmsDb": -26.49,
+      "trimDb": 8.5
+    },
+    {
+      "file": "helga-b-5150-blockletter-noboost.nam",
+      "source": "Helga B 5150 BlockLetter - NoBoost.nam",
+      "name": "5150 Block Letter — raw",
+      "pack": "metal",
+      "cab": "v30mod",
+      "note": "The same amp with nothing in front: more open, and it answers the boost.",
+      "arch": "WaveNet",
+      "weights": 13802,
+      "rmsDb": -26.18,
+      "trimDb": 8.2
+    },
+    {
+      "file": "helga-b-6505-red-ch-mxr-drive.nam",
+      "source": "Helga B 6505+ Red ch - MXR Drive.nam",
+      "name": "6505+ red channel — MXR",
+      "pack": "metal",
+      "cab": "v30mod",
+      "note": "More midrange, and very legible in a busy mix.",
+      "arch": "WaveNet",
+      "weights": 13802,
+      "rmsDb": -21.26,
+      "trimDb": 3.3
+    },
+    {
+      "file": "helga-b-jsx-ultra-od808.nam",
+      "source": "Helga B JSX Ultra - OD808.nam",
+      "name": "JSX Ultra — OD808",
+      "pack": "metal",
+      "cab": "v30mod",
+      "note": "High, singing gain. Made for solos.",
+      "arch": "WaveNet",
+      "weights": 13802,
+      "rmsDb": -22.41,
+      "trimDb": 4.4
+    },
+    {
+      "file": "tudor-n-driftwood-nightmare-high-gain-hm2.nam",
+      "source": "Tudor N Driftwood Nightmare High Gain   HM2.nam",
+      "name": "Driftwood Nightmare — HM-2",
+      "pack": "metal",
+      "cab": "v30dark",
+      "note": "Extremely saturated, with HM-2 colour. Doom, sludge, Swedish death.",
+      "arch": "WaveNet",
+      "weights": 19750,
+      "rmsDb": -17.67,
+      "trimDb": -0.3
+    }
+  ]
+}

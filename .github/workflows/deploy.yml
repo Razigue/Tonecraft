@@ -1,5 +1,12 @@
-# AD-15: CI compiles, renders and deploys. Nothing binary is committed, so the
-# deployed site is a pure function of the commit and a rollback is a revert.
+# The deployed site is a pure function of the commit: everything it serves is
+# either committed source or derived from it by this job, so a rollback is a
+# revert.
+#
+# The NAM engine (`public/nam/nam.wasm`) is the one binary in the tree. It is a
+# pinned third-party artifact, not our build output — `scripts/vendor-nam.mjs`
+# fetches one exact version and patches it for the AudioWorklet scope. Vendoring
+# it rather than fetching it here is what keeps this job free of network access
+# beyond npm, and keeps a clean checkout deployable.
 name: Build and deploy
 
 on:
@@ -20,12 +27,6 @@ concurrency:
 env:
   NODE_VERSION: 24
 
-  # Pinned exactly, never a floating tag. The toolchain version is part of what
-  # makes a build reproducible, and AD-4 forbids relaxed SIMD — a newer
-  # toolchain could otherwise start emitting it. Unused until story 1.3, which
-  # confirms this version against a real build.
-  EMSDK_VERSION: 6.0.4
-
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -39,47 +40,41 @@ jobs:
 
       - run: npm ci
 
-      # AD-7: schema/params.ts is the single source of truth. Generate the C++
-      # header, then assert it matches — catching a header edited by hand, and
-      # a generator that is not deterministic.
-      - name: Generate and verify the parameter header
-        run: |
-          npm run schema:generate
-          npm run schema:check
-
       - name: Typecheck
         run: npx tsc --noEmit
 
-      # AD-4: relaxed SIMD in no build configuration, ever.
-      # AD-18: no stage may read a device sample rate.
-      - name: Check architecture invariants
-        run: npm run check:invariants
+      # schema/params.ts is the single source of truth (AD-7). This asserts that
+      # `engine/` and `app/` have not drifted from it, that every preset names a
+      # capture and a cabinet that exist, and that every capture carries a
+      # measured trim — all of which fail silently in the product.
+      - name: Check the schema and its consumers
+        run: npm run check
 
-      # The action moved from mymindstorm to emscripten-core; the old path only
-      # works by redirect.
-      - uses: emscripten-core/setup-emsdk@v14
-        with:
-          version: ${{ env.EMSDK_VERSION }}
-          actions-cache-folder: emsdk-cache
-
-      # Faust is a code generator here, not a runtime: it produces the C++ that
-      # is compiled into the one module. Nothing from it ships at runtime.
-      - name: Install the Faust compiler
-        run: sudo apt-get update && sudo apt-get install -y faust
-
-      - name: Build the DSP chain to WebAssembly
-        run: npm run build:wasm
-
-      # Drives the compiled chain directly and asserts on what comes back:
-      # pass-through, a limiter nothing can defeat, and identical output for
-      # identical input (NFR-9).
-      - name: Verify the DSP, the compiled chain and the input path
+      - name: Test
         run: npm test
 
-      # Story 4.1 adds the Node renderer between the WASM build and astro build.
+      # The only hand-written non-linearity in the chain. Regressing its
+      # oversampling or its anti-aliasing does not break a test, it just sounds
+      # cheap, so the figure is printed on every build.
+      - name: Measure the boost's aliasing
+        run: npm run measure
 
+      # Built at the root first, because the browser test serves dist/ itself
+      # from '/'. It is the only test that can see the failure that matters:
+      # when the NAM engine does not come up, the chain passes the dry signal
+      # through — there is sound, the meters move, and nothing looks wrong. It
+      # asserts on the worklet's own confirmation that the capture is running.
       - name: Build
-        # GitHub Pages serves this under /<repo>/ unless a custom domain is set.
+        run: npm run build
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: End-to-end in a browser
+        run: npm run test:browser
+
+      # GitHub Pages serves this under /<repo>/ unless a custom domain is set,
+      # so what is deployed is rebuilt against that base.
+      - name: Rebuild for deployment
         run: npm run build
         env:
           BASE_PATH: /${{ github.event.repository.name }}/

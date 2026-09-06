@@ -1,61 +1,108 @@
 # Tonecraft
 
-Guitar amp and effects in a browser tab. No install, no plugin, no driver, no
-account, no server.
+Guitar amp in a browser tab. No install, no plugin, no driver, no account, no
+server.
 
-**Nothing here makes sound yet.** Story 1.1 of epic 1 is complete: the project
-scaffolds, builds and deploys. The engine arrives in story 1.3.
+**It makes sound.** The amplifier is a [Neural Amp
+Modeler](https://www.neuralampmodeler.com/) capture running in WebAssembly; the
+cabinet, the boost, the correction and the reverb are ours. Plug a DI in, press
+start, and there is a tone — or drop an audio file in and hear the same chain on
+a take you already have.
 
 ---
 
 ## Requirements
 
 - **Node 24 LTS** (Krypton). Checked by `engines` in `package.json`.
-- **Emscripten 6.0.4**, pinned exactly — not needed until story 1.3.
+
+Nothing else. There is no C++ toolchain any more.
 
 ## Commands
 
 ```sh
-npm ci        # install exactly what the lockfile pins
-npm run dev   # dev server
-npm run build # static build into dist/
-npm run preview
+npm ci            # install exactly what the lockfile pins
+npm run dev       # dev server
+npm run build     # check, then static build into dist/
+npm test          # schema consistency, input constraints, diagnosis verdicts
+npm run check     # the invariants that span files, on their own
+npm run measure   # the boost's aliasing, as a table
+npm run vendor    # re-fetch the NAM engine and the captures (the only network step)
+npm run calibrate # re-measure every capture's level and write its trim
 ```
 
-A fresh clone needs no manual step beyond `npm ci`. Everything else is derived.
+A fresh clone needs no step beyond `npm ci`: the engine and the captures are
+vendored into `public/`.
+
+`npm run test:browser` drives a real browser end to end and needs
+`npx playwright install chromium` once. It is the only test that can see the
+failure that matters: when the NAM engine does not come up, the chain passes the
+dry signal through — there is sound, the meters move, and nothing looks wrong.
+It asserts on the worklet's own confirmation that the capture is running, so
+that failure goes red instead of silent.
+
+## The chain
+
+```
+source (live DI or an audio file)
+  -> frontend worklet     channel choice, trim, noise gate, TS boost (4x + ADAA)
+  -> NAM worklet          the amplifier itself, WebAssembly
+  -> capture trim         measured offline, so captures match each other
+  -> cabinet              ConvolverNode, synthesised minimum-phase IR
+  -> four-band correction native biquads, post-cabinet
+  -> reverb, in parallel
+  -> master + limiter     always on, no control anywhere
+  -> output meter         pass-through: peak, RMS, dropouts
+```
+
+**A capture is a frozen snapshot of one amplifier at one setting.** Its gain,
+its channel and its own EQ are baked into the file and cannot be driven. What is
+set here is what we send into it and what we do with what comes back — which is
+why the capture and the cabinet, not any fader, are the two real tone choices.
+
+**The cabinet is not optional.** These captures are of the amplifier alone:
+measured, they are still +5 dB at 7 kHz, where a capture including a cabinet
+would be 25 dB down. Without one the result is not an amp sound.
 
 ## Layout
 
-The architecture spine names these directories and fixes the dependency
-direction between them. Each carries a `README.md` stating what it owns and
-which decisions govern it.
-
 ```
 schema/   parameter definitions — depends on nothing
-dsp/      C++ stages, flat C interface — never imports TypeScript
-engine/   chain composition, WASM lifetime, parameter bridge, meter reader
-app/      the Svelte island — never imports dsp/
-site/     Astro pages (this is Astro's srcDir) — never imports engine/
-render/   Node harness driving the same .wasm offline
-assets/   source audio and model assets — build output derived from them is not committed
+engine/   graph composition, capture loading, IR synthesis, meters, diagnosis
+app/      the Svelte island — never touches the audio graph directly
+site/     Astro pages (this is Astro's srcDir)
+render/   measurement tools; the offline renderer is not rebuilt yet
+public/   the NAM engine, the worklets and the captures, served as-is
+scripts/  vendoring, calibration, measurement, checks
 ```
 
 Dependencies point one way only:
 
 ```
-schema ──> dsp ──> engine ──> app ──> site
-   │                 │                 ▲
-   └─────────────────┴──> render ──────┘
+schema ──> engine ──> app ──> site
+              └──> render
 ```
 
-## What is not in this repository
+## What is in this repository that is binary
 
-No build output, ever — no `.wasm`, no rendered audio, no RMS envelope JSON, no
-generated C++ header. CI compiles and renders them, so a `.wasm` and the audio
-produced from it cannot drift apart, and no binary enters git history.
+One file: `public/nam/nam.wasm`, a pinned build of NeuralAmpModelerCore fetched
+by `scripts/vendor-nam.mjs`. It is a third-party artifact rather than our build
+output, and committing it is what makes a clean checkout deployable without CI
+needing network access beyond npm.
 
-The deployed site is therefore a pure function of the commit, and a rollback is
-a revert.
+## Licences
+
+- The application — yours to do as you like with.
+- **The NAM engine** — [`@opendaw/nam-wasm`](https://github.com/andremichelle/nam-wasm),
+  MIT, © Steven Atkinson, a build of
+  [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore).
+  See `public/nam/nam-wasm-LICENSE.txt`.
+- **The amp captures** — [`pelennor2170/NAM_models`](https://github.com/pelennor2170/NAM_models),
+  **GNU GPL v3**. See `public/models/COPYING`.
+
+⚠️ The captures are GPL v3. Distributing Tonecraft with `public/models/` included
+brings the obligations of the GPL v3 with it. For personal use there is no
+constraint. To distribute without copyleft, remove `public/models/` and let the
+player supply their own captures.
 
 ## Documents
 
@@ -66,4 +113,3 @@ a revert.
 | `DESIGN.md` | The design system — the source of truth for anything visual |
 | `_bmad-output/planning-artifacts/PRD.md` | 50 functional and 18 non-functional requirements |
 | `_bmad-output/planning-artifacts/Architecture.md` | The spine: 21 invariants, conventions, stack |
-| `_bmad-output/planning-artifacts/epics.md` | 5 epics, 41 stories |

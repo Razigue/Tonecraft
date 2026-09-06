@@ -6,26 +6,19 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "npm run schema:generate && npm run build:worklet && astro dev",
-    "build": "npm run schema:generate && npm run build:worklet && astro build",
+    "dev": "astro dev",
+    "build": "npm run check && astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "schema:generate": "tsx schema/generate.ts",
-    "schema:check": "tsx schema/generate.ts --check",
-    "build:wasm": "bash dsp/build.sh",
-    "build:worklet": "tsx engine/build-worklet.ts",
-    "check:flags": "bash scripts/check-build-flags.sh",
-    "test:wasm": "tsx engine/wasm.test.ts",
+    "vendor": "node scripts/vendor-nam.mjs",
+    "calibrate": "tsx scripts/calibrate-models.ts",
+    "measure": "tsx scripts/measure-aliasing.ts",
+    "check": "tsx scripts/check-schema.ts",
+    "test": "npm run check && npm run test:input && npm run test:diagnosis",
     "test:input": "tsx engine/input.test.ts",
-    "test": "npm run generate && npm run check:invariants && npm run test:native && npm run test:diagnosis && npm run test:input && npm run test:wasm",
-    "check:invariants": "bash scripts/check-build-flags.sh && bash scripts/check-stage-isolation.sh",
-    "bench": "tsx engine/bench.ts",
-    "test:native": "bash scripts/test-native.sh",
     "test:diagnosis": "tsx engine/diagnosis.test.ts",
-    "build:amp": "bash scripts/build-amp.sh",
-    "model:convert": "tsx scripts/nam-to-tcnm.ts",
-    "generate": "npm run schema:generate && npm run build:amp",
-    "verify": "npm run generate && bash scripts/build-wasm-if-possible.sh && npm test && npm run build"
+    "test:browser": "node scripts/browser-test.mjs",
+    "verify": "npm test && npm run build && npm run test:browser"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",
@@ -34,13 +27,11 @@
     "nanostores": "^1.5.2",
     "svelte": "^5.57.0"
   },
-  "allowScripts": {
-    "esbuild": true
-  },
   "description": "Guitar amp and effects in a browser tab. No install, no plugin, no account, no server.",
   "private": true,
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "playwright": "^1.63.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.13",
     "typescript": "^6.0.3"
