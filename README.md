@@ -10,9 +10,11 @@ start, and there is a tone — or drop an audio file in and hear the same chain 
 a take you already have.
 
 The opening sheet asks which of those two you are, and they are not the same
-product: **I have a guitar** opens your input, **Just let me hear it** plays a
-take through the chain and **never calls `getUserMedia` at all** — no prompt, no
-device, nothing listening. A permission dialog in front of a demonstration is a
+product: **I have a guitar** opens your input, **Just let me hear it** loads a
+take and **never calls `getUserMedia` at all** — no prompt, no device, nothing
+listening. It does not start playing on its own either; press play when you
+want it. What is not left to you is the chain: it is on, so the first press is
+Tonecraft, and turning it off is the deliberate act. A permission dialog in front of a demonstration is a
 toll gate, and the browser test counts the calls rather than trusting the claim.
 
 So with no guitar and no interface, there is still something to hear: **a demo

@@ -286,7 +286,6 @@
     source = next as Source;
     persist();
     await engine?.setSource(source);
-    if (source === 'file' && filePeaks !== null && state === 'running') play();
     if (source === 'live') { engine?.stopFile(); filePlaying = false; }
   }
 
@@ -338,12 +337,12 @@
     if (file === undefined || engine === null) return;
     try {
       const buffer = await engine.loadFile(file);
+      filePlaying = false;
       fileName = file.name;
       fileDuration = buffer.duration;
       filePeaks = peaksOf(buffer);
       filePosition = 0;
       notice = null;
-      if (source === 'file' && state === 'running') play();
     } catch (error) {
       notice = `That file could not be decoded: ${String((error as Error).message)}`;
     }
@@ -355,12 +354,12 @@
     if (engine === null) return;
     try {
       const buffer = await engine.loadDemoTake();
+      filePlaying = false;
       fileName = DEMO_NAME;
       fileDuration = buffer.duration;
       filePeaks = peaksOf(buffer);
       filePosition = 0;
       notice = null;
-      if (source === 'file' && state === 'running') play();
     } catch {
       notice = 'The demo take is not installed. It lives in public/di/.';
     }
@@ -449,19 +448,25 @@
         channelCount = engine.channelCount;
       }
       frame = requestAnimationFrame(tick);
-      // Straight into it: the chain is on, so the first thing heard is what
-      // Tonecraft does, and the button next to the clock takes it away again.
-      //
-      // A file has to be re-decoded on every start, because the buffer belongs
-      // to the engine and stopping threw the engine away. The waveform on
-      // screen outlived it, so without this, Start after Stop left a take
-      // drawn, a Play button that responded, and no sound.
+      /* The take is loaded and drawn, and then it waits. Nothing plays until
+         somebody presses play — a page that starts making noise on its own is
+         the thing everyone hates about audio sites, and the point here is that
+         the listener is in control of the comparison.
+         What is *not* left to them is the chain: it is on, so the first press
+         of play is Tonecraft, and turning it off is the deliberate act.
+         A file has to be re-decoded on every start, because the buffer belongs
+         to the engine and stopping threw the engine away. The waveform on
+         screen outlived it, so without this, Start after Stop left a take
+         drawn, a Play button that responded, and no sound. */
       if (intent === 'demo' || fileName === DEMO_NAME) await loadDemo();
       else if (source === 'file' && filePeaks !== null) {
         notice = 'Load the file again — stopping released it.';
         filePeaks = null;
         fileName = '';
       }
+      // Whatever was chosen before, the chain is what you hear first.
+      direct = false;
+      engine.setDirect(false);
     } catch (error) {
       // Cause in one sentence, fix in one sentence, no apology. Nothing is
       // blocked: the control stays available (FR-12).

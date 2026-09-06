@@ -273,6 +273,8 @@ await page.locator('.file input[type=file]').first().setInputFiles(take);
 await page.waitForSelector('.wave svg', { timeout: 10_000 });
 ok('an audio file is decoded and drawn');
 
+// Loading a take never starts it, so the level checks below have to press play.
+await page.locator('.transport button.start').click();
 await page.waitForTimeout(1500);
 
 /**
@@ -340,8 +342,12 @@ check('the master reaches the audio', flat - quiet > 10,
 // to hear what this does, so it has to actually load and play.
 await page.locator('button.demo').click();
 await page.waitForSelector('.wave svg', { timeout: 20_000 });
+check('the demo take loads without starting itself',
+  (await page.locator('.transport button.start').innerText()) === 'Play');
+await page.locator('.transport button.start').click();
 await page.waitForTimeout(1500);
-ok('the demo take loads and plays');
+check('and plays when asked',
+  (await page.locator('.transport button.start').innerText()) === 'Pause');
 
 /**
  * The A/B has to compare tone, not loudness: louder wins every loudness test
@@ -464,9 +470,14 @@ await demoPage.waitForTimeout(2500);
 
 const asked = await demoPage.evaluate(() => window.__mic);
 check('the demo path never asks for a microphone', asked === 0, `${asked} request(s)`);
-check('and it is playing the take through the chain',
+check('and the take is loaded and waiting, not playing at you',
   (await demoPage.locator('.marquee').getAttribute('data-capture')) === 'loaded' &&
-  (await demoPage.locator('.transport button.start').innerText()) === 'Pause');
+  (await demoPage.locator('.transport button.start').innerText()) === 'Play');
+// The chain is what you hear first; turning it off is the deliberate act.
+check('and the chain is on by default',
+  (await demoPage.locator('button.chain').getAttribute('aria-pressed')) === 'true');
+await demoPage.locator('.transport button.start').click();
+await demoPage.waitForTimeout(1200);
 
 const demoLevel = await demoPage.evaluate(async () => {
   let peak = 0;

@@ -833,6 +833,9 @@ export class Engine {
     const response = await fetch(`${BASE}di/demo-di.wav`);
     if (!response.ok) throw new Error('the demo take is not installed');
     const bytes = await response.arrayBuffer();
+    // Whatever was playing was playing the buffer this replaces. Leaving it
+    // running means the waveform shows one take while you hear another.
+    this.#stopFile();
     const ctx = this.#context ?? new AudioContext();
     try {
       this.#buffer = await ctx.decodeAudioData(bytes);
@@ -845,6 +848,8 @@ export class Engine {
 
   /** Decodes a file. Works before the engine is started. */
   async loadFile(file: File): Promise<AudioBuffer> {
+    // As above: the take being replaced is the one currently playing.
+    this.#stopFile();
     const ctx = this.#context ?? new AudioContext();
     try {
       this.#buffer = await ctx.decodeAudioData(await file.arrayBuffer());
