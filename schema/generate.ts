@@ -23,6 +23,16 @@ import {
   OVERSAMPLED_SAMPLE_RATE,
   LSTM_HIDDEN_SIZE,
   MAX_IR_TAPS,
+  MODEL_MAX_LAYER_ARRAYS,
+  MODEL_MAX_LAYERS_PER_ARRAY,
+  MODEL_MAX_CHANNELS,
+  MODEL_MAX_KERNEL_SIZE,
+  MODEL_MAX_DILATION,
+  MODEL_MAX_WEIGHTS,
+  MODEL_HISTORY_SLACK_BLOCKS,
+  MODEL_HISTORY_POOL_FLOATS,
+  MODEL_BLOB_MAGIC,
+  MODEL_BLOB_VERSION,
   type Param,
   type Stage,
 } from './params.ts';
@@ -86,6 +96,20 @@ function render(): string {
   w('// AD-3: the cab is a direct-form SIMD FIR, not a ConvolverNode. A longer IR');
   w('// reopens that decision rather than silently switching algorithm.');
   w(`constexpr uint32_t kMaxIrTaps = ${MAX_IR_TAPS};`);
+  w('');
+
+  w('// The amp model. Bounds, not dimensions: one kernel loads every size NAM');
+  w('// trains, and which size ships is decided once at build time (AD-5).');
+  w(`constexpr uint32_t kModelMaxLayerArrays = ${MODEL_MAX_LAYER_ARRAYS};`);
+  w(`constexpr uint32_t kModelMaxLayersPerArray = ${MODEL_MAX_LAYERS_PER_ARRAY};`);
+  w(`constexpr uint32_t kModelMaxChannels = ${MODEL_MAX_CHANNELS};`);
+  w(`constexpr uint32_t kModelMaxKernelSize = ${MODEL_MAX_KERNEL_SIZE};`);
+  w(`constexpr uint32_t kModelMaxDilation = ${MODEL_MAX_DILATION};`);
+  w(`constexpr uint32_t kModelMaxWeights = ${MODEL_MAX_WEIGHTS};`);
+  w(`constexpr uint32_t kModelHistorySlackBlocks = ${MODEL_HISTORY_SLACK_BLOCKS};`);
+  w(`constexpr uint32_t kModelHistoryPoolFloats = ${MODEL_HISTORY_POOL_FLOATS};`);
+  w(`constexpr uint32_t kModelBlobMagic = 0x${MODEL_BLOB_MAGIC.toString(16)}u;`);
+  w(`constexpr uint32_t kModelBlobVersion = ${MODEL_BLOB_VERSION};`);
   w('');
 
   w('// --- Stages ---------------------------------------------------------------');

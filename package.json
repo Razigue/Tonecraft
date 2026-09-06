@@ -23,6 +23,7 @@
     "test:native": "bash scripts/test-native.sh",
     "test:diagnosis": "tsx engine/diagnosis.test.ts",
     "build:amp": "bash scripts/build-amp.sh",
+    "model:convert": "tsx scripts/nam-to-tcnm.ts",
     "generate": "npm run schema:generate && npm run build:amp",
     "verify": "npm run generate && bash scripts/build-wasm-if-possible.sh && npm test && npm run build"
   },

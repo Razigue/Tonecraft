@@ -109,6 +109,78 @@ export const LSTM_HIDDEN_SIZE = 20;
 export const MAX_IR_TAPS = 2048;
 
 /**
+ * The amp model: bounds for the WaveNet the engine can load (AD-5, FR-17).
+ *
+ * The architecture is NAM's **Standard** WaveNet — the one every `.nam` since
+ * format version 0.5 uses — and the *size* is a property of the file, not of
+ * the code. That distinction is the whole reason these are bounds rather than
+ * dimensions: one kernel loads Standard, Lite, Feather or Nano, and which one
+ * we ship is a choice made once at build time and never at runtime, so a tone
+ * link renders identically on every machine.
+ *
+ * The bounds are not arbitrary. Measured in wasm SIMD128 on an i5-7300U — a
+ * 2017 dual-core laptop, the floor machine's class — at 128-frame blocks, as a
+ * share of one core:
+ *
+ *   Standard  16/8 channels   22.6 %     the whole budget, for the amp alone
+ *   Lite      12/6            16.7 %
+ *   Feather    8/4             9.6 %     what v1 ships
+ *   Nano       4/2             5.6 %
+ *
+ * `PRODUCT.md` §5 caps the chain at 25 % of one core, and the rest of the chain
+ * measures 5.1 % on the same machine. So Standard does not fit and Feather
+ * does, with room left for the reverb. The bounds below still admit Standard,
+ * because refusing to *load* it would also stop us rendering a comparison
+ * against it offline, where there is no budget at all.
+ */
+
+/** Layer arrays in a model. Every trainer size uses two. */
+export const MODEL_MAX_LAYER_ARRAYS = 2;
+
+/** Dilated layers per array. Every trainer size uses ten: 1, 2, 4 ... 512. */
+export const MODEL_MAX_LAYERS_PER_ARRAY = 10;
+
+/** Widest layer array. Standard's first array is 16; Feather's is 8. */
+export const MODEL_MAX_CHANNELS = 16;
+
+/** Convolution kernel. Standard is 3. */
+export const MODEL_MAX_KERNEL_SIZE = 3;
+
+/** Largest dilation, which sets how far back a layer has to remember. */
+export const MODEL_MAX_DILATION = 512;
+
+/** Weights in a model. Standard is 13 802; Feather is 3 638. */
+export const MODEL_MAX_WEIGHTS = 16_384;
+
+/**
+ * Frames of per-layer slack in the history pool before it has to be rewound.
+ *
+ * A dilated convolution reads backwards, so its history has to stay contiguous.
+ * Keeping it contiguous by shifting the whole window down every block costs a
+ * copy of the entire lookback per block — for the widest layer that is 1024
+ * frames of 16 channels, 375 times a second, in twenty layers. Writing forward
+ * into slack and rewinding only when the slack runs out divides that by the
+ * slack length, and four blocks is already enough to make it disappear.
+ */
+export const MODEL_HISTORY_SLACK_BLOCKS = 4;
+
+/**
+ * Floats in the static history pool the layers carve up at load time.
+ *
+ * Sized from the worst case this file admits: two arrays of ten layers at
+ * `MODEL_MAX_CHANNELS`, each layer holding `(kernel - 1) x dilation` frames of
+ * lookback plus its slack. Bump-allocated at load and never freed, because
+ * `process()` may not allocate and the module has no malloc at all.
+ */
+export const MODEL_HISTORY_POOL_FLOATS = 262_144;
+
+/** `TCNM` little-endian: the flat model blob `scripts/nam-to-tcnm.ts` writes. */
+export const MODEL_BLOB_MAGIC = 0x4d4e4354;
+
+/** Bumped whenever the blob layout changes. The loader refuses anything else. */
+export const MODEL_BLOB_VERSION = 1;
+
+/**
  * Chain order. This array *is* the signal path — `dsp/chain.cpp` is generated
  * against it and is the only C++ file that knows the order.
  */
