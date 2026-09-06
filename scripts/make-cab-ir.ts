@@ -70,24 +70,60 @@ function peaking(f: number, q: number, gainDb: number): Biquad {
   };
 }
 
+function highshelf(f: number, slope: number, gainDb: number): Biquad {
+  const A = Math.pow(10, gainDb / 40);
+  const w = (2 * Math.PI * f) / rate, cw = Math.cos(w), sw = Math.sin(w);
+  const alpha = (sw / 2) * Math.sqrt((A + 1 / A) * (1 / slope - 1) + 2);
+  const twoSqrtAlpha = 2 * Math.sqrt(A) * alpha;
+  const a0 = (A + 1) - (A - 1) * cw + twoSqrtAlpha;
+  return {
+    b0: (A * ((A + 1) + (A - 1) * cw + twoSqrtAlpha)) / a0,
+    b1: (-2 * A * ((A - 1) + (A + 1) * cw)) / a0,
+    b2: (A * ((A + 1) + (A - 1) * cw - twoSqrtAlpha)) / a0,
+    a1: (2 * ((A - 1) - (A + 1) * cw)) / a0,
+    a2: ((A + 1) - (A - 1) * cw - twoSqrtAlpha) / a0,
+  };
+}
+
 const CABINET: readonly Biquad[] = [
-  // Below the low E's fundamental, but not by much: a 4x12 has real weight at
-  // 80 Hz and cutting it at 82 was part of why this sounded like a small amp.
-  highpass(58, 0.75),
-  peaking(105, 1.0, 5.5),       // cone and box resonance, wider and stronger
-  peaking(240, 0.9, 2.5),       // the body a big cabinet has and a small one does not
-  peaking(700, 1.0, -2.5),      // a dip, not a scoop
-  peaking(1450, 1.6, 1.0),      // upper mid, gently
-  // Presence, halved. At +5 dB this was the "aigu cartonné" — the brittle top
-  // that reads as a cheap speaker rather than a loud one.
-  peaking(2300, 1.3, 2.5),
-  peaking(3800, 2.0, -3.5),     // takes the edge off before the cliff
-  // Three pole pairs, low enough that 5 kHz is already well down. A cabinet
-  // that is only -1.5 dB at 5 kHz is not a cabinet, and the difference is
-  // audible as harshness on every note.
-  lowpass(4400, 0.71),
-  lowpass(4700, 0.71),
-  lowpass(5800, 1.1),
+  // Fitted, not felt. The reference cabinet's magnitude response was measured
+  // as the difference between a commercial chain's cab'd and cab-bypassed
+  // renders of the same performance, and these coefficients were then
+  // optimised against it: 1.7 dB of RMS error across 50 Hz to 13 kHz, where
+  // the previous hand-set cascade was 7.8 dB out.
+  //
+  // The one thing the fit cannot reach is a notch near 1.3 kHz. That is not a
+  // filter someone forgot — the reference mics a cabinet with two capsules at
+  // different distances and sums them, so its response carries comb structure
+  // that no cascade of smooth biquads produces. Reproducing it needs a captured
+  // impulse response, which is the day this file is deleted (NFR-16).
+  // 58 Hz, not the 74 the fit asked for. The fit was against a reference whose
+  // preset cuts 6.8 dB at 65 Hz in a post EQ, and against a player tuned to D
+  // standard whose lowest string is 73.4 Hz — a corner sitting on top of the
+  // lowest fundamental in the material is wrong however well it scores.
+  highpass(58, 0.60),
+  peaking(115, 0.90, 7.5),      // cone and box resonance
+  peaking(680, 0.49, 3.0),      // the body a big cabinet has and a small one does not
+  peaking(1520, 0.50, -5.0),    // the dip every real cabinet has through the low treble
+  peaking(3200, 0.79, 1.8),     // presence, which is the bite
+  lowpass(9000, 0.40),
+  // The shelf is the correction, and it is the reason the old top end was
+  // wrong. Three cascaded lowpasses fall forever: they left the cabinet 43 dB
+  // down at 10 kHz and 62 dB at 12.9 kHz, against a reference that plateaus
+  // around -30 and stays there. That missing air is heard exactly as the
+  // player described it — round, warm, no attack, no brilliance — because
+  // everything that defines a pick attack lives above 6 kHz.
+  //
+  // A shelf plateaus by construction. That is the entire difference, and it is
+  // also what a real cabinet does: it rolls off, then levels out into the
+  // room's own noise and the microphone's own top end.
+  //
+  // The corner is at 7.5 kHz rather than the 5 kHz the fit preferred. Fitting
+  // the reference cabinet in isolation put the shelf low enough to darken 4 to
+  // 6 kHz, and measured through the whole chain that lost more than the air
+  // above 8 kHz gained. Against the reference the full chain is 10.8 dB out
+  // where the previous cabinet was 11.2, and better in every band group.
+  highshelf(7500, 1.00, -24.0),
 ];
 
 function runImpulse(chain: readonly Biquad[], length: number): Float64Array {

@@ -86,8 +86,22 @@ int main() {
 
   check("the fizz above 8 kHz is gone", responseDb(cab, 8000.0) - ref < -18.0,
         responseDb(cab, 8000.0) - ref);
-  check("and what is left at 12 kHz is inaudible",
-        responseDb(cab, 12000.0) - ref < -35.0, responseDb(cab, 12000.0) - ref);
+  // Not "as little as possible". The reference cabinet, measured as the
+  // difference between a commercial chain's cab'd and cab-bypassed renders of
+  // one performance, falls to about -30 dB and then stays there. A cascade of
+  // lowpasses cannot do that — it falls forever, and ours reached -62 dB at
+  // 12.9 kHz. What that costs is a pick attack: everything that defines one
+  // lives above 6 kHz, and without it the amp is round and warm and has no
+  // edge, which is exactly how it was described.
+  //
+  // So the top is bounded on both sides, and the plateau itself is asserted.
+  // Falling away again would be the old fault returning.
+  check("the top levels off into air rather than falling off the world",
+        responseDb(cab, 12000.0) - ref > -36.0 && responseDb(cab, 12000.0) - ref < -24.0,
+        responseDb(cab, 12000.0) - ref);
+  check("and it is a plateau, not a slope",
+        std::fabs(responseDb(cab, 12000.0) - responseDb(cab, 10000.0)) < 6.0,
+        responseDb(cab, 12000.0) - responseDb(cab, 10000.0));
   // The corner sits at 58 Hz rather than 82: a 4x12 has real weight down to the
   // low E, and cutting into it was part of what made this sound like a small
   // amplifier. What must still go is everything below the instrument.
@@ -97,10 +111,18 @@ int main() {
         responseDb(cab, 82.0) - ref > -2.0, responseDb(cab, 82.0) - ref);
   check("there is a resonance where a cone and a box argue",
         responseDb(cab, 110.0) - ref > 3.0, responseDb(cab, 110.0) - ref);
-  // Halved from +5 dB: at that level it was the brittle top that reads as a
-  // cheap speaker rather than a loud one.
-  check("and a presence peak, which is the bite",
-        responseDb(cab, 2300.0) - ref > 1.5, responseDb(cab, 2300.0) - ref);
+  // The presence lift moved to 3.2 kHz when the response was fitted to the
+  // reference, and it now sits on the shelf's falling edge — so it is a local
+  // lift rather than an absolute peak, and asserting a positive level there
+  // would only be asserting where the shelf happens to start.
+  //
+  // What matters musically is that the bite region is neither scooped out nor
+  // buried by the rolloff, so both are checked directly.
+  check("the bite region is not scooped",
+        responseDb(cab, 2600.0) - ref > -4.0, responseDb(cab, 2600.0) - ref);
+  check("and it stands clear of the rolloff above it",
+        responseDb(cab, 3200.0) - responseDb(cab, 5000.0) > 4.0,
+        responseDb(cab, 3200.0) - responseDb(cab, 5000.0));
   check("unity at 1 kHz, so switching it in is not a volume change",
         std::fabs(ref) < 1.0, ref);
 
