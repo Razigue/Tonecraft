@@ -12,7 +12,7 @@ a take you already have.
 With no guitar and no interface, there is still something to hear: **a demo take
 ships with the site** (`public/di/demo-di.wav`, 1.6 MB, fetched only when asked
 for), and the **Amp / Direct** switch plays it either through the chain or raw.
-The direct path carries 6.1 dB of measured makeup so the two match in level —
+The direct path carries 4.3 dB of measured makeup so the two match in level —
 otherwise the comparison is a loudness test, and louder wins every loudness test
 regardless of what it sounds like.
 

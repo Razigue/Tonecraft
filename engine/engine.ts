@@ -586,16 +586,20 @@ export class Engine {
    * Makeup gain on the direct path, in dB.
    *
    * Measured, not guessed: the demo take through the shipped preset against the
-   * same take raw, both integrated over a full pass off the output meter. The
-   * chain came out 6.1 dB ahead. Without this the A/B is a loudness test, and
-   * louder wins every loudness test regardless of what it sounds like.
+   * same take raw, both seeked to zero first and integrated over fourteen
+   * seconds off the output meter. Repeatable to a tenth of a dB — measuring it
+   * without seeking first put 1.8 dB of the take's own dynamics into the answer,
+   * because the two passes were covering different notes.
+   *
+   * Without this the A/B is a loudness test, and louder wins every loudness test
+   * regardless of what it sounds like.
    *
    * It is one number for one preset, so it drifts as the master or the preset
    * moves — the alternative is matching the loudness continuously, which is a
    * compressor nobody asked for sitting across the only honest comparison in
    * the product.
    */
-  static readonly DIRECT_MAKEUP_DB = 6.1;
+  static readonly DIRECT_MAKEUP_DB = 4.3;
 
   /**
    * Hear the guitar as it arrives, or as the chain leaves it.

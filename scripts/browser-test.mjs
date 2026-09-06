@@ -241,12 +241,24 @@ async function peakOver(ms) {
   }, ms);
 }
 
-/** End sets a fader to its minimum, Home to its maximum. */
+/** End sets a fader to its minimum. */
 async function press(label, key) {
   const fader = page.locator(`[role=slider][aria-label="${label}"]`);
   await fader.scrollIntoViewIfNeeded();
   await fader.focus();
   await fader.press(key);
+  await page.waitForTimeout(600);
+}
+
+/**
+ * Back to the preset default, which is what a double-click does — not Home,
+ * which is the top of the travel. Getting that wrong left every later
+ * measurement running at +6 dB of master and +14 dB of bass.
+ */
+async function reset(label) {
+  const fader = page.locator(`[role=slider][aria-label="${label}"]`);
+  await fader.scrollIntoViewIfNeeded();
+  await fader.dblclick();
   await page.waitForTimeout(600);
 }
 
@@ -256,7 +268,7 @@ const flat = await peakOver(2500);
 // fundamental with it, so the post-cabinet correction has to show up here.
 await press('Bass', 'End');
 const cut = await peakOver(2500);
-await press('Bass', 'Home');
+await reset('Bass');
 check('the tone stage reaches the audio', flat - cut > 2,
   `${flat.toFixed(0)} flat, ${cut.toFixed(0)} with the bass cut, of 96`);
 
@@ -265,7 +277,7 @@ check('the tone stage reaches the audio', flat - cut > 2,
 // would be asserting the meter's rounding rather than the master.
 await press('Master', 'End');
 const quiet = await peakOver(2500);
-await press('Master', 'Home');
+await reset('Master');
 check('the master reaches the audio', flat - quiet > 10,
   `${flat.toFixed(0)} at -12.4 dB, ${quiet.toFixed(0)} at -40 dB, of 96`);
 
@@ -299,12 +311,24 @@ const integrate = (ms) => page.evaluate(async (d) => {
 
 const monitor = (label) => page.locator('.bar-right .segmented button', { hasText: label }).click();
 
-await monitor('Amp');
-await page.waitForTimeout(800);
-const ampLevel = await integrate(12_000);
-await monitor('Direct');
-await page.waitForTimeout(800);
-const directLevel = await integrate(12_000);
+/**
+ * Both passes have to cover the same audio. The take is a performance, not a
+ * steady tone, so integrating each side over whatever happened to be playing
+ * put 1.8 dB of the take's own dynamics into the comparison. Home on the
+ * waveform seeks to zero.
+ */
+async function passFromStart(label, ms) {
+  await monitor(label);
+  const wave = page.locator('[role=slider][aria-label="Position in the file"]');
+  await wave.scrollIntoViewIfNeeded();
+  await wave.focus();
+  await wave.press('Home');
+  await page.waitForTimeout(700);
+  return integrate(ms);
+}
+
+const ampLevel = await passFromStart('Amp', 14_000);
+const directLevel = await passFromStart('Direct', 14_000);
 await monitor('Amp');
 
 check('the direct path carries the dry signal', directLevel > 1e-3,
