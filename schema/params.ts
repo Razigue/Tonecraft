@@ -148,14 +148,22 @@ export const PARAMS: readonly Param[] = [
 
   // --- Drive -------------------------------------------------------------
   // A boost in front of high gain tightens the low end and defines the attack.
-  // 16 rather than 12: measured against a reference chain on the same DI, this
-  // is where the whole chain keeps 24.9 dB of level between the softest and
-  // loudest attack of a palm-muted run against the reference's 20.7, with the
-  // crest factor at 6.2 dB against 6.7. Below it the clipper never reaches its
-  // knee on a passive humbucker at -25 dBFS; above it the chain starts trading
-  // pick response for harmonics, which is the trade this amp must not make.
+  // Set with the amp gain below; the two are one control surface in practice.
+  //
+  // The previous value came from an attack-spread metric that turned out to be
+  // measuring nothing: the detector reported 51 to 75 attacks in a take that
+  // contains nine, and the reference take's own hits span 2.8 dB, so no
+  // material recorded so far can say anything about pick response at all. That
+  // number is withdrawn, and this pair is now set on the spectral difference,
+  // which is measured on the same performance and is sound.
+  //
+  // That difference keeps improving all the way to both faders' maximum, and
+  // pinning the default there would be following a metric off a cliff in the
+  // other direction — the remaining gap is a harmonic character our clipping
+  // does not have, not a quantity of gain. So this sits mid-travel: audibly
+  // more saturated than before, with room to move both ways.
   { id: 'drive_gain', stage: 'drive', label: 'Gain', unit: 'dB',
-    min: 0, max: 40, default: 16, taper: 'linear' },
+    min: 0, max: 40, default: 22, taper: 'linear' },
   // Cutoff of the post-clip lowpass, the control a screamer actually offers.
   { id: 'drive_tone', stage: 'drive', label: 'Tone', unit: 'Hz',
     min: 400, max: 6000, default: 2200, taper: 'logarithmic' },
@@ -165,13 +173,12 @@ export const PARAMS: readonly Param[] = [
     min: 0, max: 1, default: 0, taper: 'switch' },
 
   // --- Amp ---------------------------------------------------------------
-  // Lower than it was, because the drive stage now sits in front of it and the
-  // two are set together. Measured on the same DI, 17 here with the boost at 16
-  // holds the dynamics above: at 23 the attack spread has fallen to 13 dB and
-  // at 27 to 8, against the reference's 20.7. What that buys in harmonics is
-  // real but small — two decibels across the top — and it is not worth the feel.
+  // Set with drive_gain above, and provisional for the same reason: the metric
+  // that argued for lowering it was invalid. On the spectral difference this
+  // pair lands 2.2 dB closer to the reference than the one it replaces, and it
+  // is where the amp is plainly a high-gain amp rather than a crunch.
   { id: 'amp_gain', stage: 'amp', label: 'Gain', unit: 'dB',
-    min: 0, max: 40, default: 17, taper: 'linear' },
+    min: 0, max: 40, default: 27, taper: 'linear' },
   { id: 'amp_bass', stage: 'amp', label: 'Bass', unit: 'dB',
     min: -12, max: 12, default: 0, taper: 'linear' },
   // Not scooped. A scoop plus the cabinet's own dip around 700 Hz took all the
