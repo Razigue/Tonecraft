@@ -349,11 +349,13 @@
     }
   }
 
+  const DEMO_NAME = 'Demo take (Tonecraft)';
+
   async function loadDemo(): Promise<void> {
     if (engine === null) return;
     try {
       const buffer = await engine.loadDemoTake();
-      fileName = 'Demo take (Tonecraft)';
+      fileName = DEMO_NAME;
       fileDuration = buffer.duration;
       filePeaks = peaksOf(buffer);
       filePosition = 0;
@@ -417,10 +419,12 @@
     state = 'starting';
     problem = null;
     engine = new Engine({ onMeters, onModel, onEngineError });
-    if (intent === 'demo') {
-      source = 'file';
-      await engine.setSource('file');
-    }
+    if (intent === 'demo') source = 'file';
+    /* A fresh engine defaults to the live input, so the source has to be pushed
+       into it every time — not only on the demo path. Without this, stopping
+       and starting again reopened the microphone while the interface still
+       showed File selected. */
+    await engine.setSource(source);
     try {
       captures = (await engine.loadCatalog()).models;
       settleCapture();
@@ -447,8 +451,17 @@
       frame = requestAnimationFrame(tick);
       // Straight into it: the chain is on, so the first thing heard is what
       // Tonecraft does, and the button next to the clock takes it away again.
-      if (intent === 'demo') await loadDemo();
-      else if (source === 'file' && filePeaks !== null) play();
+      //
+      // A file has to be re-decoded on every start, because the buffer belongs
+      // to the engine and stopping threw the engine away. The waveform on
+      // screen outlived it, so without this, Start after Stop left a take
+      // drawn, a Play button that responded, and no sound.
+      if (intent === 'demo' || fileName === DEMO_NAME) await loadDemo();
+      else if (source === 'file' && filePeaks !== null) {
+        notice = 'Load the file again — stopping released it.';
+        filePeaks = null;
+        fileName = '';
+      }
     } catch (error) {
       // Cause in one sentence, fix in one sentence, no apology. Nothing is
       // blocked: the control stays available (FR-12).
@@ -470,6 +483,7 @@
     await engine?.stop();
     engine = null;
     filePlaying = false;
+    filePosition = 0;
     health = null;
     captureLoaded = false;
     state = 'idle';
