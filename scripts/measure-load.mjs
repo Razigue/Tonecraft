@@ -20,6 +20,16 @@
    The probe is our own, not the product's output meter: an instrument that
    shares code with what it measures reports zero for the same reason twice.
 
+   **It refuses to report unless the render is actually real-time.** A headless
+   browser with no audio device renders through a null sink, which pulls when it
+   feels like it rather than on a deadline — so there is no deadline to miss and
+   the count is a comforting zero that means nothing. The probe therefore checks
+   its own block rate against `sampleRate / 128` first, and says it cannot
+   measure rather than reporting a zero it did not earn. Run it against a
+   machine with a real output device, headed:
+
+       npm run measure:load -- --headed
+
    Prerequisites:
        npm run build
        npx playwright install chromium
@@ -36,7 +46,7 @@ import { chromium } from 'playwright';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(ROOT, 'dist');
 const PORT = 8138;
-const SECONDS = Number(process.argv[2] ?? 20);
+const SECONDS = Number(process.argv.find((a) => /^\d+$/.test(a)) ?? 20);
 
 const TYPES = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
@@ -55,9 +65,17 @@ const server = http.createServer((req, res) => {
 });
 await new Promise((r) => server.listen(PORT, r));
 
+const HEADED = process.argv.includes('--headed');
 const browser = await chromium.launch({
+  headless: !HEADED,
   args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
-         '--autoplay-policy=no-user-gesture-required'],
+         '--autoplay-policy=no-user-gesture-required',
+         /* Headless Chromium renders into a null sink, which is not clocked at
+            real time. Naming the real device steadies the rate but does not fix
+            it — on this machine it went from 282/328 to a flat 300 quanta a
+            second where real time is 375 — so the guard below still fires. It
+            is here because on a headed run it is the right device to use. */
+         '--alsa-output-device=default'],
 });
 const page = await browser.newPage();
 
@@ -142,17 +160,33 @@ const info = await page.evaluate(() => ({
 await browser.close();
 server.close();
 
+console.log(`\nDeadline misses on the audio thread — the demo take, ${SECONDS} s each way\n`);
+console.log(`  ${info.sampleRate} Hz, round trip ` +
+  `${((info.base + info.output) * 1000).toFixed(1)} ms ` +
+  `(base ${(info.base * 1000).toFixed(1)} + output ${(info.output * 1000).toFixed(1)})\n`);
+
+/* Real-time or nothing. A graph that rendered 6 358 quanta in 30 seconds is
+   being pulled by a null sink at its own pace, not by a sound card on a clock,
+   and a miss count taken from it says nothing about anyone's laptop. */
+const expected = info.sampleRate / 128;
+const realtime = (r) => Math.abs(r.blocks / SECONDS - expected) / expected < 0.05;
+
+if (!realtime(chainOn) || !realtime(chainOff)) {
+  const rate = (r) => (r.blocks / SECONDS).toFixed(0);
+  console.log(`  Not measurable here. The graph rendered ${rate(chainOn)} and ${rate(chainOff)}`);
+  console.log(`  quanta a second where real time is ${expected.toFixed(0)}: there is no audio`);
+  console.log('  device, so the sink pulls at its own pace and nothing has a deadline to miss.');
+  console.log('  Run it headed, on a machine with an output device:\n');
+  console.log('      npm run measure:load -- --headed\n');
+  process.exit(0);
+}
+
 const line = (label, r) => {
   const perMinute = (r.gaps / SECONDS) * 60;
   console.log(`  ${label.padEnd(16)} ${String(r.gaps).padStart(5)} misses in ${r.blocks} blocks` +
     `   ${perMinute.toFixed(1).padStart(7)} / minute` +
     (r.gaps ? `   worst ${r.worst.toFixed(1)} quanta` : ''));
 };
-
-console.log(`\nDeadline misses on the audio thread — the demo take, ${SECONDS} s each way\n`);
-console.log(`  ${info.sampleRate} Hz, round trip ` +
-  `${((info.base + info.output) * 1000).toFixed(1)} ms ` +
-  `(base ${(info.base * 1000).toFixed(1)} + output ${(info.output * 1000).toFixed(1)})\n`);
 line('chain running', chainOn);
 line('chain off', chainOff);
 console.log('\n  The difference is the chain. The rest is the machine.\n');
