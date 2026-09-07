@@ -13,6 +13,7 @@
     "build:nam": "node scripts/build-nam.mjs",
     "bench:nam": "node scripts/bench-nam.mjs",
     "vendor": "node scripts/vendor-nam.mjs",
+    "make:di": "node scripts/make-di.mjs",
     "calibrate": "tsx scripts/calibrate-models.ts",
     "measure": "tsx scripts/measure-aliasing.ts",
     "measure:latency": "node scripts/measure-latency.mjs",

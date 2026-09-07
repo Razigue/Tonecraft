@@ -658,9 +658,15 @@ export class Engine {
    * same take raw, both seeked to zero first and integrated over fourteen
    * seconds off the output meter. Re-measured whenever the default preset
    * changes — it moved 1.6 dB when the default became "Lead", which carries 8
-   * more decibels of boost. Repeatable to a tenth of a dB — measuring it
-   * without seeking first put 1.8 dB of the take's own dynamics into the answer,
-   * because the two passes were covering different notes.
+   * more decibels of boost — and whenever the take changes, which is what
+   * moved it 8.8 dB here: the riff takes sit lower than the take they replaced,
+   * and the direct path is the take. Repeatable to a tenth of a dB — measuring
+   * it without seeking first put 1.8 dB of the take's own dynamics into the
+   * answer, because the two passes were covering different notes.
+   *
+   * npm run test:browser is what measures it: the check that the two sides are
+   * within 1.5 dB prints the offset either way, so a stale number here shows up
+   * as the amount to add rather than as a bare failure.
    *
    * Without this the A/B is a loudness test, and louder wins every loudness test
    * regardless of what it sounds like.
@@ -670,7 +676,7 @@ export class Engine {
    * compressor nobody asked for sitting across the only honest comparison in
    * the product.
    */
-  static readonly DIRECT_MAKEUP_DB = 5.9;
+  static readonly DIRECT_MAKEUP_DB = 14.7;
 
   /**
    * The whole simulation, on or off.

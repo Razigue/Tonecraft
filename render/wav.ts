@@ -5,9 +5,11 @@
  * of chunks, and `CLAUDE.md` §9 says not to add a package for something this
  * small. It reads what a DAW actually writes — 32-bit float and 16/24/32-bit
  * integer, with the JUNK, fact and bext chunks a broadcast-wave export puts in
- * front of the data — and writes 32-bit float only, because a render that has
- * left the limiter is compared, not shipped, and must not be quantised on the
- * way to the measurement.
+ * front of the data — and writes 32-bit float for renders, because a render
+ * that has left the limiter is compared, not shipped, and must not be quantised
+ * on the way to the measurement. `writeWav16` is the exception, for the one
+ * file that *is* shipped: the demo DI, downloaded by every visitor who presses
+ * play, where half the bytes matter and the source was 16-bit to begin with.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -132,4 +134,42 @@ export function toMono(wav: Wav): Float32Array {
     out[n] = sum / wav.channels.length;
   }
   return out;
+}
+
+/**
+ * 16-bit signed PCM, for audio that ships rather than audio that is measured.
+ *
+ * Rounded, not truncated, and clamped: a DI that peaks at exactly 0 dBFS would
+ * otherwise wrap to full negative on one sample and click.
+ */
+export function writeWav16(path: string, rate: number, channels: readonly Float32Array[]): void {
+  const count = channels.length;
+  if (count === 0) throw new Error(`${path}: nothing to write`);
+  const frames = channels[0]!.length;
+  const dataBytes = frames * count * 2;
+  const buf = Buffer.alloc(44 + dataBytes);
+
+  buf.write('RIFF', 0, 'ascii');
+  buf.writeUInt32LE(36 + dataBytes, 4);
+  buf.write('WAVE', 8, 'ascii');
+  buf.write('fmt ', 12, 'ascii');
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(FORMAT_PCM, 20);
+  buf.writeUInt16LE(count, 22);
+  buf.writeUInt32LE(rate, 24);
+  buf.writeUInt32LE(rate * count * 2, 28);
+  buf.writeUInt16LE(count * 2, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write('data', 36, 'ascii');
+  buf.writeUInt32LE(dataBytes, 40);
+
+  let at = 44;
+  for (let i = 0; i < frames; i += 1) {
+    for (let c = 0; c < count; c += 1) {
+      const v = Math.round(channels[c]![i]! * 32767);
+      buf.writeInt16LE(v > 32767 ? 32767 : v < -32768 ? -32768 : v, at);
+      at += 2;
+    }
+  }
+  writeFileSync(path, buf);
 }
