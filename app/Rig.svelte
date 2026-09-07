@@ -335,9 +335,9 @@
 
   async function loadFile(file: File | undefined): Promise<void> {
     if (file === undefined || engine === null) return;
+    pause();
     try {
       const buffer = await engine.loadFile(file);
-      filePlaying = false;
       fileName = file.name;
       fileDuration = buffer.duration;
       filePeaks = peaksOf(buffer);
@@ -352,9 +352,12 @@
 
   async function loadDemo(): Promise<void> {
     if (engine === null) return;
+    // Stop before fetching, not after: a load takes a moment, and until it
+    // lands the transport would go on claiming to be playing a take that is
+    // being replaced.
+    pause();
     try {
       const buffer = await engine.loadDemoTake();
-      filePlaying = false;
       fileName = DEMO_NAME;
       fileDuration = buffer.duration;
       filePeaks = peaksOf(buffer);

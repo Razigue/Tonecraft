@@ -341,7 +341,9 @@ check('the master reaches the audio', flat - quiet > 10,
 // The take that ships. Someone with no guitar and no interface has to be able
 // to hear what this does, so it has to actually load and play.
 await page.locator('button.demo').click();
-await page.waitForSelector('.wave svg', { timeout: 20_000 });
+// The waveform is already on screen from the previous take, so wait for the
+// name to change rather than for an element that never went away.
+await page.locator('.transport .name', { hasText: 'Demo take' }).waitFor({ timeout: 20_000 });
 check('the demo take loads without starting itself',
   (await page.locator('.transport button.start').innerText()) === 'Play');
 await page.locator('.transport button.start').click();
