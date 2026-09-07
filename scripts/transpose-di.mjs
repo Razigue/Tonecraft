@@ -200,7 +200,7 @@ for (let i = 0; i < stretched.length; i++) if (norm[i] > 1e-9) stretched[i] /= n
    back where it started. Cubic Hermite: a linear read at a fourfold rate
    change would roll the top off audibly. */
 const outLength = Math.round(stretched.length / ratio);
-const shifted = new Float32Array(outLength);
+let shifted = new Float32Array(outLength);
 for (let i = 0; i < outLength; i++) {
   const pos = i * ratio;
   const i1 = Math.floor(pos), t = pos - i1;
@@ -272,6 +272,23 @@ if (Math.abs(landed - SEMITONES) > 0.5) {
   process.exit(1);
 }
 
+/* ------------------------ put it back in time ---------------------------- */
+/* The vocoder delays what it is given, and by a knowable amount.
+   Analysis frame f covers input samples f*anaHop..+N, so its content sits at
+   f*anaHop + N/2. It is written at f*synthHop and then read at `ratio`, which
+   puts it at f*anaHop + N/(2*ratio). The difference is the delay, and it grows
+   with the shift: half a window at -12 semitones, three halves at -24.
+
+   Compensated here rather than measured downstream. Two layers cut from one
+   take have to line up to the sample or every note flams, and an alignment
+   recovered by correlating a smeared transposition against a clean root is a
+   guess — the onset correlation between them is 0.2, which is no basis for
+   placing a mix. Trimming a delay that is arithmetic is not. */
+const delay = Math.round((N / 2) * (1 / ratio - 1));
+const timed = new Float32Array(input.length);
+for (let i = 0; i < timed.length; i++) timed[i] = shifted[i + delay] ?? 0;
+shifted = timed;
+
 let inPeak = 0, outPeak = 0, inSq = 0, outSq = 0;
 for (const v of input) { inPeak = Math.max(inPeak, Math.abs(v)); inSq += v * v; }
 for (const v of shifted) { outPeak = Math.max(outPeak, Math.abs(v)); outSq += v * v; }
@@ -298,6 +315,7 @@ console.log(`\ntranspose ${path.basename(inFile)} by ${SEMITONES >= 0 ? '+' : ''
 console.log(`  landed on ${landed >= 0 ? '+' : ''}${landed.toFixed(2)} semitones, ` +
   `spectra correlate ${bestCorr.toFixed(3)}`);
 console.log(`  in    ${(input.length / RATE).toFixed(2)} s   peak ${db(inPeak)} dBFS   rms ${db(inRmsRaw)} dBFS`);
+console.log(`  delay compensated: ${delay} samples (${(delay / RATE * 1000).toFixed(1)} ms)`);
 console.log(`  out   ${(shifted.length / RATE).toFixed(2)} s   peak ${db(outPeak * gain)} dBFS   ` +
   `rms ${db(outRmsRaw * gain)} dBFS   ` +
   (heldBack ? '(held under -1 dBFS, so the RMS falls short)' : '(levelled to the input\'s RMS)'));
