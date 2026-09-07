@@ -335,14 +335,39 @@
       'if it persists, run `npm run vendor`.';
   }
 
+  /**
+   * What each output costs, filled in the first time the selector is opened.
+   *
+   * Not at start, and not on a timer. Probing opens a short-lived context per
+   * device to read its `outputLatency`, and opening an output stream while a
+   * guitar is going through the chain is exactly the kind of thing that can
+   * cost a block. Doing it when somebody reaches for the menu puts any hiccup
+   * where a menu is already opening, and it is also the only moment the
+   * numbers are wanted.
+   */
+  let outputsProbed = false;
+  async function probeOutputs(): Promise<void> {
+    if (outputsProbed || engine === null) return;
+    outputsProbed = true;
+    outputs = await engine.probeOutputs();
+  }
+
   function onMeters(m: Meters): void {
     meters = m;
     channelCount = m.channels;
     latencyMs = engine?.roundTripMs ?? null;
     const parts = engine?.latencyParts ?? null;
+    /* Where the number comes from, and which half anyone can do anything
+       about. The render buffer is one quantum and cannot go lower; the chain
+       itself measures a tenth of a millisecond (npm run measure:latency). So
+       the output device is the figure, and it is the one thing here that is a
+       choice — hence the Output selector, which carries each device's cost. */
     latencyDetail = parts === null ? '' :
-      `${parts.base.toFixed(1)} ms of render buffer, ${parts.output.toFixed(1)} ms in the ` +
-      'output device. The input path is not reported by the browser.';
+      `${parts.base.toFixed(1)} ms of render buffer, which is one block and cannot ` +
+      `go lower, and ${parts.output.toFixed(1)} ms in the output device` +
+      (outputs.length > 1 ? ', which the Output selector can change' : '') +
+      '. The chain itself adds a tenth of a millisecond. The input path is not ' +
+      'reported by the browser and is not in this number.';
 
     // Dropouts over a rolling minute. The count arrives cumulative.
     const now = performance.now();
@@ -744,13 +769,29 @@
           {:else if block.stage === 'output' && state === 'running' && outputs.length > 1}
             <!-- Where the sound comes out. It follows the input by default,
                  because the headphones are in the interface, not the laptop;
-                 the choice is here for the player whose setup says otherwise. -->
+                 the choice is here for the player whose setup says otherwise.
+
+                 Each device carries what it costs on the way out, measured.
+                 That is not decoration: the output buffer is around 32 of a
+                 35 ms round trip, the chain itself adds a tenth of one, and
+                 nothing else here can move the number. So this selector is
+                 the latency control, and a list of bare names gave the player
+                 no way to know it. -->
             <label class="field">
               <span class="t-small">Output</span>
-              <select value={outputId} onchange={(e) => chooseOutput(e.currentTarget.value)}>
+              <select
+                value={outputId}
+                onfocus={() => void probeOutputs()}
+                onpointerdown={() => void probeOutputs()}
+                onchange={(e) => chooseOutput(e.currentTarget.value)}
+              >
                 <option value="">Same as input</option>
                 {#each outputs as d (d.id)}
-                  <option value={d.id}>{d.label || 'Output'}</option>
+                  <option value={d.id}>
+                    {d.label || 'Output'}{d.outputMs === undefined
+                      ? ''
+                      : ` — ${d.outputMs.toFixed(0)} ms`}
+                  </option>
                 {/each}
               </select>
             </label>
@@ -1137,8 +1178,13 @@
   .notice {
     margin: 0;
     max-width: 52ch;
-    /* Two lines held open, which is every notice there is. */
-    min-height: 2.8em;
+    /* Three lines held open.
+       It was two, on the claim that two was every notice there is, and that was
+       simply not true: at 52ch the capture-not-running message and the decode
+       failures both take three, and so does the representative notice the
+       browser test writes in. The slot then did exactly what reserving it was
+       meant to prevent — the rig dropped 18 px the moment anything was said. */
+    min-height: 4.2em;
     overflow-y: auto;
   }
 

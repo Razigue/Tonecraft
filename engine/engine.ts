@@ -160,6 +160,11 @@ interface Nodes {
 export interface OutputDevice {
   readonly id: string;
   readonly label: string;
+  /**
+   * What this device adds on the way out, in ms, measured rather than assumed.
+   * `undefined` when it has not been probed or would not open.
+   */
+  readonly outputMs?: number;
 }
 
 export class Engine {
@@ -861,6 +866,60 @@ export class Engine {
     return devices
       .filter((d) => d.kind === 'audiooutput')
       .map((d) => ({ id: d.deviceId, label: d.label }));
+  }
+
+  /**
+   * The same list, with what each device costs on the way out.
+   *
+   * This is the only latency left worth a decision. Measured on this machine:
+   * the chain adds 0.1 ms, `baseLatency` is one render quantum and cannot go
+   * below it, and everything else in a 35 ms round trip is the output device's
+   * own buffer — 32 of those 35. Which device the sound leaves by is therefore
+   * not a preference, it is the latency setting, and until now the selector
+   * offered it as a list of names with no way to tell them apart.
+   *
+   * Each candidate is opened as a silent context of its own, read, and closed.
+   * Nothing is connected to them and the live graph is not touched, so the
+   * sound does not move and the player hears nothing: measuring by calling
+   * `setSinkId` on the running context would rebuild its output stream, which
+   * is audible and changes what they are listening to.
+   *
+   * A device that will not open returns no number rather than a wrong one.
+   */
+  async probeOutputs(): Promise<OutputDevice[]> {
+    const outputs = await this.listOutputs();
+    if (outputs.length === 0) return outputs;
+
+    // The rate the live context runs at, so the figure is the one the player
+    // would actually get rather than one for a context they will never have.
+    const sampleRate = this.#context?.sampleRate;
+    const probed: OutputDevice[] = [];
+
+    for (const device of outputs) {
+      let ms: number | undefined;
+      let probe: AudioContext | null = null;
+      try {
+        probe = new AudioContext({
+          latencyHint: 0,
+          ...(sampleRate === undefined ? {} : { sampleRate }),
+          sinkId: device.id,
+        } as AudioContextOptions);
+        await probe.resume();
+        /* `outputLatency` is zero until the output stream is actually up. One
+           frame of the probe's own clock is enough and costs nothing audible,
+           because nothing is connected to it. */
+        await new Promise<void>((resolve) => { self.setTimeout(resolve, 120); });
+        if ('outputLatency' in probe && probe.outputLatency > 0) {
+          ms = probe.outputLatency * 1000;
+        }
+      } catch {
+        // A device that has gone away, or one the browser refuses to open on.
+      } finally {
+        try { await probe?.close(); } catch { /* already gone */ }
+      }
+      probed.push(ms === undefined ? device : { ...device, outputMs: ms });
+    }
+    return probed;
   }
 
   /** The output in use: a device id, or '' for the browser's default. */
