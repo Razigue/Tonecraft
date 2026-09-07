@@ -17,7 +17,7 @@
    * diagnosis, a dropout count and an error appear only when there is one — the
    * product's voice is to state what happened and otherwise stay quiet.
    */
-  import { Engine, EngineError, readCatalog, type Meters, type Health,
+  import { Engine, EngineError, readCatalog, type Meters,
            type InputChannel, type InputDevice, type Source } from '../engine/engine.ts';
   import { CABS } from '../engine/ir.ts';
   import type { Capture } from '../engine/catalog.ts';
@@ -83,8 +83,15 @@
 
   let state = $state<State>('idle');
   let problem = $state<{ cause: string; fix: string } | null>(null);
-  let health = $state<Health | null>(null);
-  let showLatency = $state(false);
+  /**
+   * The round trip, and only that.
+   *
+   * `engine.health` also judges dropouts, jitter and the shape of the input, and
+   * reading it here would run all four every metering frame for something
+   * nothing displays any more. The verdicts are still there for whoever wants
+   * them; the meter loop does not pay for them.
+   */
+  let latencyMs = $state<number | null>(null);
   /** The opening sheet. Dismissible: looking around is never blocked. */
   let asking = $state(true);
   let notice = $state<string | null>(null);
@@ -302,7 +309,7 @@
   function onMeters(m: Meters): void {
     meters = m;
     channelCount = m.channels;
-    health = engine?.health ?? null;
+    latencyMs = engine?.roundTripMs ?? null;
   }
 
   // --------------------------------------------------------------------------
@@ -439,7 +446,7 @@
       for (const p of PARAMS) {
         if (p.deprecated !== true) engine.setParam(p.id, values[p.id] ?? p.default);
       }
-      health = engine.health;
+      latencyMs = engine.roundTripMs;
       asking = false;
       state = 'running';
       // Labels are withheld until permission has been granted, so the device
@@ -483,6 +490,8 @@
         };
       }
       state = 'failed';
+      // Dismissing the sheet must not hide the reason the engine did not start.
+      asking = true;
     }
   }
 
@@ -492,7 +501,7 @@
     engine = null;
     filePlaying = false;
     filePosition = 0;
-    health = null;
+    latencyMs = null;
     captureLoaded = false;
     state = 'idle';
     meters = { input: 0, drive: 0, output: 0, outputRms: 0, gate: 1, channelPeaks: [0], channels: 1 };
@@ -542,19 +551,13 @@
           </span>
         </button>
       {/if}
-      {#if health !== null}
-        <!-- Three tiers. Under 20 ms it is a number and nothing else; between 20
-             and 35 it explains itself on click; above 35 the cause is named. It
-             never nags, never hides and never blocks (FR-35). -->
-        {#if health.latency.tier === 'explained'}
-          <button class="latency link" type="button" onclick={() => (showLatency = !showLatency)}>
-            {health.latency.ms.toFixed(1)} ms
-          </button>
-        {:else}
-          <span class="latency" class:alert={health.latency.tier === 'named'}>
-            {health.latency.ms.toFixed(1)} ms
-          </span>
-        {/if}
+      {#if latencyMs !== null}
+        <!-- The round trip is on screen permanently (FR-35), as a number and
+             nothing more. It used to explain itself and turn red past 35 ms;
+             it does not, because most of what it named is the operating
+             system's buffering and saying so on every frame is nagging, not
+             informing. -->
+        <span class="latency">{latencyMs.toFixed(1)} ms</span>
       {/if}
       <button
         class="start small"
@@ -570,16 +573,21 @@
   <!-- Above the strand, only what is playing. -->
   <div
     class="marquee"
-    data-capture={health === null ? 'idle' : captureLoaded ? 'loaded' : 'silent'}
+    data-capture={latencyMs === null ? 'idle' : captureLoaded ? 'loaded' : 'silent'}
   >
     <p class="t-heading">{capture?.name ?? 'No capture installed'}</p>
-    {#if state !== 'idle' && health !== null && !captureLoaded}
+    {#if state !== 'idle' && latencyMs !== null && !captureLoaded}
       <!-- Sound is still coming out, so nothing here can be inferred by ear. -->
       <p class="t-small alert">This capture is not running: you are hearing your
         dry guitar, not an amplifier. Reload the page.</p>
     {:else}
       <p class="t-small">{capture?.note ?? 'Run `npm run vendor` to fetch the captures.'}</p>
     {/if}
+    <!-- Always in the layout, empty or not. A notice arrives when a take fails
+         to decode or a capture fails to load, and letting it appear from
+         nowhere pushed the whole rig down the page — the same complaint the old
+         report at the foot of the page earned. -->
+    <p class="t-small notice">{notice ?? ''}</p>
     <div class="presets">
       {#each PRESETS as p (p.name)}
         <button
@@ -785,53 +793,26 @@
         <button class="quiet" type="button" onclick={() => (asking = false)}>
           Look around first
         </button>
+
+        {#if problem !== null}
+          <!-- Attached to the button that failed, rather than filed at the
+               bottom of the page: it is about this action and nothing else. -->
+          <p class="failure">
+            <span>{problem.cause}</span>
+            <span class="fix">{problem.fix}</span>
+          </p>
+        {/if}
       </div>
     </div>
   {/if}
 
-  <!-- Only what is wrong, and only while it is. -->
-  <div class="says">
-    {#if direct && source === 'live'}
-      <!-- Not a fault, so it does not get the ember: it is the switch doing
-           exactly what it says, and the silence needs a reason. -->
-      <p class="note">
-        <span>The simulation is off, and so is the input — nothing is being
-          monitored.</span>
-        <span class="fix">Turn it back on, or load a file to hear a dry DI
-          against the chain.</span>
-      </p>
-    {/if}
-    {#if problem !== null}
-      <p class="note"><span>{problem.cause}</span><span class="fix">{problem.fix}</span></p>
-    {/if}
-    {#if notice !== null}
-      <p class="note"><span>{notice}</span></p>
-    {/if}
-    {#if health !== null}
-      {#if health.latency.tier === 'named' || (health.latency.tier === 'explained' && showLatency)}
-        <p class="note" class:alert={health.latency.tier === 'named'}>
-          <span>{health.latency.cause}</span><span class="fix">{health.latency.remedy}</span>
-        </p>
-      {/if}
-      {#if health.input.problem !== null && source === 'live'}
-        <p class="note">
-          <span>{health.input.cause}</span><span class="fix">{health.input.remedy}</span>
-        </p>
-      {/if}
-      {#if health.dropouts.audible}
-        <p class="note alert">
-          <span>{health.dropouts.cause}</span><span class="fix">{health.dropouts.remedy}</span>
-        </p>
-      {/if}
-    {/if}
-  </div>
 </div>
 
 <style>
   .page {
     min-height: 100svh;
     display: grid;
-    grid-template-rows: auto auto 1fr auto auto;
+    grid-template-rows: auto auto 1fr auto;
     gap: calc(var(--u) * 3);
     padding: calc(var(--u) * 3);
     box-sizing: border-box;
@@ -856,15 +837,6 @@
     font-variant-numeric: tabular-nums;
     color: var(--graphite);
   }
-  .latency.link {
-    background: none;
-    border: 0;
-    border-bottom: 1px solid currentColor;
-    padding: 0;
-    cursor: pointer;
-  }
-  .latency.link:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
-  .alert { color: var(--ember); }
 
   /* Above the strand, the preset and nothing else. */
   .marquee {
@@ -1083,30 +1055,30 @@
   .start:disabled { opacity: 0.4; cursor: default; }
   .start:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
-  /* The space is reserved whether or not anything is being said. These messages
-     appear and disappear on their own — a diagnosis arrives once the input has
-     been measured, a dropout warning comes and goes — and letting them push the
-     rig up and down every time makes the whole interface feel unstable. Two
-     lines is one message; beyond that they scroll in their own box rather than
-     growing into the strand. */
-  .says {
-    display: flex;
-    flex-direction: column;
-    gap: var(--u);
-    min-height: calc(var(--u) * 6);
-    max-height: calc(var(--u) * 16);
-    overflow-y: auto;
-  }
-  .note {
+  /* The one thing still said in words, and only when an action failed. It sits
+     inside the sheet, under the button that failed, rather than in a permanent
+     report at the foot of the page — that report named the operating system's
+     buffering and the shape of a microphone input on every single frame, which
+     is nagging rather than informing. */
+  .failure {
     display: flex;
     flex-direction: column;
     gap: 2px;
     margin: 0;
-    max-width: 60ch;
+    max-width: 46ch;
     font-family: var(--body);
     font-size: 15px;
+    color: var(--ember);
   }
   .fix { color: var(--graphite); }
+
+  .notice {
+    margin: 0;
+    max-width: 52ch;
+    /* Two lines held open, which is every notice there is. */
+    min-height: 2.8em;
+    overflow-y: auto;
+  }
 
   .levels { display: flex; gap: var(--u); }
   .level {

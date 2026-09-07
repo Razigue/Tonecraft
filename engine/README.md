@@ -35,3 +35,11 @@ lossy-tolerant: a dropped frame must never affect audio, state or correctness
 
 `diagnosis.ts` turns measurements into sentences and nothing else. Every
 function in it is pure, and no verdict it can return stops anyone playing.
+
+**Nothing displays those sentences at the moment.** The rig used to carry a
+permanent report at the foot of the page — the latency tier, the impedance
+diagnosis, the dropout warning — and it was removed: on a healthy machine it
+named the operating system's buffering on every frame, which is nagging rather
+than informing. `engine.health` still computes all of it for whoever wants it
+back, and `app/` deliberately reads `roundTripMs` instead, so the metering loop
+does not run four verdicts thirty times a second for nobody.

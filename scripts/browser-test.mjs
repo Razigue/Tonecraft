@@ -126,7 +126,7 @@ try {
   ok('the engine starts and reports a round trip');
 } catch {
   started = false;
-  const said = await page.locator('.says .note').allInnerTexts();
+  const said = await page.locator('.sheet .failure').allInnerTexts();
   bad('the engine starts and reports a round trip',
     said[0]?.replace(/\s+/g, ' ') ?? 'and the page said nothing at all');
 }
@@ -148,7 +148,9 @@ if (!started) {
   const said = await page.evaluate(async () => {
     const found = new Set();
     for (let i = 0; i < 40; i++) {
-      for (const n of document.querySelectorAll('.says .note')) found.add(n.textContent);
+      for (const n of document.querySelectorAll('.sheet .failure, .marquee .notice')) {
+        found.add(n.textContent);
+      }
       await new Promise((r) => setTimeout(r, 100));
     }
     return [...found];
@@ -222,9 +224,6 @@ const mutedIn = await meterPeak('in', 2500);
 const mutedOut = await meterPeak('out', 2500);
 check('switching the simulation off closes the live input',
   mutedIn === 0 && mutedOut === 0, `in ${mutedIn}, out ${mutedOut}, of 96`);
-check('and the rig says why it went quiet',
-  (await page.locator('.says').innerText()).includes('nothing is being monitored'));
-
 await page.locator('button.chain').click();
 await page.waitForTimeout(1200);
 const backIn = await page.evaluate(async () => {
@@ -415,18 +414,19 @@ check('the A/B is level-matched, so it compares tone', Math.abs(offset) < 1.5,
  * the moment it is trying to tell somebody something.
  */
 const before = await page.locator('.strand').boundingBox();
+// Written into the slot the rig keeps for it, which is what happens at runtime.
+// Appending a second element would be testing a case the product never makes.
 await page.evaluate(() => {
-  const says = document.querySelector('.says');
-  const note = document.createElement('p');
-  note.className = 'note';
-  note.innerHTML = '<span>A message two lines long, appearing while playing.</span>' +
-    '<span class="fix">And the remedy that comes with it.</span>';
-  says.appendChild(note);
+  const notice = document.querySelector('.marquee .notice');
+  notice.textContent = 'A notice appearing while playing, two lines long, about '
+    + 'the take currently on screen and what to do about it.';
 });
 await page.waitForTimeout(300);
 const after = await page.locator('.strand').boundingBox();
 const moved = Math.abs(after.y - before.y);
-check('a message does not move the rig', moved < 1, `${moved.toFixed(1)} px`);
+check('a notice does not move the rig', moved < 1, `${moved.toFixed(1)} px`);
+check('and the rig keeps a place for it whether or not there is one',
+  (await page.locator('.marquee .notice').count()) === 1);
 
 // FR-18: the limiter has no control anywhere, in any mode, on any path.
 const bypasses = await page.locator('.strand button[aria-label^="Bypass"]').allTextContents();
