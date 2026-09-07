@@ -17,9 +17,15 @@
        path. render/wav.ts writes float for renders that are measured; this one
        is shipped.
 
-   Nothing is aligned, mixed or transposed here any more. That machinery existed
-   to build one take out of two, and it is gone with the takes it served: the
-   source is now a finished performance.
+   Nothing is aligned, mixed or transposed here. That machinery existed to build
+   one take out of two and is gone with the takes it served.
+
+   **The source format is read from the file, never from its name.** The take
+   that prompted this arrived as `Riff A DI.wav` and was a FLAC — which a
+   dispatch on the extension would have handed to the RIFF parser, to fail on a
+   file that is perfectly good. WAV is parsed here; anything else is decoded by
+   Chromium, through the Playwright the test suite already carries, which is
+   also the decoder the product itself runs on the take at runtime.
 
    Usage:  npm run make:di
    ========================================================================== */
@@ -36,7 +42,7 @@ const RATE = 48_000;
 
 /* Named rather than globbed: which take the demo plays is a decision, not an
    accident of the filesystem. */
-const SOURCE = 'octave-lead.wav';
+const SOURCE = 'riff-a.wav';
 
 const source = path.join(ROOT, 'assets', 'di', SOURCE);
 if (!fs.existsSync(source)) {
@@ -44,7 +50,42 @@ if (!fs.existsSync(source)) {
   process.exit(1);
 }
 
-const wav = readWav(source);
+/**
+ * The take, whatever container it came in.
+ *
+ * Sniffed rather than trusted: `Riff A DI.wav` was a FLAC.
+ */
+async function read(file) {
+  const magic = Buffer.alloc(4);
+  const fd = fs.openSync(file, 'r');
+  fs.readSync(fd, magic, 0, 4, 0);
+  fs.closeSync(fd);
+
+  if (magic.toString('ascii') === 'RIFF') return readWav(file);
+
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto('about:blank');
+    const decoded = await page.evaluate(async ([bytes, rate]) => {
+      const ctx = new OfflineAudioContext(1, 1, rate);
+      const buf = await ctx.decodeAudioData(new Uint8Array(bytes).buffer);
+      const channels = [];
+      for (let c = 0; c < buf.numberOfChannels; c++) channels.push([...buf.getChannelData(c)]);
+      return { rate: buf.sampleRate, channels };
+    }, [[...fs.readFileSync(file)], RATE]);
+    return {
+      rate: decoded.rate,
+      frames: decoded.channels[0].length,
+      channels: decoded.channels.map((c) => Float32Array.from(c)),
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
+const wav = await read(source);
 if (wav.rate !== RATE) {
   console.error(`\nmake:di — ${SOURCE} is ${wav.rate} Hz and the captures were ` +
     `trained at ${RATE}. Export it again rather than resampling it here: a ` +
