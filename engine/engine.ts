@@ -676,7 +676,7 @@ export class Engine {
    * compressor nobody asked for sitting across the only honest comparison in
    * the product.
    */
-  static readonly DIRECT_MAKEUP_DB = 16.5;
+  static readonly DIRECT_MAKEUP_DB = 17.3;
 
   /**
    * The whole simulation, on or off.
