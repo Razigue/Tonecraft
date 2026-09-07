@@ -92,7 +92,7 @@ engine/   graph composition, capture loading, IR synthesis, meters, diagnosis
 app/      the Svelte island — never touches the audio graph directly
 site/     Astro pages (this is Astro's srcDir)
 render/   measurement tools; the offline renderer is not rebuilt yet
-public/   the NAM engine, the worklets and the captures, served as-is
+public/   the amp model, the worklets and the captures, served as-is
 scripts/  vendoring, calibration, measurement, checks
 ```
 
@@ -100,23 +100,34 @@ Dependencies point one way only:
 
 ```
 schema ──> engine ──> app ──> site
-              └──> render
+   │          └──> render
+   └──> dsp/model (generated header)
 ```
 
 ## What is in this repository that is binary
 
-One file: `public/nam/nam.wasm`, a pinned build of NeuralAmpModelerCore fetched
-by `scripts/vendor-nam.mjs`. It is a third-party artifact rather than our build
-output, and committing it is what makes a clean checkout deployable without CI
-needing network access beyond npm.
+- `public/nam/wavenet.wasm` — the amp model, 8 kB, built from `dsp/model/` by
+  `npm run model:build`. It is our build output and it is committed anyway: the
+  alternative is emsdk in CI and on GitHub Pages for an artifact that changes
+  only when `dsp/` does. `npm run model:verify` fails if what is committed stops
+  agreeing with NeuralAmpModelerCore.
+- `public/models/*.tcnm` — the captures, flattened out of their JSON at vendor
+  time. 55 kB each, against 407 kB of `.nam`.
+- `assets/models/*.nam` — the captures as they were downloaded. In the
+  repository, not served: they are the GPL source of the blobs above, and
+  shipping 1.6 MB of JSON for the browser to re-parse would be paying twice.
+- `assets/golden/*.f32` — what NeuralAmpModelerCore produces from three seconds
+  of the demo DI, so `npm run model:verify` needs no checkout of it.
 
 ## Licences
 
 - The application — yours to do as you like with.
-- **The NAM engine** — [`@opendaw/nam-wasm`](https://github.com/andremichelle/nam-wasm),
-  MIT, © Steven Atkinson, a build of
-  [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore).
-  See `public/nam/nam-wasm-LICENSE.txt`.
+- **The amp model** — ours (`dsp/model/wavenet.h`), an implementation of the
+  Standard WaveNet architecture defined by
+  [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore)
+  (MIT, © Steven Atkinson), which is also what it is checked against. Tonecraft
+  shipped a vendored build of that core until 2026-09-07; see
+  `dsp/model/wavenet.h` for why it no longer does.
 - **The amp captures** — [`pelennor2170/NAM_models`](https://github.com/pelennor2170/NAM_models),
   **GNU GPL v3**. See `public/models/COPYING`.
 

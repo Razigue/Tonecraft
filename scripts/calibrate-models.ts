@@ -20,51 +20,21 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { makeCabIR, DEFAULT_CAB } from '../engine/ir.ts';
+import { Model } from '../render/model.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SR = 48_000;
 /** Output level aimed for, before the master fader. */
 const TARGET_RMS_DB = -18;
 
-/* ---------------------- the NAM engine, in a sandbox --------------------- */
+/* ------------------------------- the engine ------------------------------ */
+/* The same module the audio thread runs, through the same exports: a trim
+   measured against a different engine would be a trim for a sound nobody
+   hears. */
 
-const glue = fs.readFileSync(path.join(ROOT, 'public/nam/nam-glue.js'), 'utf8');
-const wasm = fs.readFileSync(path.join(ROOT, 'public/nam/nam.wasm'));
-
-interface NamModule {
-  _malloc(bytes: number): number;
-  _free(ptr: number): void;
-  _nam_setSampleRate(rate: number): void;
-  _nam_setMaxBufferSize(frames: number): void;
-  _nam_createInstance(): number;
-  _nam_destroyInstance(id: number): void;
-  _nam_loadModel(id: number, ptr: number): boolean;
-  _nam_reset(id: number): void;
-  _nam_process(id: number, inPtr: number, outPtr: number, n: number): void;
-  lengthBytesUTF8(s: string): number;
-  stringToUTF8(s: string, ptr: number, len: number): void;
-  HEAPF32: Float32Array;
-}
-
-const sandbox: Record<string, unknown> = {
-  WebAssembly, TextDecoder, TextEncoder, Math, Date, console,
-  Uint8Array, Int8Array, Int32Array, Uint32Array, Float32Array, Float64Array,
-  ArrayBuffer, Object, Array, Error, JSON, String, Number, Promise, Symbol,
-  setTimeout, clearTimeout, performance,
-};
-sandbox['globalThis'] = sandbox;
-vm.createContext(sandbox);
-vm.runInContext(`${glue}\n;globalThis.__create = createNamModule;`, sandbox);
-
-const create = sandbox['__create'] as (o: { wasmBinary: ArrayBuffer }) => Promise<NamModule>;
-const mod = await create({
-  wasmBinary: wasm.buffer.slice(wasm.byteOffset, wasm.byteOffset + wasm.byteLength) as ArrayBuffer,
-});
-mod._nam_setSampleRate(SR);
-mod._nam_setMaxBufferSize(128);
+const model = await Model.load();
 
 /* ------------------------------ the cabinet ------------------------------ */
 /* engine/ir.ts uses only `createBuffer` and `sampleRate` off the audio
@@ -107,26 +77,14 @@ function pinkNoise(n: number, rmsDb: number): Float32Array {
 /** A guitar at line level, once the player has set the trim sensibly. */
 const testSig = pinkNoise(SR * 4, -20);
 
-const inPtr = mod._malloc(128 * 4), outPtr = mod._malloc(128 * 4);
-
-function runModel(json: string): Float32Array | null {
-  const id = mod._nam_createInstance();
-  const len = mod.lengthBytesUTF8(json) + 1;
-  const ptr = mod._malloc(len);
-  mod.stringToUTF8(json, ptr, len);
-  const ok = mod._nam_loadModel(id, ptr);
-  mod._free(ptr);
-  if (!ok) { mod._nam_destroyInstance(id); return null; }
-
-  const N = testSig.length, out = new Float32Array(N);
-  mod._nam_reset(id);
-  for (let b = 0; b + 128 <= N; b += 128) {
-    mod.HEAPF32.set(testSig.subarray(b, b + 128), inPtr >> 2);
-    mod._nam_process(id, inPtr, outPtr, 128);
-    out.set(mod.HEAPF32.subarray(outPtr >> 2, (outPtr >> 2) + 128), b);
+function runModel(blobPath: string): Float32Array | null {
+  try {
+    model.loadBlob(blobPath);
+  } catch (error) {
+    console.log(`  ${String((error as Error).message)}`);
+    return null;
   }
-  mod._nam_destroyInstance(id);
-  return out;
+  return model.render(testSig);
 }
 
 /** Direct convolution: slow but unambiguous, and it runs once per model. */
@@ -153,8 +111,7 @@ console.log('\nCalibration (pink noise at -20 dBFS RMS -> model -> V30 Modern ca
 console.log(`Target: ${TARGET_RMS_DB} dBFS RMS\n`);
 
 for (const entry of catalog.models) {
-  const json = fs.readFileSync(path.join(ROOT, 'public/models', entry.file), 'utf8');
-  const out = runModel(json);
+  const out = runModel(path.join(ROOT, 'public/models', entry.file));
   if (out === null) { console.log(`  FAILED  ${entry.file}`); continue; }
   const rms = convolveRmsDb(out, cab, SR);        // one second skipped: settling
   entry.rmsDb = Math.round(rms * 100) / 100;

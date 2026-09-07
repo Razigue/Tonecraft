@@ -123,11 +123,17 @@ class OverSampler {
     this.dn = stages.map(s => new Down2(s[0], s[1]));
     this.factor = 1 << stages.length;
     this.tmp = [];
+    this.upBuf = null;
+    this.upN = 0;
   }
   buf(i, len) {
     if (!this.tmp[i] || this.tmp[i].length !== len) this.tmp[i] = new Float64Array(len);
     return this.tmp[i];
   }
+  /* Writes into `this.upBuf` / `this.upN` rather than returning a pair.
+     process() may not allocate, and an object literal per block is still an
+     allocation even when it is small enough that an engine will usually see
+     through it — usually is not a real-time guarantee. */
   upsample(x, n) {
     let cur = x, cn = n;
     for (let k = 0; k < this.up.length; k++) {
@@ -135,7 +141,7 @@ class OverSampler {
       this.up[k].process(cur, cn, o);
       cur = o; cn *= 2;
     }
-    return { buf: cur, n: cn };
+    this.upBuf = cur; this.upN = cn;
   }
   downsample(x, n, out) {
     if (this.dn.length === 0) { for (let i = 0; i < n; i++) out[i] = x[i]; return; }
@@ -376,8 +382,8 @@ class FrontendProcessor extends AudioWorkletProcessor {
        chain works to avoid. So the smoothing runs per sample, in the
        oversampled domain. */
     if (boost > 0.001 || this.sBoost > 0.001) {
-      const up = this.os.upsample(pre, n);
-      const buf = up.buf, on = up.n;
+      this.os.upsample(pre, n);
+      const buf = this.os.upBuf, on = this.os.upN;
       const cB = this.smoothC;
 
       for (let i = 0; i < on; i++) {

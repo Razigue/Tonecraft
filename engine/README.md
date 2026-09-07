@@ -8,7 +8,7 @@ and the capture to the worklets, and reads metering back.
 ```
 source (live DI or an audio file)
   -> public/nam/frontend-worklet.js   channel choice, trim, gate, TS boost (4x + ADAA)
-  -> public/nam/nam-processor.js      the capture — NeuralAmpModelerCore in WASM
+  -> public/nam/nam-processor.js      the capture — dsp/model/ in WASM
   -> capture trim                     measured offline, so captures match each other
   -> cabinet                          ConvolverNode, IR synthesised in ir.ts
   -> four-band correction             native biquads, post-cabinet
@@ -19,8 +19,14 @@ source (live DI or an audio file)
 
 The worklets live in `public/` because an AudioWorklet module is loaded by URL
 and evaluated in its own global scope; they are plain JS and go out untouched.
-The order they are added in matters: `nam-glue.js` publishes `createNamModule`
-on the worklet's globalThis and `nam-processor.js` reads it from there.
+`nam-processor.js` instantiates `public/nam/wavenet.wasm` itself from bytes the
+main thread hands over — a standalone module with no imports and no runtime, so
+there is no glue file and no order to get wrong.
+
+The capture crosses as a `.tcnm` blob, not as the `.nam` it came from: the JSON
+is parsed once at vendor time by `scripts/nam-to-tcnm.ts`, which is both seven
+times less to download and the moment a capture whose shape the kernel does not
+implement gets refused, with someone watching.
 
 `ir.ts` synthesises both impulse responses — no `.wav` to download, and a
 minimum-phase cabinet, which is the most compact transient response a given

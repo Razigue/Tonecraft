@@ -13,12 +13,16 @@ build/
 *.wasm
 *.wasm.map
 
-# Exception: the NAM engine is a pinned third-party artifact, not our build
-# output — scripts/vendor-nam.mjs fetches one exact version of
-# @opendaw/nam-wasm and patches it for the AudioWorklet scope. Committing it is
-# what makes a clean checkout deployable, and CI does not need network access to
-# publish. Re-fetch with `npm run vendor`.
-!public/nam/nam.wasm
+# Exception: the amp model. It is our build output, and it is committed anyway,
+# because the alternative is emsdk in CI and on GitHub Pages for an 8 kB
+# artifact that changes only when dsp/ does. Rebuild with `npm run model:build`;
+# `npm run model:verify` fails if what is committed stops agreeing with NAM.
+!public/nam/wavenet.wasm
+
+# Generated from schema/params.ts by scripts/generate-model-header.ts, which
+# dsp/build.sh runs first. The schema is the source of truth; this is a
+# projection of it and is never edited or committed.
+dsp/model/params.generated.h
 
 # Build-time renders: preset audio and its per-stage RMS envelope. Both are a
 # pure function of the .wasm plus the DI loop in assets/, so CI regenerates
@@ -48,8 +52,9 @@ Thumbs.db
 # BMAD — personal install answers (see _bmad/custom/.gitignore)
 *.user.toml
 
-# Local Emscripten install (~1.7 GB), left over from the C++ chain the NAM
-# pivot retired. Nothing builds it any more; delete it when you are sure.
+# Local Emscripten install (~1.7 GB). `dsp/build.sh` uses it, and only when
+# dsp/ changes: the .wasm it produces is committed, so a clean checkout builds,
+# tests and deploys without it.
 .toolchain/
 
 # The proof of concept this repository was ported from. A local input, kept out

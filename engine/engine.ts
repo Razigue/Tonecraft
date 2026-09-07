@@ -208,6 +208,20 @@ export class Engine {
   #pendingLoad: { file: string; resolve: (ok: boolean) => void; timer: number } | null = null;
 
   /**
+   * Whether the reverb convolver is in the graph at all.
+   *
+   * A ConvolverNode convolves whether or not anyone is listening: leaving it
+   * wired with its wet gain at zero pays for 1.3 seconds of impulse response,
+   * every block, to produce silence — and zero is where the reverb sits by
+   * default. So it is disconnected when it goes quiet and reconnected before it
+   * comes back, which is the one stage in the chain that can be removed without
+   * changing what anything else does.
+   */
+  #reverbWired = false;
+  /** Pending disconnect, held off until the tail has actually finished. */
+  #reverbTimer: number | null = null;
+
+  /**
    * Set once the NAM engine reports it cannot run. It is latched because every
    * later load would otherwise sit on the 15 second timeout below, one after
    * another, while the interface says nothing.
@@ -317,11 +331,8 @@ export class Engine {
     this.#context = context;
     await context.resume();
 
-    // Order matters: nam-glue.js puts createNamModule in the worklet's global
-    // scope, and nam-processor.js reads it from there.
     try {
       await context.audioWorklet.addModule(`${BASE}nam/frontend-worklet.js`);
-      await context.audioWorklet.addModule(`${BASE}nam/nam-glue.js`);
       await context.audioWorklet.addModule(`${BASE}nam/nam-processor.js`);
       await context.audioWorklet.addModule(`${BASE}nam/output-worklet.js`);
     } catch (cause) {
@@ -334,14 +345,14 @@ export class Engine {
 
     // The bytes are fetched here and handed over. A worklet scope has no fetch,
     // and no business doing I/O anyway (AD-13).
-    const response = await fetch(`${BASE}nam/nam.wasm`);
+    const response = await fetch(`${BASE}nam/wavenet.wasm`);
     if (!response.ok) {
       // Without this the worklet would try to instantiate a 404 page and the UI
       // would sit on "Starting" forever with nothing said. Silence is the one
       // failure mode this product must not have.
       throw new EngineError(
         { kind: 'engine-missing' },
-        'The NAM engine is missing. Run `npm run vendor` and reload.',
+        'The amp engine is missing. Run `bash dsp/build.sh` and reload.',
       );
     }
     const wasmBinary = await response.arrayBuffer();
@@ -358,6 +369,8 @@ export class Engine {
 
   async stop(): Promise<void> {
     this.#stopFile();
+    if (this.#reverbTimer !== null) { self.clearTimeout(this.#reverbTimer); this.#reverbTimer = null; }
+    this.#reverbWired = false;
     this.#stream?.getTracks().forEach((t) => t.stop());
     await this.#context?.close();
     this.#stream = null;
@@ -445,7 +458,9 @@ export class Engine {
 
     lowcut.connect(chain);
     chain.connect(dry);
-    chain.connect(reverb);
+    /* `chain -> reverb` is deliberately not made here. The reverb is off by
+       default and a ConvolverNode costs the same whether or not its output is
+       heard; #wireReverb adds the edge the first time the mix leaves zero. */
     reverb.connect(wet);
     dry.connect(master);
     wet.connect(master);
@@ -562,7 +577,10 @@ export class Engine {
 
     const response = await fetch(`${BASE}models/${encodeURIComponent(file)}`);
     if (!response.ok) return false;
-    const json = await response.text();
+    /* The flat blob, not the `.nam` it came from: the JSON is parsed once at
+       vendor time by scripts/nam-to-tcnm.ts. Transferred rather than copied —
+       nothing on this side reads it again. */
+    const blob = await response.arrayBuffer();
 
     const settled = new Promise<boolean>((resolve) => {
       // A load that never answers must not leave the UI waiting forever.
@@ -575,7 +593,7 @@ export class Engine {
       this.#pendingLoad = { file, resolve, timer };
     });
 
-    nodes.nam.port.postMessage({ type: 'model', json, name: capture.name, file });
+    nodes.nam.port.postMessage({ type: 'model', blob, name: capture.name, file }, [blob]);
     // Trim measured offline by scripts/calibrate-models.mjs, through the
     // cabinet, because the cabinet is what sets the perceived level.
     nodes.trim.gain.setTargetAtTime(dbToLinear(capture.trimDb), ctx.currentTime, 0.05);
@@ -734,9 +752,11 @@ export class Engine {
       case 'reverb_mix':
       case 'reverb_bypass': {
         const mix = on('reverb_bypass') ? v('reverb_mix') : 0;
+        if (mix > 0) this.#wireReverb(nodes);
         // The dry side comes down as the wet goes up, so the total stays put.
         nodes.wet.gain.setTargetAtTime(mix * 0.8, now, T);
         nodes.dry.gain.setTargetAtTime(1 - mix * 0.35, now, T);
+        if (mix <= 0) this.#unwireReverb(nodes);
         break;
       }
 
@@ -750,6 +770,32 @@ export class Engine {
       default:
         break;
     }
+  }
+
+  /** Puts the reverb back in the graph, before its level is raised. */
+  #wireReverb(nodes: Nodes): void {
+    if (this.#reverbTimer !== null) { self.clearTimeout(this.#reverbTimer); this.#reverbTimer = null; }
+    if (this.#reverbWired) return;
+    nodes.chain.connect(nodes.reverb);
+    this.#reverbWired = true;
+  }
+
+  /**
+   * Takes it out again, once it has gone quiet.
+   *
+   * Not immediately: the wet gain is ramping down over T and the impulse
+   * response is 1.3 s long, so cutting the input now would chop the tail. The
+   * wait is the ramp plus the tail plus a margin, and a mix that comes back up
+   * in the meantime cancels it.
+   */
+  #unwireReverb(nodes: Nodes): void {
+    if (!this.#reverbWired || this.#reverbTimer !== null) return;
+    this.#reverbTimer = self.setTimeout(() => {
+      this.#reverbTimer = null;
+      if (this.#nodes !== nodes) return;          // the graph was rebuilt
+      nodes.chain.disconnect(nodes.reverb);
+      this.#reverbWired = false;
+    }, 2_000);
   }
 
   // -------------------------------------------------------------------------

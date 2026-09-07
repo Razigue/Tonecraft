@@ -158,29 +158,33 @@ function gainAt(h: Float32Array, len: number, f: number, sr: number): number {
 }
 
 /**
- * A stereo cabinet IR.
+ * The cabinet IR — mono.
  *
- * Both channels share the curve with a micro-variation of timbre, which opens
- * the stereo image slightly without introducing any phase difference — so the
- * mono sum stays perfectly clean.
+ * It used to be stereo: two channels of the same curve with a micro-variation
+ * of timbre on the right, to open the image slightly without a phase
+ * difference. Nobody ever heard it. The chain ends at an output meter declared
+ * `channelCount: 1` with `channelInterpretation: 'discrete'`, and a discrete
+ * down-mix does not sum the extra channel, it drops it — so the right channel
+ * was convolved every block and thrown away at the last node.
+ *
+ * Halving it changes nothing audible (what survived was channel 0, which is
+ * exactly this) and halves the cost of the convolution. Reinstating the width
+ * is a decision about the output stage, not about this file: it would mean
+ * carrying two channels all the way to the destination, and paying for them.
  */
 export function makeCabIR(ctx: BaseAudioContext, id: string): AudioBuffer {
   const cab = cabById(id);
   const sr = ctx.sampleRate;
   const N = 8192;
   const LEN = 1024;                          // ~21 ms at 48 kHz, plenty
-  const buf = ctx.createBuffer(2, LEN, sr);
+  const buf = ctx.createBuffer(1, LEN, sr);
 
-  for (let ch = 0; ch < 2; ch++) {
-    const tilt = ch === 1;                   // right channel: a subtle variation
+  {
+    const ch = 0;
     const mag = new Float64Array(N);
     for (let k = 0; k <= N / 2; k++) {
       const f = Math.max((k * sr) / N, 1);
-      let db = dbAt(cab.curve, f);
-      if (tilt) {
-        db += 0.7 * Math.sin(Math.log(f / 180) * 1.7);   // +/- 0.7 dB
-        if (f > 4000) db -= 0.8;
-      }
+      const db = dbAt(cab.curve, f);
       const m = Math.pow(10, db / 20);
       mag[k] = m;
       if (k > 0 && k < N / 2) mag[N - k] = m;
@@ -220,13 +224,17 @@ export function makeCabIR(ctx: BaseAudioContext, id: string): AudioBuffer {
   return buf;
 }
 
-/** A small dark plate, enough to place the sound without drowning it. */
+/**
+ * A small dark plate, enough to place the sound without drowning it. Mono, for
+ * the reason the cabinet is: the second channel never reached the destination.
+ */
 export function makeReverbIR(ctx: BaseAudioContext, seconds = 1.3): AudioBuffer {
   const sr = ctx.sampleRate;
   const n = Math.floor(sr * seconds);
-  const buf = ctx.createBuffer(2, n, sr);
+  const buf = ctx.createBuffer(1, n, sr);
   const pre = Math.floor(sr * 0.014);
-  for (let ch = 0; ch < 2; ch++) {
+  {
+    const ch = 0;
     const d = buf.getChannelData(ch);
     let seed = 987654321 + ch * 31337, lp = 0, hp = 0;
     for (let i = 0; i < n; i++) {

@@ -25,7 +25,7 @@ export const PRESETS: readonly Preset[] = [
   {
     name: 'Lead',
     pack: 'metal',
-    capture: 'helga-b-jsx-ultra-od808.nam',
+    capture: 'helga-b-jsx-ultra-od808.tcnm',
     cab: 'v30mod',
     values: {
       // -65 rather than the -75.5 this used to carry: at that threshold the
@@ -38,7 +38,7 @@ export const PRESETS: readonly Preset[] = [
   {
     name: 'Modern metal',
     pack: 'metal',
-    capture: 'helga-b-6505-red-ch-mxr-drive.nam',
+    capture: 'helga-b-6505-red-ch-mxr-drive.tcnm',
     cab: 'v30mod',
     values: {
       in_trim: 10.5, gate_threshold: -72.9, drive_gain: 16.9, drive_tone: 5200,

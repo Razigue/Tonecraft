@@ -72,7 +72,7 @@ const check = (name, condition, detail) => (condition ? ok(name, detail) : bad(n
 const TYPES = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm',
-  '.nam': 'application/json', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+  '.tcnm': 'application/octet-stream', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
 };
 
 function serve() {
