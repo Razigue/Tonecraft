@@ -16,6 +16,7 @@
     "model:convert": "tsx scripts/nam-to-tcnm.ts",
     "model:verify": "tsx scripts/verify-model.ts",
     "bench:model": "tsx scripts/bench-model.ts",
+    "measure:load": "node scripts/measure-load.mjs",
     "calibrate": "tsx scripts/calibrate-models.ts",
     "measure": "tsx scripts/measure-aliasing.ts",
     "check": "tsx scripts/check-schema.ts",
