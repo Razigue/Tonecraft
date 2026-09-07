@@ -658,9 +658,9 @@ export class Engine {
    * same take raw, both seeked to zero first and integrated over fourteen
    * seconds off the output meter. Re-measured whenever the default preset
    * changes — it moved 1.6 dB when the default became "Lead", which carries 8
-   * more decibels of boost — and whenever the take changes, which is what moved
-   * it 9.6 dB here: the riff take sits lower than the take it replaced, and the
-   * direct path is the take. Repeatable to a tenth of a dB — measuring
+   * more decibels of boost — and whenever the take changes, which is what has
+   * moved it 10.2 dB across three takes today: the direct path *is* the take,
+   * so its level is the take's level. Repeatable to a tenth of a dB — measuring
    * it without seeking first put 1.8 dB of the take's own dynamics into the
    * answer, because the two passes were covering different notes.
    *
@@ -676,7 +676,7 @@ export class Engine {
    * compressor nobody asked for sitting across the only honest comparison in
    * the product.
    */
-  static readonly DIRECT_MAKEUP_DB = 15.5;
+  static readonly DIRECT_MAKEUP_DB = 16.1;
 
   /**
    * The whole simulation, on or off.
