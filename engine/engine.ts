@@ -10,9 +10,15 @@
  *       -> capture trim         measured offline, so captures match each other
  *       -> cabinet              ConvolverNode, synthesised minimum-phase IR
  *       -> four-band correction native biquads, post-cabinet
- *       -> reverb, in parallel
- *       -> master + limiter     WaveShaper, no added latency
- *       -> output meter         pass-through, measures and posts
+ *       -> reverb, in parallel  connected only while its mix is above zero
+ *       -> master
+ *       -> output worklet       limiter (zero latency) and the output meter
+ *
+ * Nothing in this graph adds latency of its own: the worklets run inside the
+ * render quantum, and biquads and convolvers are measured at zero delay. The
+ * limiter used to be a WaveShaperNode at 4x, which Chromium delays by 192
+ * frames — 4 ms at 48 kHz. It is now sample-by-sample inside the output
+ * worklet (scripts/measure-latency.mjs is the measurement).
  *
  * A NAM capture is a frozen snapshot of one amplifier at one setting. Its own
  * gain, channel and EQ are baked in and cannot be driven from here — what is
@@ -128,27 +134,6 @@ const boostAmount = (db: number): number => clamp((dbToLinear(db) - 1) / 24, 0, 
  */
 const boostTone = (hz: number): number => clamp((hz / 5200 - 0.35) / 1.3, 0, 1);
 
-/**
- * Safety limiter: transparent below -3 dBFS, gentle compression above it.
- * A WaveShaper adds no latency, unlike a compressor.
- *
- * A WaveShaperNode's curve is indexed over the input range [-1, +1]: building
- * it over any other range turns the limiter into a maximiser that pins the
- * output at 0 dBFS permanently.
- *
- * It is always on and has no control anywhere in the product (FR-18): a digital
- * feedback loop in headphones can injure.
- */
-function limiterCurve(): Float32Array {
-  const N = 4096, c = new Float32Array(N), t = 0.7;
-  for (let i = 0; i < N; i++) {
-    const x = (i / (N - 1)) * 2 - 1;                 // [-1, +1]
-    const a = Math.abs(x);
-    c[i] = a <= t ? x : Math.sign(x) * (t + (1 - t) * Math.tanh((a - t) / (1 - t)));
-  }
-  return c;
-}
-
 interface Nodes {
   bus: GainNode;
   frontend: AudioWorkletNode;
@@ -168,8 +153,13 @@ interface Nodes {
   reverb: ConvolverNode;
   wet: GainNode;
   master: GainNode;
-  limiter: WaveShaperNode;
+  /** The output stage: the limiter, always on, and the meter behind it. */
   meter: AudioWorkletNode;
+}
+
+export interface OutputDevice {
+  readonly id: string;
+  readonly label: string;
 }
 
 export class Engine {
@@ -206,20 +196,6 @@ export class Engine {
   #meterArrivals: number[] = [];
   #values = new Map<string, number>();
   #pendingLoad: { file: string; resolve: (ok: boolean) => void; timer: number } | null = null;
-
-  /**
-   * Whether the reverb convolver is in the graph at all.
-   *
-   * A ConvolverNode convolves whether or not anyone is listening: leaving it
-   * wired with its wet gain at zero pays for 1.3 seconds of impulse response,
-   * every block, to produce silence — and zero is where the reverb sits by
-   * default. So it is disconnected when it goes quiet and reconnected before it
-   * comes back, which is the one stage in the chain that can be removed without
-   * changing what anything else does.
-   */
-  #reverbWired = false;
-  /** Pending disconnect, held off until the tail has actually finished. */
-  #reverbTimer: number | null = null;
 
   /**
    * Set once the NAM engine reports it cannot run. It is latched because every
@@ -268,6 +244,30 @@ export class Engine {
     if (ctx === null) return null;
     const output = 'outputLatency' in ctx ? ctx.outputLatency : 0;
     return (ctx.baseLatency + output) * 1000;
+  }
+
+  /**
+   * The two halves of that figure, in ms. `base` is the render buffer the
+   * browser chose for `latencyHint: 0`; `output` is what the operating system
+   * and the device add on the way out. Neither includes the input path, which
+   * the Web Audio API does not expose.
+   */
+  get latencyParts(): { readonly base: number; readonly output: number } | null {
+    const ctx = this.#context;
+    if (ctx === null) return null;
+    return {
+      base: ctx.baseLatency * 1000,
+      output: ('outputLatency' in ctx ? ctx.outputLatency : 0) * 1000,
+    };
+  }
+
+  /**
+   * Blocks the audio thread did not render in time, counted by the output
+   * worklet since start (AD-12: the worklet is the only detector). Cheap to
+   * read every metering frame, unlike `health`.
+   */
+  get dropoutCount(): number {
+    return this.#dropouts;
   }
 
   /** The whole picture, judged. No verdict here refuses anything (FR-37). */
@@ -324,15 +324,44 @@ export class Engine {
       rate = track.getSettings().sampleRate;
     }
 
-    const context = rate === undefined
-      ? new AudioContext({ latencyHint: 0 })
-      // Not 'interactive', which is more conservative than we want.
-      : new AudioContext({ sampleRate: rate, latencyHint: 0 });
+    // The output device, decided before the context exists because Chromium
+    // takes it in the constructor and moving it afterwards rebuilds the output
+    // stream. See #pickOutput for why it follows the input.
+    const sinkId = await this.#pickOutput();
+
+    // `latencyHint: 0` asks for the smallest buffer the device offers. Not
+    // 'interactive', which is more conservative than we want.
+    const options = {
+      latencyHint: 0,
+      ...(rate === undefined ? {} : { sampleRate: rate }),
+    } as AudioContextOptions;
+    let context: AudioContext;
+    try {
+      // `sinkId` is in the specification and in Chromium; the lib typings
+      // this project compiles against do not carry it yet.
+      context = new AudioContext(
+        sinkId === undefined ? options : ({ ...options, sinkId } as AudioContextOptions),
+      );
+    } catch {
+      // An output the browser will not open: the default is better than no
+      // engine at all, and the round trip on screen says which one is in use.
+      this.#sinkId = undefined;
+      context = new AudioContext(options);
+    }
     this.#context = context;
     await context.resume();
 
+    // The bytes are fetched here and handed over. A worklet scope has no fetch,
+    // and no business doing I/O anyway (AD-13). The request goes out before the
+    // worklet modules load, so the two wait on the network together rather
+    // than one after the other: time to first note, not latency.
+    const wasmRequest = fetch(`${BASE}nam/nam.wasm`);
+
+    // Order matters: nam-glue.js puts createNamModule in the worklet's global
+    // scope, and nam-processor.js reads it from there.
     try {
       await context.audioWorklet.addModule(`${BASE}nam/frontend-worklet.js`);
+      await context.audioWorklet.addModule(`${BASE}nam/nam-glue.js`);
       await context.audioWorklet.addModule(`${BASE}nam/nam-processor.js`);
       await context.audioWorklet.addModule(`${BASE}nam/output-worklet.js`);
     } catch (cause) {
@@ -343,16 +372,14 @@ export class Engine {
       );
     }
 
-    // The bytes are fetched here and handed over. A worklet scope has no fetch,
-    // and no business doing I/O anyway (AD-13).
-    const response = await fetch(`${BASE}nam/wavenet.wasm`);
+    const response = await wasmRequest;
     if (!response.ok) {
       // Without this the worklet would try to instantiate a 404 page and the UI
       // would sit on "Starting" forever with nothing said. Silence is the one
       // failure mode this product must not have.
       throw new EngineError(
         { kind: 'engine-missing' },
-        'The amp engine is missing. Run `bash dsp/build.sh` and reload.',
+        'The NAM engine is missing. Run `npm run vendor` and reload.',
       );
     }
     const wasmBinary = await response.arrayBuffer();
@@ -369,14 +396,16 @@ export class Engine {
 
   async stop(): Promise<void> {
     this.#stopFile();
-    if (this.#reverbTimer !== null) { self.clearTimeout(this.#reverbTimer); this.#reverbTimer = null; }
-    this.#reverbWired = false;
     this.#stream?.getTracks().forEach((t) => t.stop());
     await this.#context?.close();
     this.#stream = null;
     this.#liveSource = null;
     this.#nodes = null;
+    this.#reverbWired = false;
     this.#context = null;
+    // An output the rule picked belongs to the input it followed; a chosen one
+    // belongs to the player and survives.
+    if (!this.#sinkChosen) this.#sinkId = undefined;
     this.#dropouts = 0;
     this.#meterArrivals = [];
     this.#firstAudioAt = null;
@@ -436,8 +465,10 @@ export class Engine {
     reverb.buffer = makeReverbIR(context, 1.3);
 
     const master = new GainNode(context, { gain: 0.5 });
-    const limiter = new WaveShaperNode(context, { curve: limiterCurve(), oversample: '4x' });
 
+    // The limiter lives inside this worklet, sample by sample: a WaveShaperNode
+    // at 4x costs 192 frames of latency in Chromium (measured), for a stage
+    // that is transparent nearly all of the time.
     const meter = new AudioWorkletNode(context, 'output-meter', {
       numberOfInputs: 1,
       numberOfOutputs: 1,
@@ -458,9 +489,10 @@ export class Engine {
 
     lowcut.connect(chain);
     chain.connect(dry);
-    /* `chain -> reverb` is deliberately not made here. The reverb is off by
-       default and a ConvolverNode costs the same whether or not its output is
-       heard; #wireReverb adds the edge the first time the mix leaves zero. */
+    // chain -> reverb is wired by #wireReverb, only while the mix is above
+    // zero: a ConvolverNode with a live input renders its whole 1.3 s tail on
+    // every quantum whether or not anything listens, and on a weak machine
+    // that is CPU spent on silence.
     reverb.connect(wet);
     dry.connect(master);
     wet.connect(master);
@@ -472,16 +504,33 @@ export class Engine {
     bus.connect(direct);
     direct.connect(master);
 
-    master.connect(limiter);
-    limiter.connect(meter);
+    master.connect(meter);
     meter.connect(context.destination);
 
     const nodes: Nodes = {
       bus, frontend, nam, trim, cab, bass, mid, treble, presence, lowcut,
-      chain, direct, dry, reverb, wet, master, limiter, meter,
+      chain, direct, dry, reverb, wet, master, meter,
     };
     nodes.cab.buffer = makeCabIR(context, this.#cab);
     return nodes;
+  }
+
+  #reverbWired = false;
+
+  /**
+   * Connects the reverb only while it is audible.
+   *
+   * Disconnecting is safe mid-note: a convolver keeps rendering its tail after
+   * its input goes away, and the wet gain is already fading, so nothing is
+   * cut. Once the tail is out the browser stops calling the node at all. On
+   * the way back in, the connection is made before the gain rises.
+   */
+  #wireReverb(on: boolean): void {
+    const nodes = this.#nodes;
+    if (nodes === null || on === this.#reverbWired) return;
+    this.#reverbWired = on;
+    if (on) nodes.chain.connect(nodes.reverb);
+    else nodes.chain.disconnect(nodes.reverb);
   }
 
   // -------------------------------------------------------------------------
@@ -577,10 +626,7 @@ export class Engine {
 
     const response = await fetch(`${BASE}models/${encodeURIComponent(file)}`);
     if (!response.ok) return false;
-    /* The flat blob, not the `.nam` it came from: the JSON is parsed once at
-       vendor time by scripts/nam-to-tcnm.ts. Transferred rather than copied —
-       nothing on this side reads it again. */
-    const blob = await response.arrayBuffer();
+    const json = await response.text();
 
     const settled = new Promise<boolean>((resolve) => {
       // A load that never answers must not leave the UI waiting forever.
@@ -593,7 +639,7 @@ export class Engine {
       this.#pendingLoad = { file, resolve, timer };
     });
 
-    nodes.nam.port.postMessage({ type: 'model', blob, name: capture.name, file }, [blob]);
+    nodes.nam.port.postMessage({ type: 'model', json, name: capture.name, file });
     // Trim measured offline by scripts/calibrate-models.mjs, through the
     // cabinet, because the cabinet is what sets the perceived level.
     nodes.trim.gain.setTargetAtTime(dbToLinear(capture.trimDb), ctx.currentTime, 0.05);
@@ -752,11 +798,10 @@ export class Engine {
       case 'reverb_mix':
       case 'reverb_bypass': {
         const mix = on('reverb_bypass') ? v('reverb_mix') : 0;
-        if (mix > 0) this.#wireReverb(nodes);
+        this.#wireReverb(mix > 0);
         // The dry side comes down as the wet goes up, so the total stays put.
         nodes.wet.gain.setTargetAtTime(mix * 0.8, now, T);
         nodes.dry.gain.setTargetAtTime(1 - mix * 0.35, now, T);
-        if (mix <= 0) this.#unwireReverb(nodes);
         break;
       }
 
@@ -772,32 +817,6 @@ export class Engine {
     }
   }
 
-  /** Puts the reverb back in the graph, before its level is raised. */
-  #wireReverb(nodes: Nodes): void {
-    if (this.#reverbTimer !== null) { self.clearTimeout(this.#reverbTimer); this.#reverbTimer = null; }
-    if (this.#reverbWired) return;
-    nodes.chain.connect(nodes.reverb);
-    this.#reverbWired = true;
-  }
-
-  /**
-   * Takes it out again, once it has gone quiet.
-   *
-   * Not immediately: the wet gain is ramping down over T and the impulse
-   * response is 1.3 s long, so cutting the input now would chop the tail. The
-   * wait is the ramp plus the tail plus a margin, and a mix that comes back up
-   * in the meantime cancels it.
-   */
-  #unwireReverb(nodes: Nodes): void {
-    if (!this.#reverbWired || this.#reverbTimer !== null) return;
-    this.#reverbTimer = self.setTimeout(() => {
-      this.#reverbTimer = null;
-      if (this.#nodes !== nodes) return;          // the graph was rebuilt
-      nodes.chain.disconnect(nodes.reverb);
-      this.#reverbWired = false;
-    }, 2_000);
-  }
-
   // -------------------------------------------------------------------------
   // Input
 
@@ -807,6 +826,105 @@ export class Engine {
     return devices
       .filter((d) => d.kind === 'audioinput')
       .map((d) => ({ id: d.deviceId, label: d.label, kind: classifyDevice(d.label) }));
+  }
+
+  // -------------------------------------------------------------------------
+  // Output
+  //
+  // Where the sound comes out is chosen, not left to the browser's default.
+  // By default it follows the input: a guitarist with an interface has their
+  // headphones plugged into *it*, and the browser's default output is the
+  // laptop's speakers. Two things are gained beyond the obvious one:
+  //
+  //   - one clock. Input and output on different devices drift, and the
+  //     browser hides the drift by resampling through a FIFO that grows and
+  //     shrinks — which is jitter, the failure CLAUDE.md says matters more
+  //     than the absolute figure;
+  //   - an honest number. `outputLatency` describes the device the context is
+  //     on, so the round trip on screen is the one through the headphones.
+  //
+  // Firefox has no `setSinkId` on AudioContext (NFR-11): there the default
+  // output stands, and nothing is said about it.
+
+  /** True where the output can be chosen at all. */
+  static get canChooseOutput(): boolean {
+    return typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
+  }
+
+  #sinkId: string | undefined;
+  #sinkChosen = false;
+
+  /** Empty until permission has been granted, like the inputs. */
+  async listOutputs(): Promise<OutputDevice[]> {
+    if (!Engine.canChooseOutput) return [];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+      .filter((d) => d.kind === 'audiooutput')
+      .map((d) => ({ id: d.deviceId, label: d.label }));
+  }
+
+  /** The output in use: a device id, or '' for the browser's default. */
+  get outputId(): string {
+    return this.#sinkId ?? '';
+  }
+
+  /**
+   * Chooses the output. An explicit choice sticks across device changes; ''
+   * means the default, and hands the decision back to the input-following
+   * rule on the next start.
+   */
+  async useOutput(id: string): Promise<void> {
+    this.#sinkChosen = id !== '';
+    this.#sinkId = id === '' ? undefined : id;
+    await this.#applyOutput(id);
+  }
+
+  async #applyOutput(id: string): Promise<void> {
+    const ctx = this.#context;
+    if (ctx === null || !Engine.canChooseOutput) return;
+    try {
+      await (ctx as AudioContext & { setSinkId(id: string): Promise<void> }).setSinkId(id);
+    } catch {
+      // A device that has gone away, or one the browser refuses: the sound
+      // keeps coming out where it was, which is better than not at all.
+    }
+  }
+
+  /** Re-runs the input-following rule after the input changed. */
+  async #followInput(): Promise<void> {
+    if (this.#sinkChosen) return;
+    const sink = await this.#pickOutput();
+    await this.#applyOutput(sink ?? '');
+  }
+
+  /**
+   * The output to build the context on. The player's explicit choice if there
+   * is one; otherwise the output that shares hardware with the open input.
+   * `groupId` is the browser's word for "the same physical device", and it is
+   * only meaningful once permission has been granted — which it has, by the
+   * time this runs on the live path.
+   */
+  async #pickOutput(): Promise<string | undefined> {
+    if (!Engine.canChooseOutput) return undefined;
+    let devices: MediaDeviceInfo[];
+    try {
+      devices = await navigator.mediaDevices.enumerateDevices();
+    } catch {
+      return this.#sinkChosen ? this.#sinkId : undefined;
+    }
+    const outputs = devices.filter((d) => d.kind === 'audiooutput');
+    if (this.#sinkChosen) {
+      // A remembered device that has since been unplugged must not take the
+      // whole context down with it: the choice lapses and the rule takes over.
+      if (outputs.some((d) => d.deviceId === this.#sinkId)) return this.#sinkId;
+      this.#sinkChosen = false;
+      this.#sinkId = undefined;
+    }
+    const track = this.#stream?.getAudioTracks()[0];
+    const group = track?.getSettings().groupId;
+    if (group === undefined || group === '') return undefined;
+    this.#sinkId = outputs.find((d) => d.groupId === group)?.deviceId;
+    return this.#sinkId;
   }
 
   /** Reopens the stream on another interface, keeping everything else. */
@@ -821,6 +939,9 @@ export class Engine {
     const track = stream.getAudioTracks()[0];
     if (track !== undefined) this.#adopt(track);
     this.#wireSource();
+    // A new interface means a new place for the headphones, unless the player
+    // chose an output by hand.
+    await this.#followInput();
   }
 
   /**
@@ -925,6 +1046,7 @@ export class Engine {
       if (track !== undefined) this.#adopt(track);
       this.#wireSource();
       this.#setLiveOpen(!this.#direct);
+      await this.#followInput();
     }
   }
 

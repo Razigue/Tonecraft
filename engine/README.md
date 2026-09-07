@@ -8,25 +8,37 @@ and the capture to the worklets, and reads metering back.
 ```
 source (live DI or an audio file)
   -> public/nam/frontend-worklet.js   channel choice, trim, gate, TS boost (4x + ADAA)
-  -> public/nam/nam-processor.js      the capture — dsp/model/ in WASM
+  -> public/nam/nam-processor.js      the capture — NeuralAmpModelerCore in WASM
   -> capture trim                     measured offline, so captures match each other
   -> cabinet                          ConvolverNode, IR synthesised in ir.ts
   -> four-band correction             native biquads, post-cabinet
   -> reverb, in parallel
-  -> master + limiter                 WaveShaper, no added latency
-  -> public/nam/output-worklet.js     pass-through: peak, RMS, dropouts
+  -> master
+  -> public/nam/output-worklet.js     the limiter, then peak, RMS, dropouts
 ```
+
+The limiter is in the output worklet rather than in a `WaveShaperNode` because
+a WaveShaperNode at 4x delays the signal by 192 frames in Chromium — 4 ms at
+48 kHz, measured by `scripts/measure-latency.mjs`. Inside the worklet it runs
+sample by sample at zero latency; the residual above the knee goes through
+antiderivative anti-aliasing, and below the knee the stage is exactly
+transparent.
+
+The reverb is connected only while its mix is above zero. A `ConvolverNode`
+with a live input renders its whole 1.3 s tail on every quantum whether or
+not anything listens; disconnected, the browser lets it finish its tail and
+then stops calling it.
+
+The output device follows the input's hardware (`groupId`) unless the player
+chose one: the headphones are in the interface, and one clock in and out
+means no drift and no resampling to hide it. `Engine.canChooseOutput` is false
+on Firefox, which has no `setSinkId` on AudioContext; nothing is offered or
+said there.
 
 The worklets live in `public/` because an AudioWorklet module is loaded by URL
 and evaluated in its own global scope; they are plain JS and go out untouched.
-`nam-processor.js` instantiates `public/nam/wavenet.wasm` itself from bytes the
-main thread hands over — a standalone module with no imports and no runtime, so
-there is no glue file and no order to get wrong.
-
-The capture crosses as a `.tcnm` blob, not as the `.nam` it came from: the JSON
-is parsed once at vendor time by `scripts/nam-to-tcnm.ts`, which is both seven
-times less to download and the moment a capture whose shape the kernel does not
-implement gets refused, with someone watching.
+The order they are added in matters: `nam-glue.js` publishes `createNamModule`
+on the worklet's globalThis and `nam-processor.js` reads it from there.
 
 `ir.ts` synthesises both impulse responses — no `.wav` to download, and a
 minimum-phase cabinet, which is the most compact transient response a given

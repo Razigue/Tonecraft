@@ -27,113 +27,119 @@
        4x + ADAA (what ships) ...... -94 dBc
    ========================================================================== */
 
-/* ------------------------------- utilities ------------------------------- */
+/* --------------------------- half-band filters ---------------------------
+   Each 2x stage is an elliptic half-band split into two all-pass branches
+   (Valenzuela & Constantinides): H(z) = (A0(z^2) + z^-1 A1(z^2)) / 2, where
+   A0 and A1 are cascades of first-order all-pass sections running at the low
+   rate. Two things follow from that structure:
 
-function besselI0(x) {
-  let s = 1, t = 1;
-  for (let i = 1; i < 50; i++) {
-    const u = x / (2 * i); t *= u * u; s += t;
-    if (t < 1e-18 * s) break;
-  }
-  return s;
-}
+     - the group delay is a few samples at the high rate, not half the filter
+       length. The linear-phase FIR this replaces put 36 samples — 0.76 ms at
+       48 kHz — between the pick and the amp whenever the boost was on. These
+       put under five. Latency is the one thing this product cannot buy back
+       anywhere else, so none of it is spent on a phase linearity that nobody
+       can hear;
+     - each section is one multiply and two adds, and the half-band property
+       is exact: a 7-section stage costs 7 multiplies per input sample in each
+       direction, against 16 for the 63-tap FIR it replaces.
 
-/* Half-band filter: a sinc windowed by a Kaiser.
-   L must be 3 (mod 4) so the centre tap lands on an odd index. */
-function halfbandTaps(L, beta) {
-  const c = (L - 1) / 2, h = new Float64Array(L), d = besselI0(beta);
-  for (let n = 0; n < L; n++) {
-    const m = n - c;
-    const s = (m === 0) ? 0.5 : Math.sin(Math.PI * m / 2) / (Math.PI * m);
-    const r = m / c;
-    h[n] = s * besselI0(beta * Math.sqrt(Math.max(0, 1 - r * r))) / d;
-  }
-  let g = 0; for (let n = 0; n < L; n++) g += h[n];
-  for (let n = 0; n < L; n++) h[n] /= g;      // unity DC gain
-  return h;
-}
+   The phase is not linear inside the transition band, which starts at
+   20 kHz. Nothing there is audible.
 
-/* Polyphase 2x interpolator. Half-band property: the odd branch collapses to a
-   plain delay, so there are very few multiplies. */
-class Up2 {
-  constructor(L, beta) {
-    const h = halfbandTaps(L, beta), c = (L - 1) / 2;
-    this.t = new Float64Array((L + 1) >> 1);
-    for (let j = 0, m = 0; j < L; j += 2, m++) this.t[m] = 2 * h[j];
-    this.M = this.t.length;
-    this.mid = (c - 1) / 2;
-    this.th = 2 * h[c];
-    this.hist = new Float64Array(this.M - 1);
-    this.a = null;
+   Designed by scripts/design-halfband.ts: each set is the shortest whose
+   stopband sits at or below -100 dB with the passband reaching 20 kHz.
+       48k  -> 96k    7 sections   -112 dB   group delay 3.7 samples at 96k
+       96k  -> 192k   3 sections   -102 dB   group delay 2.2 samples at 192k
+       192k -> 384k   2 sections   -102 dB   group delay 1.6 samples at 384k
+   The transition band is relative to the rate, so at 44.1 kHz the passband
+   ends at 18.4 kHz — exactly as it did with the FIR. */
+const HALFBAND_STAGES = [
+  [0.033397507751963, 0.126292938978164, 0.260582948456779, 0.415885885622256,
+   0.577350269189626, 0.739707378355978, 0.908403153754175],
+  [0.063787836824299, 0.266780962497159, 0.668548793183609],
+  [0.110301209912266, 0.536772123666460],
+];
+
+/* A cascade of first-order all-pass sections, (a + z^-1) / (1 + a z^-1). */
+class AllpassChain {
+  constructor(coefs) {
+    this.a = Float64Array.from(coefs);
+    this.x1 = new Float64Array(coefs.length);
+    this.y1 = new Float64Array(coefs.length);
   }
-  process(x, n, out) {
-    const M = this.M, t = this.t, need = M - 1 + n;
-    if (!this.a || this.a.length < need) this.a = new Float64Array(need);
-    const a = this.a;
-    a.set(this.hist, 0);
-    for (let i = 0; i < n; i++) a[M - 1 + i] = x[i];
-    const base = M - 1, mid = this.mid, th = this.th;
-    for (let i = 0; i < n; i++) {
-      const p = base + i;
-      let s = 0;
-      for (let m = 0; m < M; m++) s += t[m] * a[p - m];
-      out[2 * i] = s;
-      out[2 * i + 1] = th * a[p - mid];
+  tick(v) {
+    const a = this.a, x1 = this.x1, y1 = this.y1;
+    for (let k = 0; k < a.length; k++) {
+      const y = a[k] * (v - y1[k]) + x1[k];
+      x1[k] = v; y1[k] = y; v = y;
     }
-    this.hist.set(a.subarray(n, n + M - 1));
+    return v;
   }
 }
 
-/* Polyphase 2x decimator (the mirror structure). */
+/* Even-indexed coefficients form the branch that lands on the even output
+   samples; odd-indexed ones form the branch behind the one-sample delay. The
+   other pairing is not a filter at all: 12 dB of passband ripple. */
+const split = (coefs) => [
+  coefs.filter((_, i) => i % 2 === 0),
+  coefs.filter((_, i) => i % 2 === 1),
+];
+
+/* Polyphase 2x interpolator: both branches run at the low rate on the same
+   input, and their outputs interleave. */
+class Up2 {
+  constructor(coefs) {
+    const [even, odd] = split(coefs);
+    this.a0 = new AllpassChain(even);
+    this.a1 = new AllpassChain(odd);
+  }
+  process(x, n, out) {              // x: n samples -> out: 2n
+    const a0 = this.a0, a1 = this.a1;
+    for (let i = 0; i < n; i++) {
+      const v = x[i];
+      out[2 * i] = a0.tick(v);
+      out[2 * i + 1] = a1.tick(v);
+    }
+  }
+}
+
+/* Polyphase 2x decimator: the even-phase samples through one branch, the
+   odd-phase samples — one high-rate sample earlier — through the other. */
 class Down2 {
-  constructor(L, beta) {
-    const h = halfbandTaps(L, beta), c = (L - 1) / 2;
-    this.t = new Float64Array((L + 1) >> 1);
-    for (let j = 0, m = 0; j < L; j += 2, m++) this.t[m] = h[j];
-    this.M = this.t.length;
-    this.c = c;
-    this.hc = h[c];
-    this.H = 2 * (this.M - 1);
-    this.hist = new Float64Array(this.H);
-    this.a = null;
+  constructor(coefs) {
+    const [even, odd] = split(coefs);
+    this.a0 = new AllpassChain(even);
+    this.a1 = new AllpassChain(odd);
+    this.prev = 0;
   }
   process(x, n, out) {              // x: 2n samples -> out: n
-    const M = this.M, t = this.t, H = this.H, c = this.c, hc = this.hc;
-    const need = H + 2 * n;
-    if (!this.a || this.a.length < need) this.a = new Float64Array(need);
-    const a = this.a;
-    a.set(this.hist, 0);
-    for (let i = 0; i < 2 * n; i++) a[H + i] = x[i];
+    const a0 = this.a0, a1 = this.a1;
+    let prev = this.prev;
     for (let i = 0; i < n; i++) {
-      const p = H + 2 * i;
-      let s = 0;
-      for (let m = 0; m < M; m++) s += t[m] * a[p - 2 * m];
-      out[i] = s + hc * a[p - c];
+      out[i] = 0.5 * (a0.tick(x[2 * i]) + a1.tick(prev));
+      prev = x[2 * i + 1];
     }
-    this.hist.set(a.subarray(2 * n, 2 * n + H));
+    this.prev = prev;
   }
 }
 
 /* The oversampling chain. The first stage (lowest rate) is the steep one; the
    ones above it can be short, because their transition band is enormous at the
-   higher rates. */
+   higher rates. Its buffers are sized for the 128-frame quantum up front, so
+   process() never allocates. */
 class OverSampler {
   constructor(stages) {
-    this.up = stages.map(s => new Up2(s[0], s[1]));
-    this.dn = stages.map(s => new Down2(s[0], s[1]));
+    this.up = stages.map((c) => new Up2(c));
+    this.dn = stages.map((c) => new Down2(c));
     this.factor = 1 << stages.length;
     this.tmp = [];
-    this.upBuf = null;
-    this.upN = 0;
+    for (let k = 0, len = 256; k < stages.length; k++, len *= 2) this.buf(k, len);
+    for (let k = 1, len = 128 << k; k < stages.length; k++, len = 128 << k) this.buf(20 + k, len);
   }
   buf(i, len) {
     if (!this.tmp[i] || this.tmp[i].length !== len) this.tmp[i] = new Float64Array(len);
     return this.tmp[i];
   }
-  /* Writes into `this.upBuf` / `this.upN` rather than returning a pair.
-     process() may not allocate, and an object literal per block is still an
-     allocation even when it is small enough that an engine will usually see
-     through it — usually is not a real-time guarantee. */
   upsample(x, n) {
     let cur = x, cn = n;
     for (let k = 0; k < this.up.length; k++) {
@@ -141,7 +147,7 @@ class OverSampler {
       this.up[k].process(cur, cn, o);
       cur = o; cn *= 2;
     }
-    this.upBuf = cur; this.upN = cn;
+    return { buf: cur, n: cn };
   }
   downsample(x, n, out) {
     if (this.dn.length === 0) { for (let i = 0; i < n; i++) out[i] = x[i]; return; }
@@ -155,17 +161,11 @@ class OverSampler {
   }
 }
 
-/* Length AND beta both matter: the length sets the steepness, the Kaiser beta
-   sets the stopband floor. A short low-beta stage plateaus around -60 dB and
-   becomes the weakest link in the whole chain. These values each stay under
-   -100 dB for a negligible CPU cost. */
+/* The first log2(f) stages, so the measurement script can run the same code
+   at 1x, 2x, 4x and 8x. What ships is 4x. */
 function osStages(f) {
-  const s = [];
-  if (f >= 2) s.push([63, 10.5]);    // 1x -> 2x: narrow transition band
-  if (f >= 4) s.push([23, 11.0]);
-  if (f >= 8) s.push([19, 11.0]);
-  if (f >= 16) s.push([19, 11.0]);
-  return s;
+  const n = f >= 8 ? 3 : f >= 4 ? 2 : f >= 2 ? 1 : 0;
+  return HALFBAND_STAGES.slice(0, n);
 }
 
 /* tanh: Pade 7/6 approximation, error < 1e-6 over [-4, 4]. */
@@ -280,6 +280,36 @@ class FrontendProcessor extends AudioWorkletProcessor {
         this.autoAcc[0] = 0; this.autoAcc[1] = 0; this.autoN = 0;
       }
     };
+
+    this.#warmUp();
+  }
+
+  /**
+   * Runs the whole path on silence a few times before the first real block.
+   *
+   * The engine's first block runs in the JavaScript interpreter, at ten times
+   * the cost of the optimised code the rest of the session gets (measured:
+   * 1.2 ms against 0.1 ms on a fast machine). On a slow one that first block
+   * alone overruns the 2.67 ms quantum, and the session opens with a crackle
+   * for no reason but the tier-up. Here the tiering happens before anything
+   * is connected, while there is nothing to hear.
+   *
+   * Silence leaves every filter at zero; only the control smoothers move, and
+   * they are put back.
+   */
+  #warmUp() {
+    const inputs = [[new Float32Array(128), new Float32Array(128)]];
+    const outputs = [[new Float32Array(128)]];
+    const params = { inputGain: [2], gate: [-65], boost: [1], boostTone: [1] };
+    for (let i = 0; i < 64; i++) {
+      this.process(inputs, outputs, params);
+      this.frame = 0;                       // never post from here
+    }
+    this.sGain = 1; this.sBoost = 0; this.sTone = 0.5;
+    this.gg = 0; this.open = false; this.env = 0;
+    this.peakIn = 0; this.peakOut = 0; this.eAll = 0; this.eHigh = 0;
+    this.chPeak[0] = 0; this.chPeak[1] = 0;
+    this.autoAcc[0] = 0; this.autoAcc[1] = 0; this.autoN = 0;
   }
 
   /**
@@ -360,7 +390,16 @@ class FrontendProcessor extends AudioWorkletProcessor {
       if (a0 > pkIn) pkIn = a0;
 
       const dy = this.dA * (this.dy + x - this.dx);
-      this.dx = x; this.dy = dy; x = dy;
+      this.dx = x; this.dy = dy;
+      /* Plus a constant 360 dB below full scale. Once the gate has closed the
+         chain runs on exact zeros, every filter state decays into denormal
+         range and stays there, and on the older Intel cores this product has
+         to run on, arithmetic on a denormal is a microcode assist of about a
+         hundred cycles — per state, per sample, across the oversampler's ten
+         all-pass sections at 192 kHz. That is CPU spent on silence, and the
+         bill comes due on the first note after it. A DC far below anything
+         audible keeps every state a normal number. */
+      x = dy + 1e-18;
 
       // gate: fast attack, 6 dB of hysteresis so it cannot chatter
       const a = x < 0 ? -x : x;
@@ -369,7 +408,9 @@ class FrontendProcessor extends AudioWorkletProcessor {
         this.open = this.env > (this.open ? thr * 0.5 : thr);
         const tgt = this.open ? 1 : 0;
         this.gg += (tgt > this.gg ? this.attC : this.relC) * (tgt - this.gg);
+        if (this.gg < 1e-20) this.gg = 0;   // a closed gate is closed, not denormal
         x *= this.gg * this.gg;             // squared: a gentler close
+        if (this.gg === 0) x = 1e-18;       // the guard survives the gate
       }
       pre[i] = x;
     }
@@ -382,8 +423,8 @@ class FrontendProcessor extends AudioWorkletProcessor {
        chain works to avoid. So the smoothing runs per sample, in the
        oversampled domain. */
     if (boost > 0.001 || this.sBoost > 0.001) {
-      this.os.upsample(pre, n);
-      const buf = this.os.upBuf, on = this.os.upN;
+      const up = this.os.upsample(pre, n);
+      const buf = up.buf, on = up.n;
       const cB = this.smoothC;
 
       for (let i = 0; i < on; i++) {

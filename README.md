@@ -36,7 +36,11 @@ regardless of what it sounds like.
 
 - **Node 24 LTS** (Krypton). Checked by `engines` in `package.json`.
 
-Nothing else. There is no C++ toolchain any more.
+Nothing else, to run, test or deploy. The amp engine is committed as a built
+`.wasm`. Rebuilding *that* is the one step that needs a C++ toolchain: an
+Emscripten SDK, found through `EMSDK`, `.toolchain/emsdk` or `PATH`. See
+`scripts/build-nam.mjs` for the flags and what each one was measured to be
+worth.
 
 ## Commands
 
@@ -47,7 +51,11 @@ npm run build     # check, then static build into dist/
 npm test          # schema consistency, input constraints, diagnosis verdicts
 npm run check     # the invariants that span files, on their own
 npm run measure   # the boost's aliasing, as a table
-npm run vendor    # re-fetch the NAM engine and the captures (the only network step)
+npm run vendor    # re-fetch the captures (network)
+npm run build:nam # recompile the NAM engine to WebAssembly with SIMD (needs Emscripten)
+npm run bench:nam # time the engine per 128-frame block, and compare builds
+npm run measure:latency  # what each node and the oversampler delay the signal by
+npm run design:halfband  # the oversampler's filters, with their measured figures
 npm run calibrate # re-measure every capture's level and write its trim
 ```
 
@@ -71,9 +79,24 @@ source (live DI or an audio file)
   -> cabinet              ConvolverNode, synthesised minimum-phase IR
   -> four-band correction native biquads, post-cabinet
   -> reverb, in parallel
-  -> master + limiter     always on, no control anywhere
-  -> output meter         pass-through: peak, RMS, dropouts
+  -> master
+  -> output worklet       limiter, always on, no control anywhere; peak, RMS, dropouts
 ```
+
+**Nothing in that graph adds latency of its own.** Every node was measured with
+an impulse (`npm run measure:latency`): biquads and convolvers delay by zero,
+the boost's oversampler by 4.6 frames (0.1 ms), and the limiter by nothing —
+it runs sample by sample inside the output worklet, because the
+`WaveShaperNode` at 4x it replaced delayed by 192 frames in Chromium, 4 ms at
+48 kHz, more than a whole render quantum. What is left is the browser's render
+buffer and the operating system's, which the figure at the top right reports
+and which hover explains.
+
+**The output follows the input.** With an interface open, the sound comes out
+of that interface — where the headphones are — rather than the browser's
+default device, and the choice is offered in the Out module. One clock in and
+out, so nothing drifts and nothing is resampled to hide the drift. Firefox
+cannot choose an output and keeps the default.
 
 **A capture is a frozen snapshot of one amplifier at one setting.** Its gain,
 its channel and its own EQ are baked into the file and cannot be driven. What is
@@ -92,7 +115,7 @@ engine/   graph composition, capture loading, IR synthesis, meters, diagnosis
 app/      the Svelte island — never touches the audio graph directly
 site/     Astro pages (this is Astro's srcDir)
 render/   measurement tools; the offline renderer is not rebuilt yet
-public/   the amp model, the worklets and the captures, served as-is
+public/   the NAM engine, the worklets and the captures, served as-is
 scripts/  vendoring, calibration, measurement, checks
 ```
 
@@ -100,34 +123,29 @@ Dependencies point one way only:
 
 ```
 schema ──> engine ──> app ──> site
-   │          └──> render
-   └──> dsp/model (generated header)
+              └──> render
 ```
 
 ## What is in this repository that is binary
 
-- `public/nam/wavenet.wasm` — the amp model, 8 kB, built from `dsp/model/` by
-  `npm run model:build`. It is our build output and it is committed anyway: the
-  alternative is emsdk in CI and on GitHub Pages for an artifact that changes
-  only when `dsp/` does. `npm run model:verify` fails if what is committed stops
-  agreeing with NeuralAmpModelerCore.
-- `public/models/*.tcnm` — the captures, flattened out of their JSON at vendor
-  time. 55 kB each, against 407 kB of `.nam`.
-- `assets/models/*.nam` — the captures as they were downloaded. In the
-  repository, not served: they are the GPL source of the blobs above, and
-  shipping 1.6 MB of JSON for the browser to re-parse would be paying twice.
-- `assets/golden/*.f32` — what NeuralAmpModelerCore produces from three seconds
-  of the demo DI, so `npm run model:verify` needs no checkout of it.
+One file: `public/nam/nam.wasm`, NeuralAmpModelerCore at a pinned tag compiled
+by `scripts/build-nam.mjs` from `dsp/nam-engine.cpp`, with SIMD. Committing it
+is what makes a clean checkout deployable without a C++ toolchain and without
+CI needing network access beyond npm.
+
+It is built rather than vendored because the prebuilt package was scalar.
+Measured per 128-frame block on the shipped captures (`npm run bench:nam`,
+Ryzen 9850X3D): 352 µs vendored, 122 µs this build, identical output to
+-115 dB. The CPU budget is the dropout budget, and that factor is the
+difference between a chain that fits a weak laptop and one that crackles on
+it.
 
 ## Licences
 
 - The application — yours to do as you like with.
-- **The amp model** — ours (`dsp/model/wavenet.h`), an implementation of the
-  Standard WaveNet architecture defined by
-  [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore)
-  (MIT, © Steven Atkinson), which is also what it is checked against. Tonecraft
-  shipped a vendored build of that core until 2026-09-07; see
-  `dsp/model/wavenet.h` for why it no longer does.
+- **The NAM engine** —
+  [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore),
+  MIT, © Steven Atkinson, compiled here. See `public/nam/nam-wasm-LICENSE.txt`.
 - **The amp captures** — [`pelennor2170/NAM_models`](https://github.com/pelennor2170/NAM_models),
   **GNU GPL v3**. See `public/models/COPYING`.
 

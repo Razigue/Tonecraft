@@ -13,16 +13,18 @@ build/
 *.wasm
 *.wasm.map
 
-# Exception: the amp model. It is our build output, and it is committed anyway,
-# because the alternative is emsdk in CI and on GitHub Pages for an 8 kB
-# artifact that changes only when dsp/ does. Rebuild with `npm run model:build`;
-# `npm run model:verify` fails if what is committed stops agreeing with NAM.
-!public/nam/wavenet.wasm
+# Exception: the NAM engine. scripts/build-nam.mjs compiles it from pinned
+# sources with SIMD, and it is committed so a clean checkout is deployable
+# without a C++ toolchain and CI needs no network access beyond npm. Rebuild
+# with `npm run build:nam`; the flags and what each was measured to be worth
+# are in the script.
+!public/nam/nam.wasm
 
-# Generated from schema/params.ts by scripts/generate-model-header.ts, which
-# dsp/build.sh runs first. The schema is the source of truth; this is a
-# projection of it and is never edited or committed.
-dsp/model/params.generated.h
+# The NAM core sources the engine is built from, cloned at a pinned tag by
+# scripts/build-nam.mjs. Not ours; re-fetched on demand. And the build's
+# scratch directory.
+.nam-src/
+.nam-build-*/
 
 # Build-time renders: preset audio and its per-stage RMS envelope. Both are a
 # pure function of the .wasm plus the DI loop in assets/, so CI regenerates
@@ -52,9 +54,8 @@ Thumbs.db
 # BMAD — personal install answers (see _bmad/custom/.gitignore)
 *.user.toml
 
-# Local Emscripten install (~1.7 GB). `dsp/build.sh` uses it, and only when
-# dsp/ changes: the .wasm it produces is committed, so a clean checkout builds,
-# tests and deploys without it.
+# Local Emscripten SDK (~2 GB), used only by scripts/build-nam.mjs. The
+# committed engine means nobody needs it to run, test or deploy the site.
 .toolchain/
 
 # The proof of concept this repository was ported from. A local input, kept out

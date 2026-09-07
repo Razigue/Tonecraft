@@ -18,8 +18,9 @@
    * product's voice is to state what happened and otherwise stay quiet.
    */
   import { Engine, EngineError, readCatalog, type Meters,
-           type InputChannel, type InputDevice, type Source } from '../engine/engine.ts';
+           type InputChannel, type InputDevice, type OutputDevice, type Source } from '../engine/engine.ts';
   import { CABS } from '../engine/ir.ts';
+  import { judgeDropouts } from '../engine/diagnosis.ts';
   import type { Capture } from '../engine/catalog.ts';
   import { PARAMS, STAGES, type Param } from '../schema/params.ts';
   import { PRESETS, DEFAULT_PRESET, type Preset } from './presets.ts';
@@ -92,22 +93,20 @@
    * them; the meter loop does not pay for them.
    */
   let latencyMs = $state<number | null>(null);
+  /** What the figure is made of, for the title on hover. */
+  let latencyDetail = $state('');
+  /**
+   * The one verdict that is read every frame: dropouts over the last minute.
+   * A crackle is the failure that decides whether this is playable at all
+   * (CLAUDE.md section 3), so it is the one thing said unprompted — and only
+   * while it is happening. The rate is over a rolling minute rather than the
+   * whole session, so a rough start does not name the machine for an hour.
+   */
+  let dropoutWarning = $state<string | null>(null);
+  const dropoutLog: { t: number; n: number }[] = [];
   /** The opening sheet. Dismissible: looking around is never blocked. */
   let asking = $state(true);
   let notice = $state<string | null>(null);
-  /**
-   * Whether the note explaining the DI is open.
-   *
-   * The drop zone asks for "a dry DI guitar take" and the demo button hands one
-   * over, and neither says what that is. Someone who has never recorded a
-   * guitar has no way to know, and the word decides whether what they drop in
-   * sounds like anything at all: this chain expects a pickup, not a finished
-   * track. It is one sentence, so it sits behind a mark rather than printed
-   * under the drop zone permanently — copy that explains a word most of the
-   * people reading it already know is the nagging the report at the foot of
-   * the page earned.
-   */
-  let diOpen = $state(false);
   /**
    * Whether the worklet has confirmed the capture is loaded and processing.
    *
@@ -130,6 +129,13 @@
 
   let devices = $state<InputDevice[]>([]);
   let deviceId = $state('');
+  /**
+   * Where the sound comes out. '' is "follow the input": the output that
+   * shares hardware with the interface, which is where the headphones are.
+   * Only offered where the browser lets a page choose (not Firefox).
+   */
+  let outputs = $state<OutputDevice[]>([]);
+  let outputId = $state('');
   let channel = $state<InputChannel>('follow');
   let channelCount = $state(1);
   let source = $state<Source>('live');
@@ -185,7 +191,7 @@
   function persist(): void {
     try {
       localStorage.setItem(STORE, JSON.stringify({
-        values, captureFile, cab, channel, deviceId, source, preset,
+        values, captureFile, cab, channel, deviceId, outputId, source, preset,
       }));
     } catch { /* storage refused */ }
   }
@@ -208,6 +214,7 @@
       if (typeof saved['cab'] === 'string') cab = saved['cab'];
       if (typeof saved['channel'] === 'string') channel = saved['channel'] as InputChannel;
       if (typeof saved['deviceId'] === 'string') deviceId = saved['deviceId'];
+      if (typeof saved['outputId'] === 'string') outputId = saved['outputId'];
       if (typeof saved['source'] === 'string') source = saved['source'] as Source;
       preset = typeof saved['preset'] === 'string' ? saved['preset'] : null;
     } catch { /* unreadable, so ignored */ }
@@ -300,6 +307,15 @@
     persist();
     await engine?.useDevice(id);
     channelCount = engine?.channelCount ?? 1;
+    // The output may have followed the new interface.
+    outputId = engine?.outputId ?? outputId;
+  }
+
+  async function chooseOutput(id: string): Promise<void> {
+    outputId = id;
+    persist();
+    await engine?.useOutput(id);
+    outputId = engine?.outputId ?? outputId;
   }
 
   async function chooseSource(next: string): Promise<void> {
@@ -323,6 +339,19 @@
     meters = m;
     channelCount = m.channels;
     latencyMs = engine?.roundTripMs ?? null;
+    const parts = engine?.latencyParts ?? null;
+    latencyDetail = parts === null ? '' :
+      `${parts.base.toFixed(1)} ms of render buffer, ${parts.output.toFixed(1)} ms in the ` +
+      'output device. The input path is not reported by the browser.';
+
+    // Dropouts over a rolling minute. The count arrives cumulative.
+    const now = performance.now();
+    const count = engine?.dropoutCount ?? 0;
+    dropoutLog.push({ t: now, n: count });
+    while (dropoutLog.length > 1 && now - dropoutLog[0]!.t > 60_000) dropoutLog.shift();
+    const first = dropoutLog[0]!;
+    const verdict = judgeDropouts(count - first.n, Math.max(1, (now - first.t) / 1000));
+    dropoutWarning = verdict.audible ? `${verdict.cause} ${verdict.remedy}` : null;
   }
 
   // --------------------------------------------------------------------------
@@ -453,6 +482,10 @@
       engine.setInputChannel(channel);
       await engine.setCapture(captureFile);
       engine.setCab(cab);
+      // A remembered output is the player's choice and takes precedence over
+      // following the input. It is set before start so the context is built
+      // on it rather than moved to it.
+      if (outputId !== '') await engine.useOutput(outputId);
       await engine.start();
       // Anything moved before starting carries over — the rig is live-looking
       // from the first frame, so it has to be honest about what it shows.
@@ -468,6 +501,7 @@
       // deliberately never asks for.
       if (intent === 'play') {
         devices = await engine.listInputs();
+        outputs = await engine.listOutputs();
         channelCount = engine.channelCount;
       }
       frame = requestAnimationFrame(tick);
@@ -515,6 +549,8 @@
     filePlaying = false;
     filePosition = 0;
     latencyMs = null;
+    dropoutWarning = null;
+    dropoutLog.length = 0;
     captureLoaded = false;
     state = 'idle';
     meters = { input: 0, drive: 0, output: 0, outputRms: 0, gate: 1, channelPeaks: [0], channels: 1 };
@@ -570,7 +606,7 @@
              it does not, because most of what it named is the operating
              system's buffering and saying so on every frame is nagging, not
              informing. -->
-        <span class="latency">{latencyMs.toFixed(1)} ms</span>
+        <span class="latency" title={latencyDetail}>{latencyMs.toFixed(1)} ms</span>
       {/if}
       <button
         class="start small"
@@ -600,7 +636,7 @@
          to decode or a capture fails to load, and letting it appear from
          nowhere pushed the whole rig down the page — the same complaint the old
          report at the foot of the page earned. -->
-    <p class="t-small notice">{notice ?? ''}</p>
+    <p class="t-small notice">{notice ?? dropoutWarning ?? ''}</p>
     <div class="presets">
       {#each PRESETS as p (p.name)}
         <button
@@ -705,6 +741,19 @@
                 {/each}
               </select>
             </label>
+          {:else if block.stage === 'output' && state === 'running' && outputs.length > 1}
+            <!-- Where the sound comes out. It follows the input by default,
+                 because the headphones are in the interface, not the laptop;
+                 the choice is here for the player whose setup says otherwise. -->
+            <label class="field">
+              <span class="t-small">Output</span>
+              <select value={outputId} onchange={(e) => chooseOutput(e.currentTarget.value)}>
+                <option value="">Same as input</option>
+                {#each outputs as d (d.id)}
+                  <option value={d.id}>{d.label || 'Output'}</option>
+                {/each}
+              </select>
+            </label>
           {/if}
         {/snippet}
       </Module>
@@ -716,32 +765,6 @@
          identical chain is how anyone without an interface hears this at all,
          and how two captures get compared on the same performance. -->
     <section class="file">
-      <!-- One mark, rendered wherever the demo take is offered. Both branches
-           below are never mounted at once, so there is one on screen. -->
-      {#snippet note()}
-        <!-- One sentence on what the word means, and one on where the take
-             comes from. Only one branch below is ever mounted, so the id stays
-             unique and the mark's aria-controls always resolves. -->
-        <p id="di-note" class="t-small di-note" hidden={!diOpen}>
-          A DI is a guitar recorded straight: the pickup into an interface, with
-          no amp and no microphone in front of it. That is what this chain
-          expects to be fed, and it is what the demo take is — me playing my own
-          guitar, recorded dry, with nothing on it.
-        </p>
-      {/snippet}
-
-      {#snippet ask()}
-        <button
-          class="quiet ask"
-          class:open={diOpen}
-          type="button"
-          aria-expanded={diOpen}
-          aria-controls="di-note"
-          aria-label="What a DI is, and where the demo take comes from"
-          onclick={() => (diOpen = !diOpen)}
-        >?</button>
-      {/snippet}
-
       {#if filePeaks === null}
         <div
           class="drop"
@@ -763,13 +786,9 @@
           </label>
           <!-- No guitar, no interface, no file to hand: there is still
                something to listen to. -->
-          <span class="offer">
-            <button class="quiet demo" type="button" onclick={loadDemo}>
-              or use the demo take
-            </button>
-            {@render ask()}
-          </span>
-          {@render note()}
+          <button class="quiet demo" type="button" onclick={loadDemo}>
+            or use the demo take
+          </button>
         </div>
       {:else}
         <Waveform peaks={filePeaks} duration={fileDuration} position={filePosition} onseek={seek} />
@@ -796,9 +815,7 @@
           <!-- Reachable once a file is loaded too, or the demo is a one-way
                door: load your own take and there is no way back to it. -->
           <button class="quiet demo" type="button" onclick={loadDemo}>Load demo</button>
-          {@render ask()}
         </div>
-        {@render note()}
       {/if}
     </section>
   {/if}
@@ -1002,26 +1019,6 @@
   }
   .drop-label input, .replace input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .replace { cursor: pointer; border-bottom: 1px solid var(--graphite); }
-
-  /* The mark keeps the demo button company rather than joining the row: the
-     two are one offer, and the gap between transport controls would read them
-     as two. */
-  .offer { display: inline-flex; align-items: center; }
-
-  /* A control, so it carries the same graphite and the same ink on hover as
-     every other quiet one. Square, because the hit area is the only thing
-     giving a single character something to be hit by. */
-  .ask {
-    min-width: 32px;
-    min-height: 32px;
-    padding: 0;
-    line-height: 1;
-  }
-  .ask.open { color: var(--ink); }
-
-  /* Held to a reading measure, and left aligned under whichever control opened
-     it rather than centred in the panel. */
-  .di-note { margin: 0; max-width: 54ch; }
 
   .transport { display: flex; align-items: center; gap: calc(var(--u) * 2); flex-wrap: wrap; }
   .check { display: flex; align-items: center; gap: 4px; }

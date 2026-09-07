@@ -79,6 +79,7 @@ matériel du joueur, pas son son, et n'a rien à faire dans un tone link.
 - Lire `track.getSettings().sampleRate` **avant** de créer l'`AudioContext`, et créer le contexte à cette fréquence exacte. Un resampler implicite coûte de la latence et de la qualité.
 - `new AudioContext({ latencyHint: 0, sampleRate })`. Ne pas utiliser `'interactive'`, qui est plus conservateur.
 - Toujours créer le contexte dans un gestionnaire d'événement utilisateur (autoplay policy).
+- **La sortie suit l'entrée.** Le contexte est créé avec le `sinkId` du périphérique de sortie qui partage le `groupId` de l'entrée ouverte — le casque est branché sur l'interface, pas sur le portable — sauf choix explicite du joueur, proposé dans le module Out. Une seule horloge en entrée et en sortie : pas de dérive, donc pas de rééchantillonnage pour la masquer, donc pas de jitter. Firefox n'a pas `setSinkId` : sortie par défaut, rien n'est dit.
 
 ### Worklet
 
@@ -97,7 +98,8 @@ matériel du joueur, pas son son, et n'a rien à faire dans un tone link.
 - **La qualité ne s'adapte jamais à la machine.** La complexité du modèle est choisie au build pour la machine plancher, jamais au runtime depuis le headroom mesuré. Raison : un rendu déterministe est la condition pour qu'un tone partagé sonne pareil chez l'autre — une qualité adaptative ferait mentir le tone link, donc la boucle de croissance entière. Corollaire : les machines rapides gardent du headroom inutilisé, aucune dégradation gracieuse n'est possible, et il faut donc un chemin de refus honnête pour la machine qui ne tient pas le budget.
 - **Les fichiers pré-rendus au build utilisent exactement les mêmes réglages que le moteur temps réel.** Un rendu hors ligne n'a aucun budget CPU : 16x d'oversampling et un modèle bien plus gros y seraient gratuits et tentants. Le demo sonnerait alors mieux que le temps réel, et le visiteur qui branche sa guitare serait déçu. Headroom délibérément non utilisé, pour la même raison que le tone link doit être déterministe.
 - IR chargées avec `ConvolverNode` en `normalize: false`.
-- **Un limiteur en fin de chaîne, toujours actif, non désactivable par l'UI.** Un larsen numérique dans un casque peut blesser.
+- **Un limiteur en fin de chaîne, toujours actif, non désactivable par l'UI.** Un larsen numérique dans un casque peut blesser. Il vit **dans le worklet de sortie**, échantillon par échantillon : un `WaveShaperNode` en `oversample: '4x'` retarde le signal de 192 frames dans Chromium — 4 ms à 48 kHz, mesuré par `npm run measure:latency` — pour un étage transparent la quasi-totalité du temps.
+- **Aucun nœud du graphe n'ajoute de latence propre.** Chaque type de nœud est mesuré à l'impulsion (`scripts/measure-latency.mjs`) ; un nœud qui retarde doit le justifier en ms, ici, avant d'entrer dans le graphe. Les filtres demi-bande de l'oversampling sont des allpass polyphases IIR (délai de groupe < 5 échantillons), pas des FIR à phase linéaire (36 échantillons) : la linéarité de phase au-dessus de 20 kHz ne s'entend pas, la latence oui.
 - Noise gate en début de chaîne, avant le preamp.
 
 ### Compilation WASM
@@ -105,6 +107,8 @@ matériel du joueur, pas son son, et n'a rien à faire dans un tone link.
 ```
 -O3 -msimd128 -flto -fno-exceptions -fno-rtti
 ```
+
+Le moteur NAM est compilé par `scripts/build-nam.mjs` depuis des sources épinglées, jamais pris pré-compilé : le paquet npm était scalaire, et **2,9x plus lent** sur le thread audio (`npm run bench:nam`). Deux drapeaux y sont mesurés indispensables : `-msse4.1`, la seule façon dont Eigen vectorise sous WebAssembly, et l'**absence** de `NAM_USE_INLINE_GEMM`. `-fwasm-exceptions` remplace `-fno-exceptions` pour ce module, et ce module seulement : la gestion native coûte zéro quand rien ne lance, et une capture malformée devient un chargement refusé plutôt qu'un moteur mort.
 
 Rappel structurel : GitHub Pages ne permet pas de définir les headers COOP/COEP. Donc **pas de threads WASM, pas de `SharedArrayBuffer`**. SIMD fonctionne sans ces headers, c'est là qu'est le gain. Toute proposition d'architecture reposant sur du multithread WASM est à écarter d'emblée.
 

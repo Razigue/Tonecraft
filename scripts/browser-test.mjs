@@ -72,7 +72,7 @@ const check = (name, condition, detail) => (condition ? ok(name, detail) : bad(n
 const TYPES = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm',
-  '.tcnm': 'application/octet-stream', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+  '.nam': 'application/json', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
 };
 
 function serve() {
@@ -248,17 +248,17 @@ await page.mouse.move(box.x + box.width / 2, box.y + 4, { steps: 6 });
 await page.mouse.up();
 ok('a fader takes a drag');
 
-// Changing capture and cabinet, the two real tone choices.
-const selects = page.locator('select');
-const count = await selects.count();
-const capture = selects.nth(count - 2);
+// Changing capture and cabinet, the two real tone choices. Found by their
+// labels: how many selects the page has depends on the machine — an output
+// selector appears when there is more than one output to choose from.
+const capture = page.locator('label.field', { hasText: 'Capture' }).locator('select');
 const options = await capture.locator('option').allTextContents();
 if (options.length > 1) {
   await capture.selectOption({ index: 1 });
   await page.waitForTimeout(2000);
   ok('the capture can be changed while playing');
 }
-await selects.nth(count - 1).selectOption({ index: 1 });
+await page.locator('label.field', { hasText: 'Cabinet' }).locator('select').selectOption({ index: 1 });
 await page.waitForTimeout(500);
 ok('the cabinet can be changed while playing');
 

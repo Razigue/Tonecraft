@@ -2,33 +2,23 @@
    scripts/vendor-nam.mjs — fetches and prepares the external dependencies
    -----------------------------------------------------------------------------
    The application runs entirely offline, with no CDN and nothing fetched at
-   runtime that is not ours. This script is the only moment the network is used.
-   It downloads the amp captures from pelennor2170/NAM_models (GNU GPL v3) with
-   their licence and attribution, and converts each one to the flat `.tcnm` blob
-   the engine loads (scripts/nam-to-tcnm.ts).
+   runtime that is not ours. This script downloads the amp captures from
+   pelennor2170/NAM_models (GNU GPL v3) with their licence and attribution,
+   into `public/models/`, which is what the site ships.
 
-   The `.nam` files themselves land in `assets/models/`, which is in the repo
-   and is not served: they are the source the GPL requires us to keep, and
-   shipping 1.6 MB of JSON to every visitor to re-parse what the build already
-   parsed would be paying twice for nothing. `public/models/` gets the blobs,
-   which are seven times smaller.
-
-   The WebAssembly engine is no longer vendored. It was a build of
-   NeuralAmpModelerCore from npm and it is now ours — `dsp/model/`, built by
-   `dsp/build.sh` — because the vendored one cost 58 to 75 % of one core on the
-   floor machine where ours costs 31 to 43 %. See dsp/model/wavenet.h.
+   The engine is not vendored any more: scripts/build-nam.mjs compiles it from
+   pinned NeuralAmpModelerCore sources with SIMD, because the prebuilt
+   @opendaw/nam-wasm package was scalar and 2.9x slower on the audio thread.
 
    Usage:  npm run vendor
    ========================================================================== */
 
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MODELS = path.join(ROOT, 'public', 'models');
-const SOURCES = path.join(ROOT, 'assets', 'models');
 
 const MODEL_REPO = 'pelennor2170/NAM_models';
 
@@ -77,10 +67,10 @@ const MODEL_CATALOG = [
 const log = (...a) => console.log(...a);
 const ensure = (d) => fs.mkdirSync(d, { recursive: true });
 
-/* ------------------------------- the captures ----------------------------- */
+/* ------------------------------ the captures ----------------------------- */
 async function vendorModels() {
-  log('NAM captures (' + MODEL_REPO + ', GNU GPL v3)');
-  ensure(MODELS); ensure(SOURCES);
+  log('\nNAM captures (' + MODEL_REPO + ', GNU GPL v3)');
+  ensure(MODELS);
   const raw = 'https://raw.githubusercontent.com/' + MODEL_REPO + '/main/';
   const index = [];
 
@@ -89,26 +79,15 @@ async function vendorModels() {
     if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + entry.src);
     const text = await r.text();
     const json = JSON.parse(text);                       // validates the file
-    const stem = entry.src.replace(/\.nam$/, '').replace(/[^a-zA-Z0-9]+/g, '-')
-      .replace(/^-|-$/g, '').toLowerCase();
-    fs.writeFileSync(path.join(SOURCES, stem + '.nam'), text);
-
-    /* Converted here rather than at build time: a capture whose shape this
-       engine does not implement has to be refused now, while there is a person
-       looking at the output, and not silently at load. */
-    const blob = path.join(MODELS, stem + '.tcnm');
-    execSync('npx tsx ' + JSON.stringify(path.join(ROOT, 'scripts/nam-to-tcnm.ts')) +
-      ' ' + JSON.stringify(path.join(SOURCES, stem + '.nam')) + ' ' + JSON.stringify(blob),
-      { stdio: 'inherit' });
-
+    const slug = entry.src.replace(/\.nam$/, '').replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-|-$/g, '').toLowerCase() + '.nam';
+    fs.writeFileSync(path.join(MODELS, slug), text);
     index.push({
-      file: stem + '.tcnm', source: entry.src, name: entry.name, pack: entry.pack,
+      file: slug, source: entry.src, name: entry.name, pack: entry.pack,
       cab: entry.cab, note: entry.note,
       arch: json.architecture, weights: json.weights.length,
     });
-    log('  ' + (stem + '.tcnm').padEnd(46) +
-      (fs.statSync(blob).size / 1024).toFixed(0) + ' kB  (from ' +
-      (text.length / 1024).toFixed(0) + ' kB of JSON)');
+    log('  ' + slug.padEnd(46) + (text.length / 1024).toFixed(0) + ' kB');
   }
 
   for (const f of ['COPYING', 'README.md']) {

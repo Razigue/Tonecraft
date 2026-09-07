@@ -8,7 +8,7 @@
   ],
   "models": [
     {
-      "file": "helga-b-5150-blockletter-boosted.tcnm",
+      "file": "helga-b-5150-blockletter-boosted.nam",
       "source": "Helga B 5150 BlockLetter - Boosted.nam",
       "name": "5150 Block Letter — boosted",
       "pack": "metal",
@@ -20,7 +20,7 @@
       "trimDb": 8.5
     },
     {
-      "file": "helga-b-5150-blockletter-noboost.tcnm",
+      "file": "helga-b-5150-blockletter-noboost.nam",
       "source": "Helga B 5150 BlockLetter - NoBoost.nam",
       "name": "5150 Block Letter — raw",
       "pack": "metal",
@@ -32,7 +32,7 @@
       "trimDb": 8.2
     },
     {
-      "file": "helga-b-6505-red-ch-mxr-drive.tcnm",
+      "file": "helga-b-6505-red-ch-mxr-drive.nam",
       "source": "Helga B 6505+ Red ch - MXR Drive.nam",
       "name": "6505+ red channel — MXR",
       "pack": "metal",
@@ -44,7 +44,7 @@
       "trimDb": 3.3
     },
     {
-      "file": "helga-b-jsx-ultra-od808.tcnm",
+      "file": "helga-b-jsx-ultra-od808.nam",
       "source": "Helga B JSX Ultra - OD808.nam",
       "name": "JSX Ultra — OD808",
       "pack": "metal",
