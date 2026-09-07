@@ -18,14 +18,24 @@
 //
 // **Why this kernel and not NeuralAmpModelerCore itself.** The product shipped
 // a vendored build of NAM core (`@opendaw/nam-wasm`) until 2026-09-07. It is
-// correct and it is too slow: on an i5-7300U — a 2017 dual-core laptop, the
-// floor machine's class — the four captures we ship measured 58 to 75 % of one
-// core, at 128-frame blocks, which is not a latency problem but a dropout
-// problem. This kernel runs the same four at 31 to 43 %, a factor of 1.8, and
-// agrees with NAM core to 103-110 dB SNR over eight seconds of the demo DI
-// (`npm run model:verify`, which is the check that matters: a transposed weight
-// matrix scores -5 dB there, and a model read with the wrong shape does not
-// fall silent, it plays a different amplifier).
+// correct and it is too slow. On an i5-7300U — a 2017 dual-core laptop, the
+// floor machine's class — at 128-frame blocks, as a share of one core:
+//
+//                                cold machine   after ~20 min of load
+//     this kernel                   31 - 43 %          56 - 67 %
+//     the vendored build            58 - 75 %         103 - 111 %
+//
+// The second column is the one that matters: a U-series laptop holds its turbo
+// for seconds and then settles about 40 % lower, and nobody plays for seconds.
+// Warm, the engine this replaced does not fit in one core at all. That is not a
+// latency problem, it is a dropout problem, and it is why a machine that was
+// not fast enough could not play even a pre-recorded DI.
+//
+// The ratio, 1.5 to 1.9x, is the stable number: the two are measured against
+// each other in the same interleaved run. This kernel agrees with NAM core to
+// 103-115 dB SNR (`npm run model:verify`, which is the check that matters: a
+// transposed weight matrix scores -5 dB there, and a model read with the wrong
+// shape does not fall silent, it plays a different amplifier).
 //
 // The difference is one decision, and it is `accumulateScaled` below: Eigen
 // blocks its GEMM for cache, which is the right call at matrix sizes where
@@ -34,10 +44,10 @@
 // product, once per output channel per tap per frame. Accumulating
 // column-scaled rows never reduces a vector register at all.
 //
-// **Standard still does not fit the budget.** 31 to 43 % against `PRODUCT.md`
-// §5's 25 % cap is an architecture cost, not an implementation one, and no
-// compiler flag closes it: a build of NAM core with `-O3 -msimd128 -flto` was
-// measured *slower* than the vendored `-Os` one. Closing it means a smaller
+// **Standard still does not fit the budget.** Any of those figures against
+// `PRODUCT.md` §5's 25 % cap is an architecture cost, not an implementation one,
+// and no compiler flag closes it: a build of NAM core with `-O3 -msimd128
+// -flto` was measured *slower* than the vendored `-Os` one. Closing it means a smaller
 // capture — Feather is 3 638 weights against Standard's 13 802 — which is a
 // choice about which sounds ship, not about this file. Which size ships is
 // decided once, at build time, for the floor machine, and never at runtime from

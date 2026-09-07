@@ -8,10 +8,13 @@
  *
  * Two things about the method, both learned the hard way on the floor machine:
  *
- * - **Interleaved, minimum of several runs.** A 2017 U-series laptop drops
- *   about 30 % of its clock within seconds of sustained load. A sequential A/B
- *   ranks builds by the order they ran in. Alternating and keeping the fastest
- *   run of each removes that.
+ * - **Interleaved, minimum of several runs.** A 2017 U-series laptop settles
+ *   about 40 % below its turbo within seconds of sustained load, and stays
+ *   there. A sequential A/B ranks builds by the order they ran in. Alternating
+ *   and keeping the fastest run of each removes that — for *comparisons*. It
+ *   does nothing for the absolute number, which on this class of machine moves
+ *   by a factor of 1.8 between a cold laptop and a warm one. Both are real; the
+ *   warm one is the one a player lives in. Say which you measured.
  * - **128-frame blocks, the size the audio thread is actually handed.** Larger
  *   blocks amortise the per-call work and flatter the result.
  *

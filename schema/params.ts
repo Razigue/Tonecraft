@@ -100,16 +100,27 @@ export const INTERNAL_SAMPLE_RATE = 48_000;
  * link renders identically on every machine.
  *
  * Cost, measured 2026-09-07 on an i5-7300U (2017 dual-core, the floor machine's
- * class), 128-frame blocks, min of seven interleaved runs, as a share of one
+ * class), 128-frame blocks, best of seven interleaved runs, as a share of one
  * core — `npm run bench:model`:
  *
- *   this kernel, the four captures we ship (Standard 16/8)   31 - 43 %
- *   the vendored NeuralAmpModelerCore build it replaced      58 - 75 %
+ *                                   cold machine   after ~20 min of load
+ *   this kernel, Standard 16/8         31 - 43 %          56 - 67 %
+ *   the vendored NAM core build        58 - 75 %         103 - 111 %
  *
- * Standard still does not fit `PRODUCT.md` §5's 25 % budget on that machine.
- * That is a property of the architecture, not of the implementation, and it is
- * why the listen path exists: what the model costs is only paid by the player
- * who plugs a guitar in, not by the visitor who came to hear the thing.
+ * **Both columns are real and the right one is the one that matters.** A
+ * U-series laptop holds its turbo for seconds and then settles about 40 % lower,
+ * and nobody plays for seconds. Warm, the engine this replaced does not fit in
+ * one core at all — which is not a figure of speech: it is the reason a machine
+ * that is not fast enough could not play even a pre-recorded DI, because the
+ * take goes through the same live chain a guitar does.
+ *
+ * The ratio is the stable number, 1.5 to 1.9x, because the two are measured
+ * against each other in the same run.
+ *
+ * Standard still does not fit `PRODUCT.md` §5's 25 % budget. That is a property
+ * of the architecture, not of the implementation, and it is why the listen path
+ * exists: what the model costs should be paid by the player who plugs a guitar
+ * in, not by the visitor who came to hear the thing.
  */
 
 /** Layer arrays in a model. Every trainer size uses two. */
