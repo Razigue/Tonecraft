@@ -96,6 +96,19 @@
   let asking = $state(true);
   let notice = $state<string | null>(null);
   /**
+   * Whether the note explaining the DI is open.
+   *
+   * The drop zone asks for "a dry DI guitar take" and the demo button hands one
+   * over, and neither says what that is. Someone who has never recorded a
+   * guitar has no way to know, and the word decides whether what they drop in
+   * sounds like anything at all: this chain expects a pickup, not a finished
+   * track. It is one sentence, so it sits behind a mark rather than printed
+   * under the drop zone permanently — copy that explains a word most of the
+   * people reading it already know is the nagging the report at the foot of
+   * the page earned.
+   */
+  let diOpen = $state(false);
+  /**
    * Whether the worklet has confirmed the capture is loaded and processing.
    *
    * This is not a detail: when a model fails to load, the processor passes the
@@ -703,6 +716,32 @@
          identical chain is how anyone without an interface hears this at all,
          and how two captures get compared on the same performance. -->
     <section class="file">
+      <!-- One mark, rendered wherever the demo take is offered. Both branches
+           below are never mounted at once, so there is one on screen. -->
+      {#snippet note()}
+        <!-- One sentence on what the word means, and one on where the take
+             comes from. Only one branch below is ever mounted, so the id stays
+             unique and the mark's aria-controls always resolves. -->
+        <p id="di-note" class="t-small di-note" hidden={!diOpen}>
+          A DI is a guitar recorded straight: the pickup into an interface, with
+          no amp and no microphone in front of it. That is what this chain
+          expects to be fed, and it is what the demo take is — me playing my own
+          guitar, recorded dry, with nothing on it.
+        </p>
+      {/snippet}
+
+      {#snippet ask()}
+        <button
+          class="quiet ask"
+          class:open={diOpen}
+          type="button"
+          aria-expanded={diOpen}
+          aria-controls="di-note"
+          aria-label="What a DI is, and where the demo take comes from"
+          onclick={() => (diOpen = !diOpen)}
+        >?</button>
+      {/snippet}
+
       {#if filePeaks === null}
         <div
           class="drop"
@@ -724,9 +763,13 @@
           </label>
           <!-- No guitar, no interface, no file to hand: there is still
                something to listen to. -->
-          <button class="quiet demo" type="button" onclick={loadDemo}>
-            or use the demo take
-          </button>
+          <span class="offer">
+            <button class="quiet demo" type="button" onclick={loadDemo}>
+              or use the demo take
+            </button>
+            {@render ask()}
+          </span>
+          {@render note()}
         </div>
       {:else}
         <Waveform peaks={filePeaks} duration={fileDuration} position={filePosition} onseek={seek} />
@@ -753,7 +796,9 @@
           <!-- Reachable once a file is loaded too, or the demo is a one-way
                door: load your own take and there is no way back to it. -->
           <button class="quiet demo" type="button" onclick={loadDemo}>Load demo</button>
+          {@render ask()}
         </div>
+        {@render note()}
       {/if}
     </section>
   {/if}
@@ -957,6 +1002,26 @@
   }
   .drop-label input, .replace input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .replace { cursor: pointer; border-bottom: 1px solid var(--graphite); }
+
+  /* The mark keeps the demo button company rather than joining the row: the
+     two are one offer, and the gap between transport controls would read them
+     as two. */
+  .offer { display: inline-flex; align-items: center; }
+
+  /* A control, so it carries the same graphite and the same ink on hover as
+     every other quiet one. Square, because the hit area is the only thing
+     giving a single character something to be hit by. */
+  .ask {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    line-height: 1;
+  }
+  .ask.open { color: var(--ink); }
+
+  /* Held to a reading measure, and left aligned under whichever control opened
+     it rather than centred in the panel. */
+  .di-note { margin: 0; max-width: 54ch; }
 
   .transport { display: flex; align-items: center; gap: calc(var(--u) * 2); flex-wrap: wrap; }
   .check { display: flex; align-items: center; gap: 4px; }
