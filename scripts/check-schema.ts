@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PARAMS, STAGES } from '../schema/params.ts';
 import { validateSchema } from '../schema/validate.ts';
-import { PRESETS } from '../app/presets.ts';
+import { PRESETS, DEFAULT_PRESET } from '../app/presets.ts';
 import { CABS } from '../engine/ir.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -73,6 +73,23 @@ for (const preset of PRESETS) {
   }
   if (!cabs.has(preset.cab)) {
     errors.push(`preset "${preset.name}" names cabinet "${preset.cab}", which does not exist`);
+  }
+}
+
+/**
+ * The schema's defaults are the default preset. Both files say so in prose, and
+ * prose does not fail a build: drifting apart means a fader's double-click
+ * resets to a value the preset never had.
+ */
+const fallback = PRESETS.find((p) => p.name === DEFAULT_PRESET);
+if (fallback === undefined) {
+  errors.push(`DEFAULT_PRESET names "${DEFAULT_PRESET}", which is not in PRESETS`);
+} else {
+  for (const [id, v] of Object.entries(fallback.values)) {
+    const p = PARAMS.find((q) => q.id === id);
+    if (p !== undefined && p.default !== v) {
+      errors.push(`${id} defaults to ${p.default}, but the "${DEFAULT_PRESET}" preset sets ${v}`);
+    }
   }
 }
 

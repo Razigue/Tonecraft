@@ -123,15 +123,15 @@ export const STAGES: readonly Stage[] = [
  * every `amp_*` control that used to drive our own amplifier is now deprecated
  * rather than repurposed (AD-8: an id never changes meaning).
  *
- * Defaults are the v1 preset, "Modern metal": a 6505+ red channel with a light
- * boost in front of it.
+ * Defaults are the v1 preset, "Lead": a JSX Ultra through an OD808, high and
+ * singing, with the reverb up where a held note has somewhere to go.
  */
 export const PARAMS: readonly Param[] = [
   // --- Input -------------------------------------------------------------
   // What reaches the model. On captures this saturated it sets bite and
   // dynamics far more than it sets volume.
   { id: 'in_trim', stage: 'input', label: 'Trim', unit: 'dB',
-    min: -6, max: 24, default: 10.5, taper: 'linear' },
+    min: -6, max: 24, default: 11.4, taper: 'linear' },
 
   // --- Gate --------------------------------------------------------------
   // Release is automatic and deliberately not exposed: a player should not have
@@ -140,8 +140,12 @@ export const PARAMS: readonly Param[] = [
   // The floor is far lower than a general-purpose gate would need. These
   // captures amplify enormously — 0.02 in comes back out at -19 dBFS — so the
   // useful thresholds all sit in the last 20 dB above silence.
+  //
+  // -65 rather than the -72.9 this carried: measured on the noise floor of a
+  // real DI rather than on pink noise, that threshold never closed, and a lead
+  // patch at this much gain hissed between phrases.
   { id: 'gate_threshold', stage: 'gate', label: 'Threshold', unit: 'dB',
-    min: -95, max: -30, default: -72.9, taper: 'linear' },
+    min: -95, max: -30, default: -65, taper: 'linear' },
   { id: 'gate_bypass', stage: 'gate', label: 'Bypass', unit: 'bool',
     min: 0, max: 1, default: 0, taper: 'switch' },
 
@@ -156,10 +160,10 @@ export const PARAMS: readonly Param[] = [
   // This is the pre-clip gain the pedal applies: 0 dB is the pedal doing
   // nothing, +28 dB is its maximum.
   { id: 'drive_gain', stage: 'drive', label: 'Boost', unit: 'dB',
-    min: 0, max: 28, default: 16.9, taper: 'linear' },
+    min: 0, max: 28, default: 25.0, taper: 'linear' },
   // Cutoff of the post-clip lowpass, the control a screamer actually offers.
   { id: 'drive_tone', stage: 'drive', label: 'Tone', unit: 'Hz',
-    min: 1820, max: 7150, default: 5200, taper: 'logarithmic' },
+    min: 1820, max: 7150, default: 6011, taper: 'logarithmic' },
   // Deprecated: the pedal's output level tracks its gain, as it does in the
   // circuit. A second level control here only ever confused the gain staging.
   { id: 'drive_level', stage: 'drive', label: 'Level', unit: 'dB',
@@ -198,7 +202,7 @@ export const PARAMS: readonly Param[] = [
   // Dry high gain in headphones sits inside the head and fatigues in minutes,
   // and a lead line has nowhere to sustain into. Small, but never zero.
   { id: 'reverb_mix', stage: 'reverb', label: 'Mix', unit: 'ratio',
-    min: 0, max: 1, default: 0.12, taper: 'linear' },
+    min: 0, max: 1, default: 0.30, taper: 'linear' },
   { id: 'reverb_bypass', stage: 'reverb', label: 'Bypass', unit: 'bool',
     min: 0, max: 1, default: 0, taper: 'switch' },
 
@@ -214,17 +218,17 @@ export const PARAMS: readonly Param[] = [
   // Appended after the output block, because AD-8 makes wire order append-only
   // and these are new. Their place in the *signal* path is set by STAGES.
   { id: 'tone_bass', stage: 'tone', label: 'Bass', unit: 'dB',
-    min: -14, max: 14, default: 1.4, taper: 'linear' },
+    min: -14, max: 14, default: -1.7, taper: 'linear' },
   // Not scooped. A mid scoop plus the cabinet's own dip around 700 Hz takes all
   // the body out and leaves the thin, boxy tone of a very small amplifier.
   { id: 'tone_mid', stage: 'tone', label: 'Mid', unit: 'dB',
-    min: -14, max: 14, default: -3.4, taper: 'linear' },
+    min: -14, max: 14, default: 3.4, taper: 'linear' },
   { id: 'tone_treble', stage: 'tone', label: 'Treble', unit: 'dB',
-    min: -14, max: 14, default: 1.4, taper: 'linear' },
+    min: -14, max: 14, default: 1.7, taper: 'linear' },
   // A narrower range than the other three: presence sits on top of the
   // cabinet's steep rolloff, where a few dB already changes the whole top end.
   { id: 'tone_presence', stage: 'tone', label: 'Presence', unit: 'dB',
-    min: -10, max: 10, default: 0.4, taper: 'linear' },
+    min: -10, max: 10, default: 1.0, taper: 'linear' },
   { id: 'tone_bypass', stage: 'tone', label: 'Bypass', unit: 'bool',
     min: 0, max: 1, default: 0, taper: 'switch' },
 ] as const;

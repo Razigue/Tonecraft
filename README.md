@@ -26,7 +26,7 @@ closed with it**, because monitoring a laptop's built-in microphone through the
 speakers is a feedback path, not a comparison. With a file loaded you hear that
 file raw; with the live input as the source there is nothing to hear, and the
 rig says so.
-The direct path carries 4.3 dB of measured makeup so the two match in level —
+The direct path carries 5.9 dB of measured makeup so the two match in level —
 otherwise the comparison is a loudness test, and louder wins every loudness test
 regardless of what it sounds like.
 

@@ -71,11 +71,6 @@ const MODEL_CATALOG = [
     name: 'JSX Ultra — OD808', pack: 'metal', cab: 'v30mod',
     note: 'High, singing gain. Made for solos.',
   },
-  {
-    src: 'Tudor N Driftwood Nightmare High Gain   HM2.nam',
-    name: 'Driftwood Nightmare — HM-2', pack: 'metal', cab: 'v30dark',
-    note: 'Extremely saturated, with HM-2 colour. Doom, sludge, Swedish death.',
-  },
 ];
 
 const log = (...a) => console.log(...a);

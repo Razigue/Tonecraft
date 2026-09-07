@@ -23,14 +23,16 @@ export interface Preset {
 
 export const PRESETS: readonly Preset[] = [
   {
-    name: 'Tight djent',
+    name: 'Lead',
     pack: 'metal',
-    capture: 'helga-b-5150-blockletter-boosted.nam',
+    capture: 'helga-b-jsx-ultra-od808.nam',
     cab: 'v30mod',
     values: {
-      in_trim: 10.5, gate_threshold: -67.7, drive_gain: 23.0, drive_tone: 5538,
-      tone_bass: -2.8, tone_mid: -2.8, tone_treble: 2.2, tone_presence: 1.6,
-      reverb_mix: 0.08, out_master: -12.4,
+      // -65 rather than the -75.5 this used to carry: at that threshold the
+      // gate never closed on a real DI and the gain hissed between phrases.
+      in_trim: 11.4, gate_threshold: -65, drive_gain: 25.0, drive_tone: 6011,
+      tone_bass: -1.7, tone_mid: 3.4, tone_treble: 1.7, tone_presence: 1.0,
+      reverb_mix: 0.30, out_master: -12.4,
     },
   },
   {
@@ -44,40 +46,7 @@ export const PRESETS: readonly Preset[] = [
       reverb_mix: 0.12, out_master: -12.4,
     },
   },
-  {
-    name: 'Thrash',
-    pack: 'metal',
-    capture: 'helga-b-5150-blockletter-noboost.nam',
-    cab: 'green',
-    values: {
-      in_trim: 12.0, gate_threshold: -71.6, drive_gain: 20.5, drive_tone: 5876,
-      tone_bass: -1.1, tone_mid: 0.6, tone_treble: 3.4, tone_presence: 1.6,
-      reverb_mix: 0.06, out_master: -12.4,
-    },
-  },
-  {
-    name: 'Doom',
-    pack: 'metal',
-    capture: 'tudor-n-driftwood-nightmare-high-gain-hm2.nam',
-    cab: 'v30dark',
-    values: {
-      in_trim: 11.4, gate_threshold: -80.7, drive_gain: 13.3, drive_tone: 4186,
-      tone_bass: 5.0, tone_mid: -0.6, tone_treble: -2.2, tone_presence: -2.4,
-      reverb_mix: 0.26, out_master: -12.4,
-    },
-  },
-  {
-    name: 'Lead',
-    pack: 'metal',
-    capture: 'helga-b-jsx-ultra-od808.nam',
-    cab: 'v30mod',
-    values: {
-      in_trim: 11.4, gate_threshold: -75.5, drive_gain: 25.0, drive_tone: 6011,
-      tone_bass: -1.7, tone_mid: 3.4, tone_treble: 1.7, tone_presence: 1.0,
-      reverb_mix: 0.30, out_master: -12.4,
-    },
-  },
 ] as const;
 
 /** The one everybody hears first. Its values are the schema defaults. */
-export const DEFAULT_PRESET = 'Modern metal';
+export const DEFAULT_PRESET = 'Lead';

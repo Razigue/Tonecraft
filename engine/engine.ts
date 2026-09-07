@@ -587,7 +587,9 @@ export class Engine {
    *
    * Measured, not guessed: the demo take through the shipped preset against the
    * same take raw, both seeked to zero first and integrated over fourteen
-   * seconds off the output meter. Repeatable to a tenth of a dB — measuring it
+   * seconds off the output meter. Re-measured whenever the default preset
+   * changes — it moved 1.6 dB when the default became "Lead", which carries 8
+   * more decibels of boost. Repeatable to a tenth of a dB — measuring it
    * without seeking first put 1.8 dB of the take's own dynamics into the answer,
    * because the two passes were covering different notes.
    *
@@ -599,7 +601,7 @@ export class Engine {
    * compressor nobody asked for sitting across the only honest comparison in
    * the product.
    */
-  static readonly DIRECT_MAKEUP_DB = 4.3;
+  static readonly DIRECT_MAKEUP_DB = 5.9;
 
   /**
    * The whole simulation, on or off.
