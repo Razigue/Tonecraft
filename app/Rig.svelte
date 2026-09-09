@@ -122,6 +122,8 @@
   let latencyMs = $state<number | null>(null);
   /** What the figure is made of, for the title on hover. */
   let latencyDetail = $state('');
+  /** The two figures the sentence above is made of, to detect when it moves. */
+  let latencyKey = '';
   /**
    * The one verdict that is read every frame: dropouts over the last minute.
    * A crackle is the failure that decides whether this is playable at all
@@ -197,7 +199,35 @@
   const cabInfo = $derived(CABS.find((c) => c.id === cab) ?? CABS[0]!);
   const level = (v: number): number => Math.min(1, Math.sqrt(Math.max(0, v)) * 1.6);
   const isGuilt = $derived(captureFile === PRESETS[0]?.capture);
-  const light = $derived(state === 'running' && captureLoaded && !poweredOff ? Math.max(0, Math.min(1, (20 * Math.log10(Math.max(0.0001, meters.outputRms)) + 60) / 60)) : 0);
+  /**
+   * How lit the front of the amp is, 0 to 1, from the output RMS.
+   *
+   * Quantised to 64 steps. The meters arrive 30 times a second and every
+   * distinct value here is a style write on the largest element on the page;
+   * a step finer than 1/64 is below the eye's threshold on a brightness ramp
+   * and buys nothing but repaints.
+   */
+  const light = $derived(state === 'running' && captureLoaded && !poweredOff
+    ? Math.round(Math.max(0, Math.min(1, (20 * Math.log10(Math.max(0.0001, meters.outputRms)) + 60) / 60)) * 64) / 64
+    : 0);
+  /**
+   * The same lighting, expressed as the opacity of a black veil over the art
+   * instead of a `brightness()` filter on it.
+   *
+   * The filter was re-rasterising a 1.6 megapixel image on every meter frame:
+   * measured at 55% of one core, continuously, most of it on the compositor
+   * thread. `opacity` is a compositor property — the image is rastered once and
+   * never again, and the veil is a layer whose alpha the GPU changes for free
+   * (CLAUDE.md section 4: only `transform` and `opacity` may animate).
+   *
+   * The image carries a static brightness(1.67) so the range is unchanged:
+   * a veil at alpha a over it yields (1 - a) * 1.67, and a = 1 - b / 1.67
+   * reproduces exactly the brightness b the filter used to apply.
+   */
+  const VEIL_MAX_BRIGHTNESS = 1.67;
+  const veil = $derived(
+    Math.max(0, Math.min(1, 1 - (0.42 + light * 1.25) / VEIL_MAX_BRIGHTNESS)),
+  );
   function nextPreset(direction: number) {
     const index = PRESETS.findIndex(p => p.name === preset);
     void applyPreset(PRESETS[(index + direction + PRESETS.length) % PRESETS.length]!);
@@ -370,13 +400,24 @@
        about. The render buffer is one quantum and cannot go lower; the chain
        itself measures a tenth of a millisecond (npm run measure:latency). So
        the output device is the figure, and it is the one thing here that is a
-       choice — hence the Output selector, which carries each device's cost. */
-    latencyDetail = parts === null ? '' :
-      `${parts.base.toFixed(1)} ms of render buffer, which is one block and cannot ` +
-      `go lower, and ${parts.output.toFixed(1)} ms in the output device` +
-      (outputs.length > 1 ? ', which the Output selector can change' : '') +
-      '. The chain itself adds a tenth of a millisecond. The input path is not ' +
-      'reported by the browser and is not in this number.';
+       choice — hence the Output selector, which carries each device's cost.
+
+       Built only when one of the two figures actually moves. It is a tooltip
+       on a number that changes at most a few times a session, and assembling
+       four hundred characters thirty times a second to say the same thing is
+       garbage the collector has to come back for — on the one thread that
+       must not stall. */
+    const key = parts === null ? '' :
+      `${parts.base.toFixed(1)}/${parts.output.toFixed(1)}/${outputs.length > 1}`;
+    if (key !== latencyKey) {
+      latencyKey = key;
+      latencyDetail = parts === null ? '' :
+        `${parts.base.toFixed(1)} ms of render buffer, which is one block and cannot ` +
+        `go lower, and ${parts.output.toFixed(1)} ms in the output device` +
+        (outputs.length > 1 ? ', which the Output selector can change' : '') +
+        '. The chain itself adds a tenth of a millisecond. The input path is not ' +
+        'reported by the browser and is not in this number.';
+    }
 
     // Dropouts over a rolling minute. The count arrives cumulative.
     const now = performance.now();
@@ -478,11 +519,24 @@
   /**
    * One rAF loop, for the playhead only. Meters arrive already throttled to
    * 30 Hz from the audio thread and are written straight to state.
+   *
+   * The playhead is throttled to the same 30 Hz, and not because 30 Hz looks
+   * better. Moving it resizes the clip that reveals the played part of the
+   * take, which re-rasterises both 900-segment waveform paths; on a 120 Hz
+   * display an unthrottled rAF paid for that four times per meter frame, for a
+   * line that advances a fraction of a pixel each time. The audio thread is
+   * what that raster competes with.
    */
+  const PLAYHEAD_MS = 1000 / 30;
+  let playheadAt = 0;
   function tick(): void {
     frame = requestAnimationFrame(tick);
     if (filePlaying && engine !== null) {
-      filePosition = engine.filePosition;
+      const now = performance.now();
+      if (now - playheadAt >= PLAYHEAD_MS) {
+        playheadAt = now;
+        filePosition = engine.filePosition;
+      }
       if (!engine.filePlaying) filePlaying = false;
     }
   }
@@ -646,10 +700,10 @@
       <div class="io-control output-control"><Knob param={param('out_master')} value={values.out_master!} resetValue={resetValues.out_master} onchange={v => setParam('out_master',v)} label="Output" /><Meter level={meters.outputRms} /></div>
     </section>
 
-    <section class="amp-head" class:guilt={isGuilt} class:bypassed={poweredOff} aria-label={isGuilt ? 'GUILT amplifier' : 'Tonecraft amplifier'} style={`--energy:${light}`}>
+    <section class="amp-head" class:guilt={isGuilt} class:bypassed={poweredOff} aria-label={isGuilt ? 'GUILT amplifier' : 'Tonecraft amplifier'}>
       <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
       <div class="glass-window">
-        {#if isGuilt}<img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.png`} alt="Purple Gothic stained glass with a central rose window" style={`filter:brightness(${0.42 + light * 1.25})`} />{:else}<div class="neutral-art"><span>TC</span><small>AMPLIFICATION</small></div>{/if}
+        {#if isGuilt}<img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt="Purple Gothic stained glass with a central rose window" width="2172" height="724" decoding="async" /><div class="veil" style={`opacity:${veil}`}></div>{:else}<div class="neutral-art"><span>TC</span><small>AMPLIFICATION</small></div>{/if}
         <div class="amp-brand"><span class="brand-rule"></span><h1>{isGuilt ? 'GUILT' : 'TONECRAFT'}</h1><span class="brand-rule"></span><p>{isGuilt ? 'LUX EX SONO' : 'FIND YOUR FREQUENCY'}</p></div>
       </div>
       <div class="amp-panel">
@@ -1028,11 +1082,11 @@
   }
   select:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
-  .page{display:flex;flex-direction:column;gap:0;padding:0 48px 28px;max-width:1600px;margin:auto;min-height:100svh}.bar{height:94px;align-items:center}.t-wordmark{font-size:22px;text-transform:lowercase;letter-spacing:-1px;font-weight:600}.workspace{width:100%;max-width:1180px;margin:36px auto 0}.workspace-heading,.amp-caption,.capture-info,.page-footer{display:flex;justify-content:space-between;gap:16px;font:9px var(--mono);letter-spacing:1.5px;color:#8f8f8f}.workspace-heading{margin-bottom:20px}.edition{color:#c1c1c1}.edition span{color:#6f6f6f}.global-controls{display:grid;grid-template-columns:100px 90px minmax(180px,1fr) minmax(210px,1.2fr) 110px;align-items:center;gap:24px;padding:26px 24px;background:#242424;border:1px solid #3b3b3b;border-radius:8px}.io-control{display:flex;align-items:center;gap:12px}.gate-control{position:relative}.gate-control .enable{bottom:-15px;right:calc(50% - 14px);padding:3px 8px}.enable{position:absolute;right:-2px;bottom:0;background:none;border:0;color:#b7b7b7;font:8px var(--mono);cursor:pointer}.rig-selectors{border-left:1px solid #404040;padding-left:26px;display:grid;gap:16px}.selector{display:flex;flex-direction:column;gap:3px;min-width:0}.selector>span,.eyebrow{font:9px var(--mono);letter-spacing:1.6px;color:#999999}.selector select{width:100%;max-width:100%;min-height:26px;border:0;font-size:12px}.tone-selector{padding:0 20px;border-right:1px solid #404040;text-align:center}.preset-picker{display:flex;align-items:center;gap:8px;margin:10px 0}.preset-picker select{width:100%;max-width:none;text-align:center;background:#323232;border:1px solid #4f4f4f;border-radius:4px;padding:0 8px;font-size:14px;min-height:38px}.preset-picker button{background:none;border:0;font-size:28px;color:#b4b4b4;cursor:pointer;padding:0 3px}.preset-note{font-size:10px;color:#969696}.amp-caption{margin:28px 2px 13px;font-size:8px;letter-spacing:1.4px}.amp-caption>span:first-child{display:flex;align-items:center;gap:7px}.status-dot{width:5px;height:5px;background:#717171;border-radius:50%}.status-dot.live{background:#c0c0c0}.amp-head{margin-top:28px;position:relative;padding:17px;border:1px solid #53534f;border-radius:9px;background:repeating-linear-gradient(32deg,#262626 0 1px,#2a2a2a 1px 3px);box-shadow:0 14px 30px #0005,inset 0 1px 1px #85817a55;--knob-accent:#c5c5c5;--control-label:#b4b4b4}.amp-head.guilt{--knob-material:linear-gradient(135deg,#827187,#39333d 50%,#201d24);--knob-accent:#d2badb;--control-label:#b9adbd}.glass-window{position:relative;height:260px;background:#101010;overflow:hidden;border:2px solid #0e0e10;box-shadow:0 0 0 1px #55505b}.glass-window img{width:100%;height:100%;object-fit:cover;transition:filter 90ms linear}.glass-window:after{content:'';position:absolute;inset:0;box-shadow:inset 0 0 35px 12px #08080bd9;background:linear-gradient(0deg,#09080bb0,transparent 65%);pointer-events:none}.amp-brand{position:absolute;z-index:1;bottom:24px;left:0;right:0;text-align:center;display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;color:#e4d4e8;text-shadow:0 2px 8px #000}.amp-brand h1{font:38px Georgia,serif;letter-spacing:12px;margin:0 -12px 0 0}.brand-rule{height:1px;width:42px;background:#ad96b777}.amp-brand p{flex-basis:100%;font:7px var(--mono);letter-spacing:4px;margin:-6px 0 0}.amp-panel{display:flex;align-items:center;justify-content:space-around;gap:20px;padding:22px 20px 20px;background:linear-gradient(110deg,#313131,#232323);border:1px solid #565656;border-top:1px solid #777269}.guilt .amp-panel{background:linear-gradient(110deg,#322f34,#29262d 60%,#252329);border-color:#514852;border-top-color:#7b687e}.control-group{position:relative;border-left:1px solid #69616a55;padding-left:20px}.group-label{display:block;margin:0 auto 14px;font:8px var(--mono);letter-spacing:2px;color:#bcb2c0;background:none;border:0;cursor:pointer}.group-label span{font-size:7px;margin-left:5px;color:var(--knob-accent)}.group-label[aria-pressed=false]{opacity:.45}.knob-row{display:flex;gap:16px}.amp-signature{display:flex;flex-direction:column;align-items:center;gap:8px;min-width:110px;color:#c6b9cb}.amp-signature>span:not(.sig-symbol){font:italic 25px Georgia,serif}.sig-symbol{font-size:32px}.amp-signature small{font:6px var(--mono);letter-spacing:2px}.power-indicator{display:flex;flex-direction:column;align-items:center;gap:15px}.power-indicator>span{width:8px;height:8px;border-radius:50%;background:#5f5163;border:3px solid #252227;box-shadow:0 0 0 1px #75677b}.power-indicator>span.lit{background:#ddbae9;box-shadow:0 0 12px #c47adf}.power-indicator small{font:7px var(--mono);color:#b2aab7;letter-spacing:1px}.screw{position:absolute;width:5px;height:5px;background:linear-gradient(135deg,#777,#222 45%,#999 50%,#333 60%);border-radius:50%}.tl{top:6px;left:7px}.tr{top:6px;right:7px}.bl{bottom:6px;left:7px}.br{bottom:6px;right:7px}.amp-foot{display:flex;justify-content:space-between;margin:0 50px}.amp-foot span{width:65px;height:9px;background:#0f0f0f;border-radius:0 0 3px 3px}.capture-info{margin:0 0 24px;font-size:8px;letter-spacing:.4px}.capture-info>span:last-child{color:#7b7b7b;font-size:7px;letter-spacing:1px}.session-bar{display:flex;align-items:center;gap:24px;border:1px solid #3c3c3c;border-radius:6px;padding:19px 22px;background:#252525}.source-block{display:flex;flex-direction:column;gap:9px}.session-message{display:flex;flex:1;flex-direction:column;gap:6px;border-left:1px solid #414141;padding-left:24px}.session-message strong{font-size:13px;font-weight:500}.session-message>span{font-size:11px;color:#9c9c9c}.connect{padding:12px 18px;background:#c5c5c5;border:1px solid #d0d0d0;border-radius:4px;font-size:12px;color:#272727;cursor:pointer}.connect span{margin-left:20px}.connect:disabled{opacity:.5}.session-bar .demo{margin-left:auto;border:0;font-size:11px}.device-controls{display:flex;gap:24px;margin-top:18px;flex-wrap:wrap}.device-controls .levels{width:80px;align-items:center}.page-footer{margin-top:auto;padding:28px 0 22px;font-size:8px;letter-spacing:1px}.page-footer>span:last-child{color:#a5a5a5}.page-footer>span:last-child span{padding:0 8px;color:#636363}.file{margin:22px auto 0}.wash{background:#0f0f0fcc;z-index:10}.sheet{border:1px solid #555555;border-radius:8px}.notice{min-height:0;color:var(--ember);margin:10px 0}.alert{color:var(--ember);font-size:13px}.neutral-art{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:repeating-linear-gradient(0deg,#1b1b1b 0 2px,#2e2e2e 2px 3px);color:#848484}.neutral-art>span{font-size:80px;letter-spacing:-15px;font-weight:800;opacity:.35}.neutral-art small{font-size:8px;letter-spacing:6px}.neutral-art+.amp-brand h1{font:22px var(--body);letter-spacing:7px}.bypassed .glass-window{opacity:.5}:global(select option){background:#2c2c2c;color:#e4e4e4}:global(button:focus-visible){outline:2px solid var(--iris);outline-offset:4px}
+  .page{display:flex;flex-direction:column;gap:0;padding:0 48px 28px;max-width:1600px;margin:auto;min-height:100svh}.bar{height:94px;align-items:center}.t-wordmark{font-size:22px;text-transform:lowercase;letter-spacing:-1px;font-weight:600}.workspace{width:100%;max-width:1180px;margin:36px auto 0}.workspace-heading,.amp-caption,.capture-info,.page-footer{display:flex;justify-content:space-between;gap:16px;font:9px var(--mono);letter-spacing:1.5px;color:#8f8f8f}.workspace-heading{margin-bottom:20px}.edition{color:#c1c1c1}.edition span{color:#6f6f6f}.global-controls{display:grid;grid-template-columns:100px 90px minmax(180px,1fr) minmax(210px,1.2fr) 110px;align-items:center;gap:24px;padding:26px 24px;background:#242424;border:1px solid #3b3b3b;border-radius:8px}.io-control{display:flex;align-items:center;gap:12px}.gate-control{position:relative}.gate-control .enable{bottom:-15px;right:calc(50% - 14px);padding:3px 8px}.enable{position:absolute;right:-2px;bottom:0;background:none;border:0;color:#b7b7b7;font:8px var(--mono);cursor:pointer}.rig-selectors{border-left:1px solid #404040;padding-left:26px;display:grid;gap:16px}.selector{display:flex;flex-direction:column;gap:3px;min-width:0}.selector>span,.eyebrow{font:9px var(--mono);letter-spacing:1.6px;color:#999999}.selector select{width:100%;max-width:100%;min-height:26px;border:0;font-size:12px}.tone-selector{padding:0 20px;border-right:1px solid #404040;text-align:center}.preset-picker{display:flex;align-items:center;gap:8px;margin:10px 0}.preset-picker select{width:100%;max-width:none;text-align:center;background:#323232;border:1px solid #4f4f4f;border-radius:4px;padding:0 8px;font-size:14px;min-height:38px}.preset-picker button{background:none;border:0;font-size:28px;color:#b4b4b4;cursor:pointer;padding:0 3px}.preset-note{font-size:10px;color:#969696}.amp-caption{margin:28px 2px 13px;font-size:8px;letter-spacing:1.4px}.amp-caption>span:first-child{display:flex;align-items:center;gap:7px}.status-dot{width:5px;height:5px;background:#717171;border-radius:50%}.status-dot.live{background:#c0c0c0}.amp-head{margin-top:28px;position:relative;padding:17px;border:1px solid #53534f;border-radius:9px;background:repeating-linear-gradient(32deg,#262626 0 1px,#2a2a2a 1px 3px);box-shadow:0 14px 30px #0005,inset 0 1px 1px #85817a55;--knob-accent:#c5c5c5;--control-label:#b4b4b4}.amp-head.guilt{--knob-material:linear-gradient(135deg,#827187,#39333d 50%,#201d24);--knob-accent:#d2badb;--control-label:#b9adbd}.glass-window{position:relative;height:260px;background:#101010;overflow:hidden;border:2px solid #0e0e10;box-shadow:0 0 0 1px #55505b}.glass-window img{width:100%;height:100%;object-fit:cover;filter:brightness(1.67)}.glass-window .veil{position:absolute;inset:0;background:#000;pointer-events:none;will-change:opacity}.glass-window:after{content:'';position:absolute;inset:0;box-shadow:inset 0 0 35px 12px #08080bd9;background:linear-gradient(0deg,#09080bb0,transparent 65%);pointer-events:none}.amp-brand{position:absolute;z-index:1;bottom:24px;left:0;right:0;text-align:center;display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;color:#e4d4e8;text-shadow:0 2px 8px #000}.amp-brand h1{font:38px Georgia,serif;letter-spacing:12px;margin:0 -12px 0 0}.brand-rule{height:1px;width:42px;background:#ad96b777}.amp-brand p{flex-basis:100%;font:7px var(--mono);letter-spacing:4px;margin:-6px 0 0}.amp-panel{display:flex;align-items:center;justify-content:space-around;gap:20px;padding:22px 20px 20px;background:linear-gradient(110deg,#313131,#232323);border:1px solid #565656;border-top:1px solid #777269}.guilt .amp-panel{background:linear-gradient(110deg,#322f34,#29262d 60%,#252329);border-color:#514852;border-top-color:#7b687e}.control-group{position:relative;border-left:1px solid #69616a55;padding-left:20px}.group-label{display:block;margin:0 auto 14px;font:8px var(--mono);letter-spacing:2px;color:#bcb2c0;background:none;border:0;cursor:pointer}.group-label span{font-size:7px;margin-left:5px;color:var(--knob-accent)}.group-label[aria-pressed=false]{opacity:.45}.knob-row{display:flex;gap:16px}.amp-signature{display:flex;flex-direction:column;align-items:center;gap:8px;min-width:110px;color:#c6b9cb}.amp-signature>span:not(.sig-symbol){font:italic 25px Georgia,serif}.sig-symbol{font-size:32px}.amp-signature small{font:6px var(--mono);letter-spacing:2px}.power-indicator{display:flex;flex-direction:column;align-items:center;gap:15px}.power-indicator>span{width:8px;height:8px;border-radius:50%;background:#5f5163;border:3px solid #252227;box-shadow:0 0 0 1px #75677b}.power-indicator>span.lit{background:#ddbae9;box-shadow:0 0 12px #c47adf}.power-indicator small{font:7px var(--mono);color:#b2aab7;letter-spacing:1px}.screw{position:absolute;width:5px;height:5px;background:linear-gradient(135deg,#777,#222 45%,#999 50%,#333 60%);border-radius:50%}.tl{top:6px;left:7px}.tr{top:6px;right:7px}.bl{bottom:6px;left:7px}.br{bottom:6px;right:7px}.amp-foot{display:flex;justify-content:space-between;margin:0 50px}.amp-foot span{width:65px;height:9px;background:#0f0f0f;border-radius:0 0 3px 3px}.capture-info{margin:0 0 24px;font-size:8px;letter-spacing:.4px}.capture-info>span:last-child{color:#7b7b7b;font-size:7px;letter-spacing:1px}.session-bar{display:flex;align-items:center;gap:24px;border:1px solid #3c3c3c;border-radius:6px;padding:19px 22px;background:#252525}.source-block{display:flex;flex-direction:column;gap:9px}.session-message{display:flex;flex:1;flex-direction:column;gap:6px;border-left:1px solid #414141;padding-left:24px}.session-message strong{font-size:13px;font-weight:500}.session-message>span{font-size:11px;color:#9c9c9c}.connect{padding:12px 18px;background:#c5c5c5;border:1px solid #d0d0d0;border-radius:4px;font-size:12px;color:#272727;cursor:pointer}.connect span{margin-left:20px}.connect:disabled{opacity:.5}.session-bar .demo{margin-left:auto;border:0;font-size:11px}.device-controls{display:flex;gap:24px;margin-top:18px;flex-wrap:wrap}.device-controls .levels{width:80px;align-items:center}.page-footer{margin-top:auto;padding:28px 0 22px;font-size:8px;letter-spacing:1px}.page-footer>span:last-child{color:#a5a5a5}.page-footer>span:last-child span{padding:0 8px;color:#636363}.file{margin:22px auto 0}.wash{background:#0f0f0fcc;z-index:10}.sheet{border:1px solid #555555;border-radius:8px}.notice{min-height:0;color:var(--ember);margin:10px 0}.alert{color:var(--ember);font-size:13px}.neutral-art{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:repeating-linear-gradient(0deg,#1b1b1b 0 2px,#2e2e2e 2px 3px);color:#848484}.neutral-art>span{font-size:80px;letter-spacing:-15px;font-weight:800;opacity:.35}.neutral-art small{font-size:8px;letter-spacing:6px}.neutral-art+.amp-brand h1{font:22px var(--body);letter-spacing:7px}.bypassed .glass-window{opacity:.5}:global(select option){background:#2c2c2c;color:#e4e4e4}:global(button:focus-visible){outline:2px solid var(--iris);outline-offset:4px}
   @media(min-width:1500px){.glass-window{height:310px}.workspace{margin-top:48px}}
   @media(max-width:1100px){.page{padding:0 24px}.global-controls{gap:14px;padding:22px 16px;grid-template-columns:85px 65px 1fr 1fr 90px}.rig-selectors{padding-left:16px}.tone-selector{padding:0 10px}.amp-panel{gap:10px;padding:20px 12px}.amp-signature{min-width:70px}.control-group{padding-left:12px}.knob-row{gap:5px}.power-indicator{display:flex}.session-bar{gap:15px}.session-message{padding-left:15px}}
   @media(max-width:760px){.page{padding:0 16px}.bar{height:76px}.t-wordmark{font-size:20px}.bar-right{gap:10px}.workspace{margin-top:24px}.edition{display:none}.global-controls{grid-template-columns:1fr 1fr 1fr;gap:22px}.io-control{justify-content:center}.output-control{grid-column:3;grid-row:1}.gate-control{display:flex;justify-content:center}.enable{right:5px}.rig-selectors{grid-column:1/3;grid-row:2;padding:0;border:0}.tone-selector{grid-column:3;grid-row:2;padding:0;border:0;min-width:0}.preset-picker{gap:0}.preset-picker select{font-size:12px;min-width:0}.preset-note{display:none}.glass-window{height:210px}.amp-head{padding:12px}.amp-panel{flex-wrap:wrap;padding:18px 10px;gap:22px 12px}.amp-signature{display:none}.tone-group{flex-basis:100%;border:0;padding:0}.knob-row{justify-content:space-evenly;gap:15px}.control-group{border:0;padding:0}.amp-brand h1{font-size:30px}.capture-info{line-height:1.6}.capture-info>span:last-child{display:none}.session-bar{flex-wrap:wrap;padding:16px}.session-message{flex:1;min-width:130px}.session-message>span{line-height:1.6}.connect{margin-left:auto}.page-footer{font-size:6px}.amp-caption{font-size:7px;letter-spacing:.6px}.chain-label{letter-spacing:0;font-size:9px}.bar .start{font-size:11px;padding:0 10px}}
-  @media(prefers-reduced-motion:reduce){.glass-window img{transition:none;filter:brightness(.65)!important}}
+  @media(prefers-reduced-motion:reduce){.glass-window .veil{opacity:.61!important}}
 
   .settings-button{display:grid;place-items:center;width:40px;height:40px;padding:8px;border:0;background:none;color:var(--ink);cursor:pointer;border-radius:4px;font-size:26px}.settings-button:hover{background:#252525}.audio-settings{width:min(440px,calc(100vw - 64px));padding:24px;color:var(--ink);background:#171717;border:1px solid #444;border-radius:8px}.audio-settings::backdrop{background:#000a}.settings-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}.settings-heading h2{margin:0;font-size:18px;font-weight:500}.audio-settings .device-controls{flex-direction:column;gap:18px}.audio-settings select{max-width:100%;width:100%}.audio-settings .failure{margin-top:20px}.power-indicator{border:0;background:none;cursor:pointer;color:#bab0bf;padding:8px;min-width:44px}.power-indicator>span{width:28px;height:28px;display:grid;place-items:center;background:#29252d}.power-indicator>span.lit{color:#fff;background:#66536f}.power-indicator:disabled{opacity:.5;cursor:wait}
   .welcome{color:var(--ink);background:#101010;border:1px solid #3b3b3b;width:min(580px,calc(100vw - 64px));box-sizing:border-box;max-height:calc(100svh - 48px);overflow:auto}.welcome:not([open]){display:none}.welcome::backdrop{background:#000b}.welcome h2{font-size:21px;font-weight:500;margin:0}.welcome .choices{width:100%}.welcome .choice{background:#191919;border-color:#404040;border-radius:5px;padding:22px;min-width:0}.welcome .choice:hover{background:#252525;border-color:#888}.welcome .choice .t-module{font-size:12px;color:#ededed}.welcome .choice .t-small{line-height:1.6}.welcome .quiet{color:#aaa}

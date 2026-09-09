@@ -183,7 +183,15 @@ const levels = await page.evaluate(async () => {
   const bar = (sel) => document.querySelector(`${sel} .meter rect:last-child`);
   const until = performance.now() + 20_000;
   while (performance.now() < until) {
-    cord = Math.max(cord, Number(document.querySelector('.amp-head')?.style.getPropertyValue('--energy') ?? 0));
+    /* The glass is lit by lifting a black veil off the art rather than by
+       filtering the art itself, so illumination is the veil's absence. The
+       veil carries brightness b = (1 - opacity) * 1.67, and the lighting that
+       produced it is (b - 0.42) / 1.25. */
+    const glass = document.querySelector('.glass-window .veil');
+    if (glass !== null) {
+      const opacity = Number(glass.style.opacity === '' ? 1 : glass.style.opacity);
+      cord = Math.max(cord, ((1 - opacity) * 1.67 - 0.42) / 1.25);
+    }
     input = Math.max(input, Number(bar('.global-controls > .io-control:first-child')?.getAttribute('height') ?? 0));
     output = Math.max(output, Number(bar('.output-control')?.getAttribute('height') ?? 0));
     if (cord > 0.2 && input > 1 && output > 1) break;
