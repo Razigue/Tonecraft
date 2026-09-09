@@ -76,6 +76,7 @@
   type State = 'idle' | 'starting' | 'running' | 'failed';
 
   const param = (id: string): Param => PARAMS.find((p) => p.id === id)!;
+  const DEFAULT_VALUES = Object.fromEntries(PARAMS.map((p) => [p.id, p.default]));
 
   const SOURCES = [
     { value: 'live', label: 'Live' },
@@ -149,8 +150,12 @@
   let captureLoaded = $state(false);
 
   let values = $state<Record<string, number>>(
-    Object.fromEntries(PARAMS.map((p) => [p.id, p.default])),
+    { ...DEFAULT_VALUES },
   );
+  let resetValues = $state<Record<string, number>>({
+    ...DEFAULT_VALUES,
+    ...(PRESETS.find((p) => p.name === DEFAULT_PRESET)?.values ?? {}),
+  });
   let captures = $state<readonly Capture[]>([]);
   let captureFile = $state('');
   let cab = $state('v30mod');
@@ -235,6 +240,7 @@
 
   async function applyPreset(p: Preset): Promise<void> {
     values = { ...values, ...p.values };
+    resetValues = { ...DEFAULT_VALUES, ...p.values };
     for (const [id, v] of Object.entries(p.values)) engine?.setParam(id, v);
     // A preset may name a capture that is not installed.
     const wanted = captures.some((c) => c.file === p.capture) ? p.capture : captures[0]?.file;
@@ -630,14 +636,14 @@
 
   <main class="workspace">
     <section class="global-controls" aria-label="Global controls">
-      <div class="io-control"><Meter level={meters.input} /><Knob param={param('in_trim')} value={values.in_trim!} onchange={v => setParam('in_trim',v)} label="Input" /></div>
-      <div class="gate-control"><Knob param={param('gate_threshold')} value={values.gate_threshold!} onchange={v => setParam('gate_threshold',v)} label="Gate" /><button class="enable" aria-label="Gate enabled" aria-pressed={values.gate_bypass !== 1} onclick={() => setParam('gate_bypass',values.gate_bypass === 1 ? 0 : 1)}>{values.gate_bypass === 1 ? 'OFF' : 'ON'}</button></div>
+      <div class="io-control"><Meter level={meters.input} /><Knob param={param('in_trim')} value={values.in_trim!} resetValue={resetValues.in_trim} onchange={v => setParam('in_trim',v)} label="Input" /></div>
+      <div class="gate-control"><Knob param={param('gate_threshold')} value={values.gate_threshold!} resetValue={resetValues.gate_threshold} onchange={v => setParam('gate_threshold',v)} label="Gate" /><button class="enable" aria-label="Gate enabled" aria-pressed={values.gate_bypass !== 1} onclick={() => setParam('gate_bypass',values.gate_bypass === 1 ? 0 : 1)}>{values.gate_bypass === 1 ? 'OFF' : 'ON'}</button></div>
       <div class="rig-selectors">
         <label class="selector"><span>AMPLIFIER</span><select aria-label="Capture" value={captureFile} onchange={e => chooseCapture(e.currentTarget.value)}>{#each captures as c}<option value={c.file}>{c.file === PRESETS[0]?.capture ? 'GUILT · Lead' : c.name}</option>{/each}</select></label>
         <label class="selector"><span>CABINET</span><select aria-label="Cabinet" value={cab} onchange={e => chooseCab(e.currentTarget.value)}>{#each CABS as c}<option value={c.id}>{c.name}</option>{/each}</select></label>
       </div>
       <div class="tone-selector"><span class="eyebrow">TONE PRESET</span><div class="preset-picker"><button aria-label="Previous preset" onclick={() => nextPreset(-1)}>‹</button><select aria-label="Tone preset" value={preset ?? ''} onchange={e => { const p = PRESETS.find(p => p.name === e.currentTarget.value); if(p) void applyPreset(p); }}><option value="" disabled>Custom tone</option>{#each PRESETS as p}<option value={p.name}>{p.name}</option>{/each}</select><button aria-label="Next preset" onclick={() => nextPreset(1)}>›</button></div></div>
-      <div class="io-control output-control"><Knob param={param('out_master')} value={values.out_master!} onchange={v => setParam('out_master',v)} label="Output" /><Meter level={meters.outputRms} /></div>
+      <div class="io-control output-control"><Knob param={param('out_master')} value={values.out_master!} resetValue={resetValues.out_master} onchange={v => setParam('out_master',v)} label="Output" /><Meter level={meters.outputRms} /></div>
     </section>
 
     <section class="amp-head" class:guilt={isGuilt} class:bypassed={poweredOff} aria-label={isGuilt ? 'GUILT amplifier' : 'Tonecraft amplifier'} style={`--energy:${light}`}>
@@ -648,9 +654,9 @@
       </div>
       <div class="amp-panel">
         <div class="amp-signature"><span class="sig-symbol">✧</span><span>{isGuilt ? 'Guilt' : 'Tonecraft'}</span><small>{isGuilt ? 'LEAD AMPLIFIER' : 'CAPTURE SERIES'}</small></div>
-        <div class="control-group tone-group"><button class="group-label" aria-label="Tone enabled" aria-pressed={values.tone_bypass !== 1} onclick={() => setParam('tone_bypass',values.tone_bypass === 1 ? 0 : 1)}>TONE <span>{values.tone_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['tone_bass','tone_mid','tone_treble','tone_presence'] as id}<Knob param={param(id)} value={values[id]!} onchange={v => setParam(id,v)} />{/each}</div></div>
-        <div class="control-group"><button class="group-label" aria-label="Boost enabled" aria-pressed={values.drive_bypass !== 1} onclick={() => setParam('drive_bypass',values.drive_bypass === 1 ? 0 : 1)}>BOOST <span>{values.drive_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['drive_gain','drive_tone'] as id}<Knob param={param(id)} value={values[id]!} onchange={v => setParam(id,v)} />{/each}</div></div>
-        <div class="control-group"><button class="group-label" aria-label="Reverb enabled" aria-pressed={values.reverb_bypass !== 1} onclick={() => setParam('reverb_bypass',values.reverb_bypass === 1 ? 0 : 1)}>REVERB <span>{values.reverb_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row"><Knob param={param('reverb_mix')} value={values.reverb_mix!} onchange={v => setParam('reverb_mix',v)} /></div></div>
+        <div class="control-group tone-group"><button class="group-label" aria-label="Tone enabled" aria-pressed={values.tone_bypass !== 1} onclick={() => setParam('tone_bypass',values.tone_bypass === 1 ? 0 : 1)}>TONE <span>{values.tone_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['tone_bass','tone_mid','tone_treble','tone_presence'] as id}<Knob param={param(id)} value={values[id]!} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
+        <div class="control-group"><button class="group-label" aria-label="Boost enabled" aria-pressed={values.drive_bypass !== 1} onclick={() => setParam('drive_bypass',values.drive_bypass === 1 ? 0 : 1)}>BOOST <span>{values.drive_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['drive_gain','drive_tone'] as id}<Knob param={param(id)} value={values[id]!} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
+        <div class="control-group"><button class="group-label" aria-label="Reverb enabled" aria-pressed={values.reverb_bypass !== 1} onclick={() => setParam('reverb_bypass',values.reverb_bypass === 1 ? 0 : 1)}>REVERB <span>{values.reverb_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row"><Knob param={param('reverb_mix')} value={values.reverb_mix!} resetValue={resetValues.reverb_mix} onchange={v => setParam('reverb_mix',v)} /></div></div>
         <button class="power-indicator" type="button" aria-label="Amplifier power" aria-pressed={state === 'running' && !poweredOff} aria-busy={state === 'starting'} disabled={state === 'starting' || detecting} onclick={power}><span class:lit={state === 'running' && !poweredOff}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></span><small>POWER</small></button>
       </div>
     </section>

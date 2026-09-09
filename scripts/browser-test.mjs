@@ -237,15 +237,42 @@ const backIn = await page.evaluate(async () => {
 });
 check('switching it back on reopens the input', backIn > 1, `in ${backIn} of 96`);
 
-// The faders drive the engine.
-const fader = page.locator('input[type=range]').first();
-await fader.scrollIntoViewIfNeeded();
-const box = await fader.boundingBox();
+// Knobs follow vertical movement: up raises the value and down lowers it.
+const knob = page.locator('input[type=range]').first();
+await knob.scrollIntoViewIfNeeded();
+const beforeDrag = Number(await knob.inputValue());
+const box = await knob.boundingBox();
 await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 await page.mouse.down();
-await page.mouse.move(box.x + box.width - 4, box.y + box.height / 2, { steps: 6 });
+await page.mouse.move(box.x + box.width / 2, box.y + 4, { steps: 6 });
 await page.mouse.up();
-ok('a knob takes a drag');
+const afterDrag = Number(await knob.inputValue());
+check('dragging a knob upward raises its value', afterDrag > beforeDrag,
+  `${beforeDrag.toFixed(3)} then ${afterDrag.toFixed(3)}`);
+await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+await page.mouse.down();
+await page.mouse.move(box.x + box.width / 2, box.y + box.height + 28, { steps: 6 });
+await page.mouse.up();
+const afterDown = Number(await knob.inputValue());
+check('dragging a knob downward lowers its value', afterDown < afterDrag,
+  `${afterDrag.toFixed(3)} then ${afterDown.toFixed(3)}`);
+
+// Once a preset has been changed by hand its name becomes "Custom tone", but
+// double-click still returns to the values of the preset it came from.
+const tonePreset = page.getByRole('combobox', { name: 'Tone preset', exact: true });
+await tonePreset.selectOption('Modern metal');
+await page.waitForTimeout(1500);
+const bass = page.locator('input[type=range][aria-label="Bass"]');
+const presetBass = Number(await bass.inputValue());
+await bass.press('ArrowUp');
+await bass.dblclick();
+await page.waitForTimeout(300);
+const resetBass = Number(await bass.inputValue());
+check('double-click restores the current preset value',
+  Math.abs(resetBass - presetBass) < 0.0001,
+  `${resetBass.toFixed(4)} instead of ${presetBass.toFixed(4)}`);
+await tonePreset.selectOption('Lead');
+await page.waitForTimeout(1500);
 
 // Changing capture and cabinet, the two real tone choices. Found by their
 // labels: how many selects the page has depends on the machine — an output
