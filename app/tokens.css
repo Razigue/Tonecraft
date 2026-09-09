@@ -18,6 +18,11 @@
   /* 8px base unit. */
   --u: 8px;
 
+  /* The width of the rig's column. One value, because the amp head and the
+     take below it are one column: they drifted to 1180 and 1100 apart, which
+     reads as a 40px indent nobody chose. */
+  --column: 1180px;
+
   /* Three faces, three roles. Self-hosting is UX-DR2 and is not done yet, so
      these fall back to system stacks — the shapes are wrong but the scale,
      spacing and weights below are the ones DESIGN.md specifies. */
