@@ -1,3 +1,7 @@
+> **V1 studio direction — September 2026.** The current interface supersedes the light-only, fader-only direction below. Tonecraft owns the black and neutral-grey studio shell, global Input/Gate/Output controls, amplifier/cabinet selection, tone presets and audio session controls. Individual amplifiers own only their central head: art, wordmark, materials and control accents. GUILT is the Lead capture identity; changing its parameters retains its theme. Other captures use the neutral Tonecraft head. Knobs control existing DSP parameters; no new amplifier modelling is implied. GUILT glass brightness follows output RMS mapped from −60 to 0 dBFS, and falls to its unlit baseline when stopped or bypassed. Reduced motion uses steady illumination. The stained-glass asset is reused from the user-supplied GUILT prototype; the surrounding layout is original to Tonecraft.
+>
+> The remaining document records the earlier MVP design.
+
 # Tonecraft, design system
 
 ---

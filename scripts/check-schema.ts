@@ -32,17 +32,20 @@ validateSchema();
 const declared = new Set(PARAMS.map((p) => p.id));
 const bypass = new Set(STAGES.map((s) => s.bypassParam).filter((s): s is string => s !== null));
 
-/** The strand, read out of the component rather than duplicated here. */
+/** Controls are declared directly or in a Svelte each block. */
 const rig = readFileSync(join(ROOT, 'app/Rig.svelte'), 'utf8');
-const onFaders = [...rig.matchAll(/faders: \[([^\]]*)\]/g)]
-  .flatMap((m) => [...m[1]!.matchAll(/'([^']+)'/g)].map((x) => x[1]!));
+const onFaders = [
+  ...[...rig.matchAll(/<Knob\s+param=\{param\('([^']+)'\)\}/g)].map(m => m[1]!),
+  ...[...rig.matchAll(/\{#each \[([^\]]+)\] as id\}<Knob/g)]
+    .flatMap(m => [...m[1]!.matchAll(/'([^']+)'/g)].map(x => x[1]!)),
+];
 
 /** What the engine actually applies, read the same way. */
 const engine = readFileSync(join(ROOT, 'engine/engine.ts'), 'utf8');
 const applied = new Set([...engine.matchAll(/case '([a-z_]+)':/g)].map((m) => m[1]!));
 
 for (const id of onFaders) {
-  if (!declared.has(id)) errors.push(`the rig shows a fader for "${id}", which the schema does not declare`);
+  if (!declared.has(id)) errors.push(`the rig shows a control for "${id}", which the schema does not declare`);
 }
 for (const id of applied) {
   if (!declared.has(id)) errors.push(`the engine applies "${id}", which the schema does not declare`);

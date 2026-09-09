@@ -21,11 +21,8 @@ const base = import.meta.env.BASE_URL;
     <meta name="robots" content="noindex" />
     <title>Tonecraft</title>
     <style is:global>
-      /* Light only. DESIGN.md section 2 puts dark mode in v1.1 and says why:
-         doing it properly means re-deriving the whole system, and a
-         half-inverted palette looks worse than none. */
-      :root { color-scheme: light; }
-      html, body { margin: 0; background: #e7e8e2; color: #16181b; }
+      :root { color-scheme: dark; }
+      html, body { margin: 0; background: #080808; color: #e4e4e4; font-family: "Helvetica Neue", system-ui, sans-serif; }
       body { -webkit-font-smoothing: antialiased; }
     </style>
   </head>

@@ -1,19 +1,12 @@
 # `app/` — the Svelte island
 
-**Depends on `engine/` and `schema/`. Never touches the audio graph directly.**
+Depends on `engine/` and `schema/`. Never touches the audio graph directly.
 
-One island, one route, `client:only="svelte"`. `DESIGN.md` is the source of
-truth for anything visual; `tokens.css` is its only home in code, and no
-component may hardcode a value.
+One island, one route, `client:only="svelte"`.
 
-- `Rig.svelte` — the chain is the interface: the signal path runs left to right
-  in the order the audio travels. The amp and the cab carry no fader, because a
-  capture is a frozen snapshot and inventing a knob that did nothing would be a
-  lie about what it is.
-- `Fader.svelte` — the one continuous control. **The taper lives here and only
-  here**: the wire format carries engineering units, so retuning a taper changes
-  how a fader feels and cannot change what an existing tone sounds like.
-- `Waveform.svelte` — SVG, not a canvas, for the same reason nothing else in the
-  product is a canvas.
-- `presets.ts` — a capture, a cabinet and a set of values in engineering units.
-  A preset names a capture **file**, never an index.
+- `Rig.svelte` owns the studio layout and existing audio session state. Global controls and amplifier/cabinet/preset selectors sit above the amplifier head; source, device and file controls sit below it.
+- `tokens.css` defines the neutral Tonecraft palette. Amplifier-specific materials and accents stay scoped to the head. GUILT is associated with the Lead capture, so editing a parameter does not remove its identity.
+- `Knob.svelte` exposes a native range input with keyboard, pointer and touch support, a logarithmic frequency taper and engineering-unit readout. Double-click resets to schema defaults. The wire format remains engineering units.
+- The GUILT stained-glass image comes from the supplied prototype. Its illumination uses existing output RMS meters, mapped from −60 to 0 dBFS; no microphone or second audio graph is created for visuals. Stopped, dry and unloaded states use the unlit baseline. Reduced motion keeps illumination steady.
+- `Waveform.svelte` provides file seeking; `presets.ts` pairs a capture filename, cabinet and parameter values.
+- `Fader.svelte` and `Module.svelte` are retained MVP components, no longer used by the studio layout.

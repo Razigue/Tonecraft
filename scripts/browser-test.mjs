@@ -110,16 +110,16 @@ console.log('\nTonecraft — end-to-end\n');
 
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
 
-check('the page renders the rig', await page.locator('.strand').isVisible());
-check('the opening sheet offers both ways in',
-  (await page.locator('.choice').count()) === 2);
+check('the page renders the rig', await page.locator('.amp-head').isVisible());
+check('the studio offers live audio and a demo',
+  await page.locator('.connect').isVisible() && await page.locator('.session-bar .demo').isVisible());
 check('the capture catalogue is read before starting',
   (await page.locator('select').first().locator('option').count()) > 0);
 
 // Start, from the opening sheet. A failure here must be reported as a failure
 // and not as a 30 second stack trace, so whatever the page said about it is
 // read back — the product's whole voice is that it names the cause.
-await page.locator('.choice', { hasText: 'I have a guitar' }).click();
+await page.locator('.connect').click();
 let started = true;
 try {
   await page.waitForSelector('.latency', { timeout: 30_000 });
@@ -148,7 +148,7 @@ if (!started) {
   const said = await page.evaluate(async () => {
     const found = new Set();
     for (let i = 0; i < 40; i++) {
-      for (const n of document.querySelectorAll('.sheet .failure, .marquee .notice')) {
+      for (const n of document.querySelectorAll('.sheet .failure, .workspace .notice')) {
         found.add(n.textContent);
       }
       await new Promise((r) => setTimeout(r, 100));
@@ -158,13 +158,13 @@ if (!started) {
   const complaints = said.filter((t) => t?.includes('did not load') || t?.includes('missing'));
   check('the capture loads', complaints.length === 0, complaints[0]);
 
-  const playing = await page.locator('.marquee .t-heading').textContent();
-  check('the rig names the capture it is playing', playing !== 'No capture installed', playing);
+  const playing = await page.getByRole('combobox', { name: 'Capture', exact: true }).inputValue();
+  check('the selector identifies the capture it is playing', playing.length > 0, playing);
 
   // Ground truth, straight from the worklet: the model is loaded and the
   // processor is running it. Without this, "there is sound" proves nothing —
   // a failed load passes the dry signal through and the meters still move.
-  const running = await page.locator('.marquee').getAttribute('data-capture');
+  const running = await page.locator('.capture-info').getAttribute('data-capture');
   check('the worklet confirms the capture is running', running === 'loaded', running);
 }
 
@@ -182,17 +182,15 @@ const levels = await page.evaluate(async () => {
   const bar = (sel) => document.querySelector(`${sel} .meter rect:last-child`);
   const until = performance.now() + 20_000;
   while (performance.now() < until) {
-    for (const el of document.querySelectorAll('.cord')) {
-      cord = Math.max(cord, Number(getComputedStyle(el).opacity));
-    }
-    input = Math.max(input, Number(bar('.strand > section:first-child')?.getAttribute('height') ?? 0));
-    output = Math.max(output, Number(bar('.strand > section:last-child')?.getAttribute('height') ?? 0));
+    cord = Math.max(cord, Number(document.querySelector('.amp-head')?.style.getPropertyValue('--energy') ?? 0));
+    input = Math.max(input, Number(bar('.global-controls > .io-control:first-child')?.getAttribute('height') ?? 0));
+    output = Math.max(output, Number(bar('.output-control')?.getAttribute('height') ?? 0));
     if (cord > 0.2 && input > 1 && output > 1) break;
     await new Promise((r) => setTimeout(r, 50));
   }
   return { cord, input, output };
 });
-check('signal reaches the cord', levels.cord > 0.2, `peak opacity ${levels.cord.toFixed(2)} of 1.00`);
+check('signal illuminates the glass', levels.cord > 0.2, `peak illumination ${levels.cord.toFixed(2)} of 1.00`);
 check('signal reaches the input meter', levels.input > 1, `peak height ${levels.input.toFixed(0)} of 96`);
 check('signal reaches the output meter', levels.output > 1, `peak height ${levels.output.toFixed(0)} of 96`);
 
@@ -214,8 +212,8 @@ const meterPeak = (which, ms) => page.evaluate(async ([sel, d]) => {
   }
   return peak;
 }, [which === 'in'
-  ? '.strand > section:first-child .meter rect:last-child'
-  : '.strand > section:last-child .meter rect:last-child', ms]);
+  ? '.global-controls > .io-control:first-child .meter rect:last-child'
+  : '.output-control .meter rect:last-child', ms]);
 
 await page.locator('button.chain').click();
 // Past the reverb tail, which is 1.3 s and legitimately still ringing.
@@ -230,7 +228,7 @@ const backIn = await page.evaluate(async () => {
   let peak = 0;
   const until = performance.now() + 20_000;
   while (performance.now() < until && peak <= 1) {
-    const bar = document.querySelector('.strand > section:first-child .meter rect:last-child');
+    const bar = document.querySelector('.global-controls > .io-control:first-child .meter rect:last-child');
     peak = Math.max(peak, Number(bar?.getAttribute('height') ?? 0));
     await new Promise((r) => setTimeout(r, 50));
   }
@@ -239,26 +237,26 @@ const backIn = await page.evaluate(async () => {
 check('switching it back on reopens the input', backIn > 1, `in ${backIn} of 96`);
 
 // The faders drive the engine.
-const fader = page.locator('.track').first();
+const fader = page.locator('input[type=range]').first();
 await fader.scrollIntoViewIfNeeded();
 const box = await fader.boundingBox();
 await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 await page.mouse.down();
-await page.mouse.move(box.x + box.width / 2, box.y + 4, { steps: 6 });
+await page.mouse.move(box.x + box.width - 4, box.y + box.height / 2, { steps: 6 });
 await page.mouse.up();
-ok('a fader takes a drag');
+ok('a knob takes a drag');
 
 // Changing capture and cabinet, the two real tone choices. Found by their
 // labels: how many selects the page has depends on the machine — an output
 // selector appears when there is more than one output to choose from.
-const capture = page.locator('label.field', { hasText: 'Capture' }).locator('select');
+const capture = page.getByRole('combobox', { name: 'Capture', exact: true });
 const options = await capture.locator('option').allTextContents();
 if (options.length > 1) {
   await capture.selectOption({ index: 1 });
   await page.waitForTimeout(2000);
   ok('the capture can be changed while playing');
 }
-await page.locator('label.field', { hasText: 'Cabinet' }).locator('select').selectOption({ index: 1 });
+await page.getByRole('combobox', { name: 'Cabinet', exact: true }).selectOption({ index: 1 });
 await page.waitForTimeout(500);
 ok('the cabinet can be changed while playing');
 
@@ -289,7 +287,7 @@ async function peakOver(ms) {
     let peak = 0;
     const until = performance.now() + duration;
     while (performance.now() < until) {
-      const bar = document.querySelector('.strand > section:last-child .meter rect:last-child');
+      const bar = document.querySelector('.output-control .meter rect:last-child');
       peak = Math.max(peak, Number(bar?.getAttribute('height') ?? 0));
       await new Promise((r) => setTimeout(r, 50));
     }
@@ -297,9 +295,9 @@ async function peakOver(ms) {
   }, ms);
 }
 
-/** End sets a fader to its minimum. */
+/** Native range Home sets a knob to its minimum. */
 async function press(label, key) {
-  const fader = page.locator(`[role=slider][aria-label="${label}"]`);
+  const fader = page.locator(`input[type=range][aria-label="${label}"]`);
   await fader.scrollIntoViewIfNeeded();
   await fader.focus();
   await fader.press(key);
@@ -312,7 +310,7 @@ async function press(label, key) {
  * measurement running at +6 dB of master and +14 dB of bass.
  */
 async function reset(label) {
-  const fader = page.locator(`[role=slider][aria-label="${label}"]`);
+  const fader = page.locator(`input[type=range][aria-label="${label}"]`);
   await fader.scrollIntoViewIfNeeded();
   await fader.dblclick();
   await page.waitForTimeout(600);
@@ -322,7 +320,7 @@ const flat = await peakOver(2500);
 
 // The test take is an 82 Hz note: a -14 dB shelf at 110 Hz takes its
 // fundamental with it, so the post-cabinet correction has to show up here.
-await press('Bass', 'End');
+await press('Bass', 'Home');
 const cut = await peakOver(2500);
 await reset('Bass');
 check('the tone stage reaches the audio', flat - cut > 2,
@@ -331,15 +329,15 @@ check('the tone stage reaches the audio', flat - cut > 2,
 // Relative, not an absolute floor: -40 dB off a signal that peaks around a
 // quarter of the bar still leaves a few pixels of it, and asserting on silence
 // would be asserting the meter's rounding rather than the master.
-await press('Master', 'End');
+await press('Output', 'Home');
 const quiet = await peakOver(2500);
-await reset('Master');
+await reset('Output');
 check('the master reaches the audio', flat - quiet > 10,
   `${flat.toFixed(0)} at -12.4 dB, ${quiet.toFixed(0)} at -40 dB, of 96`);
 
 // The take that ships. Someone with no guitar and no interface has to be able
 // to hear what this does, so it has to actually load and play.
-await page.locator('button.demo').click();
+await page.locator('.transport button.demo').click();
 // The waveform is already on screen from the previous take, so wait for the
 // name to change rather than for an element that never went away.
 await page.locator('.transport .name', { hasText: 'Demo take' }).waitFor({ timeout: 20_000 });
@@ -362,7 +360,7 @@ const integrate = (ms) => page.evaluate(async (d) => {
   let sum = 0, n = 0;
   const until = performance.now() + d;
   while (performance.now() < until) {
-    const bar = document.querySelector('.strand > section:last-child .meter rect:last-child');
+    const bar = document.querySelector('.output-control .meter rect:last-child');
     // Inverts the meter's own min(1, sqrt(level) * 1.4) scaling.
     sum += Math.pow(Number(bar?.getAttribute('height') ?? 0) / 96 / 1.4, 2);
     n++;
@@ -413,23 +411,23 @@ check('the A/B is level-matched, so it compares tone', Math.abs(offset) < 1.5,
  * goes. If they push the strand around, the interface feels unstable at exactly
  * the moment it is trying to tell somebody something.
  */
-const before = await page.locator('.strand').boundingBox();
+const before = await page.locator('.amp-head').boundingBox();
 // Written into the slot the rig keeps for it, which is what happens at runtime.
 // Appending a second element would be testing a case the product never makes.
 await page.evaluate(() => {
-  const notice = document.querySelector('.marquee .notice');
+  const notice = document.querySelector('.workspace .notice');
   notice.textContent = 'A notice appearing while playing, two lines long, about '
     + 'the take currently on screen and what to do about it.';
 });
 await page.waitForTimeout(300);
-const after = await page.locator('.strand').boundingBox();
+const after = await page.locator('.amp-head').boundingBox();
 const moved = Math.abs(after.y - before.y);
 check('a notice does not move the rig', moved < 1, `${moved.toFixed(1)} px`);
 check('and the rig keeps a place for it whether or not there is one',
-  (await page.locator('.marquee .notice').count()) === 1);
+  (await page.locator('.workspace .notice').count()) === 1);
 
 // FR-18: the limiter has no control anywhere, in any mode, on any path.
-const bypasses = await page.locator('.strand button[aria-label^="Bypass"]').allTextContents();
+const bypasses = await page.locator('.amp-panel button[aria-pressed]').allTextContents();
 // The same A/B from the keyboard, which is what makes it usable more than twice.
 await monitor('Amp');
 const beforeKey = await page.locator('button.chain').getAttribute('aria-pressed');
@@ -466,14 +464,14 @@ await demoPage.addInitScript(() => {
 const demoErrors = [];
 demoPage.on('pageerror', (e) => demoErrors.push(String(e)));
 await demoPage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
-await demoPage.locator('.choice', { hasText: 'Just let me hear it' }).click();
+await demoPage.locator('.session-bar .demo').click();
 await demoPage.waitForSelector('.wave svg', { timeout: 40_000 });
 await demoPage.waitForTimeout(2500);
 
 const asked = await demoPage.evaluate(() => window.__mic);
 check('the demo path never asks for a microphone', asked === 0, `${asked} request(s)`);
 check('and the take is loaded and waiting, not playing at you',
-  (await demoPage.locator('.marquee').getAttribute('data-capture')) === 'loaded' &&
+  (await demoPage.locator('.capture-info').getAttribute('data-capture')) === 'loaded' &&
   (await demoPage.locator('.transport button.start').innerText()) === 'Play');
 // The chain is what you hear first; turning it off is the deliberate act.
 check('and the chain is on by default',
@@ -485,7 +483,7 @@ const demoLevel = await demoPage.evaluate(async () => {
   let peak = 0;
   const until = performance.now() + 8000;
   while (performance.now() < until && peak <= 1) {
-    const bar = document.querySelector('.strand > section:last-child .meter rect:last-child');
+    const bar = document.querySelector('.output-control .meter rect:last-child');
     peak = Math.max(peak, Number(bar?.getAttribute('height') ?? 0));
     await new Promise((r) => setTimeout(r, 40));
   }

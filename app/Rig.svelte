@@ -1,55 +1,52 @@
 <script lang="ts">
-  /**
-   * The rig.
-   *
-   * The chain *is* the interface (DESIGN.md section 4): the signal path runs
-   * left to right in the order the audio travels, and there is no navigation,
-   * no sidebar and no tabs. The page is the rig.
-   *
-   * What it says about the sound it makes: a NAM capture is a frozen snapshot
-   * of one amplifier at one setting, so the amp module has no gain and no EQ —
-   * they are baked into the capture and cannot be driven. The capture and the
-   * cabinet are the two real tone choices, which is why they sit *in* their
-   * modules rather than in a settings panel. Everything else sets what we send
-   * into the model and what we do with what comes back.
-   *
-   * The round trip is always on screen because FR-35 requires it. A hardware
-   * diagnosis, a dropout count and an error appear only when there is one — the
-   * product's voice is to state what happened and otherwise stay quiet.
-   */
+  // Studio shell owns audio state; amplifier materials are scoped to its head.
   import { Engine, EngineError, readCatalog, type Meters,
            type InputChannel, type InputDevice, type OutputDevice, type Source } from '../engine/engine.ts';
+  import { openInput } from '../engine/input.ts';
   import { CABS } from '../engine/ir.ts';
   import { judgeDropouts } from '../engine/diagnosis.ts';
   import type { Capture } from '../engine/catalog.ts';
   import { PARAMS, STAGES, type Param } from '../schema/params.ts';
   import { PRESETS, DEFAULT_PRESET, type Preset } from './presets.ts';
-  import Fader from './Fader.svelte';
-  import Module from './Module.svelte';
+  import Knob from './Knob.svelte';
   import Meter from './Meter.svelte';
   import Segmented from './Segmented.svelte';
   import Waveform from './Waveform.svelte';
   import './tokens.css';
 
+  let settingsDialog = $state<HTMLDialogElement | null>(null);
+  let detecting = $state(false);
+  let settingsError = $state('');
+
+  async function detectInputs(): Promise<void> {
+    if (detecting || state === 'starting') return;
+    detecting = true;
+    settingsError = '';
+    let stream: MediaStream | undefined;
+    try {
+      if (state !== 'running' || source !== 'live' || direct) {
+        stream = await openInput(navigator.mediaDevices);
+        channelCount = stream.getAudioTracks()[0]?.getSettings().channelCount ?? 1;
+      }
+      const detector = engine ?? new Engine();
+      devices = await detector.listInputs();
+      outputs = await detector.listOutputs();
+    } catch (error) {
+      settingsError = error instanceof Error ? error.message : 'Unable to detect audio inputs.';
+    } finally {
+      stream?.getTracks().forEach(track => track.stop());
+      detecting = false;
+    }
+  }
+
+  function openSettings(): void {
+    settingsDialog?.showModal();
+    void detectInputs();
+  }
+
   type State = 'idle' | 'starting' | 'running' | 'failed';
 
   const param = (id: string): Param => PARAMS.find((p) => p.id === id)!;
-
-  /**
-   * The strand, in signal order. The amp and the cab carry no fader at all:
-   * their control is which capture and which cabinet, and inventing a knob that
-   * did nothing would be a lie about what a capture is.
-   */
-  const STRAND: readonly { stage: string; faders: readonly string[] }[] = [
-    { stage: 'input', faders: ['in_trim'] },
-    { stage: 'gate', faders: ['gate_threshold'] },
-    { stage: 'drive', faders: ['drive_gain', 'drive_tone'] },
-    { stage: 'amp', faders: [] },
-    { stage: 'cab', faders: [] },
-    { stage: 'tone', faders: ['tone_bass', 'tone_mid', 'tone_treble', 'tone_presence'] },
-    { stage: 'reverb', faders: ['reverb_mix'] },
-    { stage: 'output', faders: ['out_master'] },
-  ];
 
   const SOURCES = [
     { value: 'live', label: 'Live' },
@@ -105,7 +102,7 @@
   let dropoutWarning = $state<string | null>(null);
   const dropoutLog: { t: number; n: number }[] = [];
   /** The opening sheet. Dismissible: looking around is never blocked. */
-  let asking = $state(true);
+  let asking = $state(false);
   let notice = $state<string | null>(null);
   /**
    * Whether the worklet has confirmed the capture is loaded and processing.
@@ -159,30 +156,13 @@
 
   const capture = $derived(captures.find((c) => c.file === captureFile) ?? null);
   const cabInfo = $derived(CABS.find((c) => c.id === cab) ?? CABS[0]!);
-  const labelOf = (id: string): string => STAGES.find((s) => s.id === id)?.label ?? id;
-  const bypassOf = (id: string): string | null =>
-    STAGES.find((s) => s.id === id)?.bypassParam ?? null;
-
-  /**
-   * The cord (DESIGN.md section 5). Its opacity per segment is the amplitude at
-   * that point in the chain, so a pick attack is visible travelling along it and
-   * "no signal is reaching the amp" is obvious rather than deduced.
-   *
-   * Past the amp there is one measurement, taken at the very end: the captures
-   * run inside a worklet that reports nothing of its own, and adding a meter
-   * between every node would cost more than it tells anybody.
-   */
   const level = (v: number): number => Math.min(1, Math.sqrt(Math.max(0, v)) * 1.6);
-  const cordLevels = $derived([
-    level(meters.input),                       // in -> gate
-    level(meters.input * meters.gate),         // gate -> boost
-    level(meters.drive),                       // boost -> amp
-    level(meters.output),                      // amp -> cab
-    level(meters.output),                      // cab -> tone
-    level(meters.output),                      // tone -> reverb
-    level(meters.output),                      // reverb -> out
-  ]);
-  const clipping = $derived(meters.output > 0.98);
+  const isGuilt = $derived(captureFile === PRESETS[0]?.capture);
+  const light = $derived(state === 'running' && captureLoaded && !direct ? Math.max(0, Math.min(1, (20 * Math.log10(Math.max(0.0001, meters.outputRms)) + 60) / 60)) : 0);
+  function nextPreset(direction: number) {
+    const index = PRESETS.findIndex(p => p.name === preset);
+    void applyPreset(PRESETS[(index + direction + PRESETS.length) % PRESETS.length]!);
+  }
 
   // --------------------------------------------------------------------------
   // Persistence. Local only, and never a reason to fail: a private window that
@@ -492,6 +472,7 @@
   type Intent = 'play' | 'demo';
 
   async function start(intent: Intent = 'play'): Promise<void> {
+    if (state === 'starting' || state === 'running' || detecting) return;
     state = 'starting';
     problem = null;
     engine = new Engine({ onMeters, onModel, onEngineError });
@@ -511,6 +492,8 @@
       // following the input. It is set before start so the context is built
       // on it rather than moved to it.
       if (outputId !== '') await engine.useOutput(outputId);
+      if (deviceId !== '') await engine.useDevice(deviceId);
+      outputsProbed = false;
       await engine.start();
       // Anything moved before starting carries over — the rig is live-looking
       // from the first frame, so it has to be honest about what it shows.
@@ -603,7 +586,7 @@
 
 <div class="page">
   <header class="bar">
-    <span class="t-wordmark">Tonecraft</span>
+    <span class="t-wordmark">tonecraft</span>
 
     <div class="bar-right">
       {#if state === 'running'}
@@ -633,173 +616,54 @@
              informing. -->
         <span class="latency" title={latencyDetail}>{latencyMs.toFixed(1)} ms</span>
       {/if}
-      <button
-        class="start small"
-        type="button"
-        onclick={() => (state === 'running' ? stop() : start())}
-        disabled={state === 'starting'}
-      >
-        {state === 'starting' ? 'Starting' : state === 'running' ? 'Stop' : 'Start'}
+      <button class="settings-button" type="button" aria-label="Audio settings" title="Audio settings" onclick={openSettings} disabled={state === 'starting'}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m9.5 3-.6 2.2-1.7 1L5 5.6 2.5 9.9l1.6 1.6v2L2.5 15 5 19.3l2.2-.6 1.7 1 .6 2.3h5l.6-2.3 1.7-1 2.2.6 2.5-4.3-1.6-1.5v-2l1.6-1.6L19 5.6l-2.2.6-1.7-1L14.5 3z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
       </button>
     </div>
   </header>
 
-  <!-- Above the strand, only what is playing. -->
-  <div
-    class="marquee"
-    data-capture={latencyMs === null ? 'idle' : captureLoaded ? 'loaded' : 'silent'}
-  >
-    <p class="t-heading">{capture?.name ?? 'No capture installed'}</p>
-    {#if state !== 'idle' && latencyMs !== null && !captureLoaded}
-      <!-- Sound is still coming out, so nothing here can be inferred by ear. -->
-      <p class="t-small alert">This capture is not running: you are hearing your
-        dry guitar, not an amplifier. Reload the page.</p>
-    {:else}
-      <p class="t-small">{capture?.note ?? 'Run `npm run vendor` to fetch the captures.'}</p>
-    {/if}
-    <!-- Always in the layout, empty or not. A notice arrives when a take fails
-         to decode or a capture fails to load, and letting it appear from
-         nowhere pushed the whole rig down the page — the same complaint the old
-         report at the foot of the page earned. -->
-    <p class="t-small notice">{notice ?? dropoutWarning ?? ''}</p>
-    <div class="presets">
-      {#each PRESETS as p (p.name)}
-        <button
-          class="preset"
-          class:selected={preset === p.name}
-          type="button"
-          onclick={() => applyPreset(p)}
-        >{p.name}</button>
-      {/each}
+  <main class="workspace">
+    <section class="global-controls" aria-label="Global controls">
+      <div class="io-control"><Meter level={meters.input} /><Knob param={param('in_trim')} value={values.in_trim!} onchange={v => setParam('in_trim',v)} label="Input" /></div>
+      <div class="gate-control"><Knob param={param('gate_threshold')} value={values.gate_threshold!} onchange={v => setParam('gate_threshold',v)} label="Gate" /><button class="enable" aria-label="Gate enabled" aria-pressed={values.gate_bypass !== 1} onclick={() => setParam('gate_bypass',values.gate_bypass === 1 ? 0 : 1)}>{values.gate_bypass === 1 ? 'OFF' : 'ON'}</button></div>
+      <div class="rig-selectors">
+        <label class="selector"><span>AMPLIFIER</span><select aria-label="Capture" value={captureFile} onchange={e => chooseCapture(e.currentTarget.value)}>{#each captures as c}<option value={c.file}>{c.file === PRESETS[0]?.capture ? 'GUILT · Lead' : c.name}</option>{/each}</select></label>
+        <label class="selector"><span>CABINET</span><select aria-label="Cabinet" value={cab} onchange={e => chooseCab(e.currentTarget.value)}>{#each CABS as c}<option value={c.id}>{c.name}</option>{/each}</select></label>
+      </div>
+      <div class="tone-selector"><span class="eyebrow">TONE PRESET</span><div class="preset-picker"><button aria-label="Previous preset" onclick={() => nextPreset(-1)}>‹</button><select aria-label="Tone preset" value={preset ?? ''} onchange={e => { const p = PRESETS.find(p => p.name === e.currentTarget.value); if(p) void applyPreset(p); }}><option value="" disabled>Custom tone</option>{#each PRESETS as p}<option value={p.name}>{p.name}</option>{/each}</select><button aria-label="Next preset" onclick={() => nextPreset(1)}>›</button></div></div>
+      <div class="io-control output-control"><Knob param={param('out_master')} value={values.out_master!} onchange={v => setParam('out_master',v)} label="Output" /><Meter level={meters.outputRms} /></div>
+    </section>
+
+    <section class="amp-head" class:guilt={isGuilt} class:bypassed={direct} aria-label={isGuilt ? 'GUILT amplifier' : 'Tonecraft amplifier'} style={`--energy:${light}`}>
+      <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+      <div class="glass-window">
+        {#if isGuilt}<img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.png`} alt="Purple Gothic stained glass with a central rose window" style={`filter:brightness(${0.42 + light * 1.25})`} />{:else}<div class="neutral-art"><span>TC</span><small>AMPLIFICATION</small></div>{/if}
+        <div class="amp-brand"><span class="brand-rule"></span><h1>{isGuilt ? 'GUILT' : 'TONECRAFT'}</h1><span class="brand-rule"></span><p>{isGuilt ? 'LUX EX SONO' : 'FIND YOUR FREQUENCY'}</p></div>
+      </div>
+      <div class="amp-panel">
+        <div class="amp-signature"><span class="sig-symbol">✧</span><span>{isGuilt ? 'Guilt' : 'Tonecraft'}</span><small>{isGuilt ? 'LEAD AMPLIFIER' : 'CAPTURE SERIES'}</small></div>
+        <div class="control-group tone-group"><button class="group-label" aria-label="Tone enabled" aria-pressed={values.tone_bypass !== 1} onclick={() => setParam('tone_bypass',values.tone_bypass === 1 ? 0 : 1)}>TONE <span>{values.tone_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['tone_bass','tone_mid','tone_treble','tone_presence'] as id}<Knob param={param(id)} value={values[id]!} onchange={v => setParam(id,v)} />{/each}</div></div>
+        <div class="control-group"><button class="group-label" aria-label="Boost enabled" aria-pressed={values.drive_bypass !== 1} onclick={() => setParam('drive_bypass',values.drive_bypass === 1 ? 0 : 1)}>BOOST <span>{values.drive_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['drive_gain','drive_tone'] as id}<Knob param={param(id)} value={values[id]!} onchange={v => setParam(id,v)} />{/each}</div></div>
+        <div class="control-group"><button class="group-label" aria-label="Reverb enabled" aria-pressed={values.reverb_bypass !== 1} onclick={() => setParam('reverb_bypass',values.reverb_bypass === 1 ? 0 : 1)}>REVERB <span>{values.reverb_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row"><Knob param={param('reverb_mix')} value={values.reverb_mix!} onchange={v => setParam('reverb_mix',v)} /></div></div>
+        <button class="power-indicator" type="button" aria-label="Amplifier power" aria-pressed={state === 'running'} aria-busy={state === 'starting'} disabled={state === 'starting' || detecting} onclick={() => state === 'running' ? stop() : start()}><span class:lit={state === 'running'}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></span><small>POWER</small></button>
+      </div>
+    </section>
+    <div class="amp-foot"><span></span><span></span></div>
+    <div class="capture-info" data-capture={latencyMs === null ? 'idle' : captureLoaded ? 'loaded' : 'silent'}></div>
+    {#if state === 'running' && !captureLoaded}<p class="alert">This capture is not running: you are hearing your dry guitar. Reload the page.</p>{/if}
+    <p class="notice" role="status">{notice ?? dropoutWarning ?? ''}</p>
+    <section class="session-bar" aria-label="Audio session"><div class="source-block"><span class="eyebrow">AUDIO SOURCE</span><Segmented label="Source" options={SOURCES} value={source} onchange={chooseSource} /></div><button class="quiet demo" onclick={() => start('demo')} disabled={state === 'starting' || state === 'running'}>▷ Try the demo</button><button class="connect" onclick={() => state === 'running' ? stop() : start(source === 'file' ? 'demo' : 'play')} disabled={state === 'starting'}>{state === 'running' ? 'Stop audio' : state === 'starting' ? 'Connecting…' : 'Connect audio'} <span>↗</span></button></section>
+
+  </main>
+
+  <dialog class="audio-settings" bind:this={settingsDialog} aria-labelledby="audio-settings-title">
+    <div class="settings-heading"><h2 id="audio-settings-title">Audio settings</h2><button class="settings-button" aria-label="Close settings" onclick={() => settingsDialog?.close()}>×</button></div>
+    <button class="start small" disabled={detecting || state === 'starting'} onclick={detectInputs}>{detecting ? 'Detecting inputs…' : 'Detect audio inputs'}</button>
+    <div aria-busy={detecting}>
+    <div class="device-controls">{#if devices.length > 0}<label class="field"><span class="t-small">Input device</span><select disabled={detecting} value={deviceId} onchange={e => chooseDevice(e.currentTarget.value)}><option value="">Default input</option>{#each devices as d}<option value={d.id}>{d.label || 'Input'}</option>{/each}</select></label>{/if}{#if channelCount > 1}<Segmented label="Input channel" options={CHANNELS} value={channel} onchange={chooseChannel}/><div class="levels">{#each meters.channelPeaks as peak}<span class="level"><span class="level-fill" style={`transform:scaleX(${level(peak)})`}></span></span>{/each}</div>{/if}{#if outputs.length > 1}<label class="field"><span class="t-small">Output device</span><select value={outputId} onfocus={() => void probeOutputs()} onchange={e => chooseOutput(e.currentTarget.value)}><option value="">Same as input</option>{#each outputs as d}<option value={d.id}>{d.label || 'Output'}{d.outputMs === undefined ? '' : ` — ${d.outputMs.toFixed(0)} ms`}</option>{/each}</select></label>{/if}</div>
     </div>
-  </div>
-
-  <!-- With the chain off, nothing in the strand is reaching the ears. Saying so
-       with the same 40% the bypassed modules use, rather than leaving a live
-       looking rig that is doing nothing. -->
-  <div class="strand" class:idle={direct}>
-    {#each STRAND as block, i (block.stage)}
-      {#if i > 0}
-        <span
-          class="cord"
-          class:clip={clipping && i > 3}
-          style="opacity: {0.12 + 0.88 * (cordLevels[i - 1] ?? 0)}"
-          aria-hidden="true"
-        ></span>
-      {/if}
-      {@const bypass = bypassOf(block.stage)}
-      <Module
-        name={labelOf(block.stage)}
-        bypassed={bypass !== null && values[bypass] === 1}
-        onbypass={bypass === null ? undefined : (b) => setParam(bypass, b ? 1 : 0)}
-      >
-        {#if block.stage === 'input'}
-          <Meter level={meters.input} />
-        {:else if block.stage === 'output'}
-          <Meter level={meters.outputRms} />
-        {/if}
-
-        {#each block.faders as id (id)}
-          <Fader
-            param={param(id)}
-            value={values[id] ?? param(id).default}
-            onchange={(v) => setParam(id, v)}
-          />
-        {/each}
-
-        {#if block.stage === 'amp'}
-          <!-- A capture is a frozen snapshot: there is nothing to turn. -->
-          <p class="fixed t-small">Captured, not modelled. The amp's own controls are in the file.</p>
-        {:else if block.stage === 'cab'}
-          <p class="fixed t-small">{cabInfo.hint}</p>
-        {/if}
-
-        {#snippet footer()}
-          {#if block.stage === 'input'}
-            <Segmented label="Source" options={SOURCES} value={source} onchange={chooseSource} />
-            {#if source === 'live' && state === 'running'}
-              {#if devices.length > 1}
-                <label class="field">
-                  <span class="t-small">Input</span>
-                  <select value={deviceId} onchange={(e) => chooseDevice(e.currentTarget.value)}>
-                    {#each devices as d (d.id)}
-                      <option value={d.id}>{d.label || 'Input'}</option>
-                    {/each}
-                  </select>
-                </label>
-              {/if}
-              {#if channelCount > 1}
-                <Segmented
-                  label="Input channel"
-                  options={CHANNELS}
-                  value={channel}
-                  onchange={chooseChannel}
-                />
-                <!-- Play, and the bar that moves is the channel your guitar is
-                     on. Choosing an input is guesswork without this. -->
-                <div class="levels" aria-hidden="true">
-                  {#each meters.channelPeaks as peak, c (c)}
-                    <span class="level">
-                      <span class="level-fill" style="transform: scaleX({level(peak)})"></span>
-                    </span>
-                  {/each}
-                </div>
-              {:else}
-                <p class="t-small">One channel, so there is nothing to choose.</p>
-              {/if}
-            {/if}
-          {:else if block.stage === 'amp'}
-            <label class="field">
-              <span class="t-small">Capture</span>
-              <select value={captureFile} onchange={(e) => chooseCapture(e.currentTarget.value)}>
-                {#each captures as c (c.file)}
-                  <option value={c.file}>{c.name}</option>
-                {/each}
-              </select>
-            </label>
-          {:else if block.stage === 'cab'}
-            <label class="field">
-              <span class="t-small">Cabinet</span>
-              <select value={cab} onchange={(e) => chooseCab(e.currentTarget.value)}>
-                {#each CABS as c (c.id)}
-                  <option value={c.id}>{c.name}</option>
-                {/each}
-              </select>
-            </label>
-          {:else if block.stage === 'output' && state === 'running' && outputs.length > 1}
-            <!-- Where the sound comes out. It follows the input by default,
-                 because the headphones are in the interface, not the laptop;
-                 the choice is here for the player whose setup says otherwise.
-
-                 Each device carries what it costs on the way out, measured.
-                 That is not decoration: the output buffer is around 32 of a
-                 35 ms round trip, the chain itself adds a tenth of one, and
-                 nothing else here can move the number. So this selector is
-                 the latency control, and a list of bare names gave the player
-                 no way to know it. -->
-            <label class="field">
-              <span class="t-small">Output</span>
-              <select
-                value={outputId}
-                onfocus={() => void probeOutputs()}
-                onpointerdown={() => void probeOutputs()}
-                onchange={(e) => chooseOutput(e.currentTarget.value)}
-              >
-                <option value="">Same as input</option>
-                {#each outputs as d (d.id)}
-                  <option value={d.id}>
-                    {d.label || 'Output'}{d.outputMs === undefined
-                      ? ''
-                      : ` — ${d.outputMs.toFixed(0)} ms`}
-                  </option>
-                {/each}
-              </select>
-            </label>
-          {/if}
-        {/snippet}
-      </Module>
-    {/each}
-  </div>
+    {#if settingsError}<p class="failure" role="alert">{settingsError}</p>{/if}
+  </dialog>
 
   {#if source === 'file'}
     <!-- Below the strand, and only when it is the source. A DI take through the
@@ -941,45 +805,6 @@
     color: var(--graphite);
   }
 
-  /* Above the strand, the preset and nothing else. */
-  .marquee {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--u);
-    text-align: center;
-  }
-  .marquee p { margin: 0; max-width: 52ch; }
-
-  .presets { display: flex; flex-wrap: wrap; gap: var(--u); justify-content: center; }
-  .preset {
-    font-family: var(--body);
-    font-size: 13px;
-    min-height: 32px;
-    padding: 0 var(--u);
-    background: none;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    color: var(--graphite);
-    cursor: pointer;
-  }
-  .preset:hover { color: var(--ink); }
-  .preset.selected { color: var(--ink); border-bottom-color: var(--ink); }
-  .preset:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
-
-  /* The chain, vertically centred in roughly the middle third. The emptiness is
-     the point: this is a product about not having a cluttered plugin window. */
-  .strand {
-    align-self: center;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-wrap: wrap;
-    transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1);
-  }
-
-  .strand.idle { opacity: 0.4; }
-
   /* One target, hit as often as you like. The dot carries the state — the same
      idiom as a module's bypass — and the label says what you are hearing. */
   .chain {
@@ -1016,24 +841,6 @@
   .chain-label > * { grid-area: 1 / 1; }
   .chain-ghost { visibility: hidden; }
 
-  /* The strand is joined by a hairline that carries the signal (UX-DR10). Only
-     opacity animates, so it composites and costs the CPU nothing. */
-  .cord {
-    width: calc(var(--u) * 3);
-    height: 1px;
-    background: var(--celadon);
-    flex: 0 0 auto;
-    transition: opacity 80ms linear;
-  }
-  .cord.clip { background: var(--ember); }
-
-  @media (prefers-reduced-motion: reduce) {
-    /* A steady average rather than transients. */
-    .cord { transition: opacity 600ms linear; }
-  }
-
-  .fixed { margin: 0; max-width: 22ch; }
-
   .file {
     display: flex;
     flex-direction: column;
@@ -1065,8 +872,7 @@
   .check { display: flex; align-items: center; gap: 4px; }
   .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* The rig stays visible underneath. A wash rather than a blur: DESIGN.md
-     forbids backdrop-filter, and only transform and opacity may animate. */
+  /* Audio connection choices and errors. */
   .wash {
     position: fixed;
     inset: 0;
@@ -1125,7 +931,7 @@
     color: var(--ink);
     cursor: pointer;
   }
-  .choice:hover { background: rgba(143, 176, 154, 0.12); }
+  .choice:hover { background: rgba(255, 255, 255, 0.08); }
   .choice:disabled { opacity: 0.4; cursor: default; }
   .choice:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
@@ -1217,27 +1023,11 @@
   }
   select:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
-  /* The chain wraps rather than scrolls, still in order (UX-DR11). Two things
-     the wrap has to get right, and neither is automatic:
+  .page{display:flex;flex-direction:column;gap:0;padding:0 48px 28px;max-width:1600px;margin:auto;min-height:100svh}.bar{height:94px;align-items:center}.t-wordmark{font-size:22px;text-transform:lowercase;letter-spacing:-1px;font-weight:600}.workspace{width:100%;max-width:1180px;margin:36px auto 0}.workspace-heading,.amp-caption,.capture-info,.page-footer{display:flex;justify-content:space-between;gap:16px;font:9px var(--mono);letter-spacing:1.5px;color:#8f8f8f}.workspace-heading{margin-bottom:20px}.edition{color:#c1c1c1}.edition span{color:#6f6f6f}.global-controls{display:grid;grid-template-columns:100px 90px minmax(180px,1fr) minmax(210px,1.2fr) 110px;align-items:center;gap:24px;padding:26px 24px;background:#242424;border:1px solid #3b3b3b;border-radius:8px}.io-control{display:flex;align-items:center;gap:12px}.gate-control{position:relative}.gate-control .enable{bottom:-15px;right:calc(50% - 14px);padding:3px 8px}.enable{position:absolute;right:-2px;bottom:0;background:none;border:0;color:#b7b7b7;font:8px var(--mono);cursor:pointer}.rig-selectors{border-left:1px solid #404040;padding-left:26px;display:grid;gap:16px}.selector{display:flex;flex-direction:column;gap:3px;min-width:0}.selector>span,.eyebrow{font:9px var(--mono);letter-spacing:1.6px;color:#999999}.selector select{width:100%;max-width:100%;min-height:26px;border:0;font-size:12px}.tone-selector{padding:0 20px;border-right:1px solid #404040;text-align:center}.preset-picker{display:flex;align-items:center;gap:8px;margin:10px 0}.preset-picker select{width:100%;max-width:none;text-align:center;background:#323232;border:1px solid #4f4f4f;border-radius:4px;padding:0 8px;font-size:14px;min-height:38px}.preset-picker button{background:none;border:0;font-size:28px;color:#b4b4b4;cursor:pointer;padding:0 3px}.preset-note{font-size:10px;color:#969696}.amp-caption{margin:28px 2px 13px;font-size:8px;letter-spacing:1.4px}.amp-caption>span:first-child{display:flex;align-items:center;gap:7px}.status-dot{width:5px;height:5px;background:#717171;border-radius:50%}.status-dot.live{background:#c0c0c0}.amp-head{margin-top:28px;position:relative;padding:17px;border:1px solid #53534f;border-radius:9px;background:repeating-linear-gradient(32deg,#262626 0 1px,#2a2a2a 1px 3px);box-shadow:0 14px 30px #0005,inset 0 1px 1px #85817a55;--knob-accent:#c5c5c5;--control-label:#b4b4b4}.amp-head.guilt{--knob-material:linear-gradient(135deg,#827187,#39333d 50%,#201d24);--knob-accent:#d2badb;--control-label:#b9adbd}.glass-window{position:relative;height:260px;background:#101010;overflow:hidden;border:2px solid #0e0e10;box-shadow:0 0 0 1px #55505b}.glass-window img{width:100%;height:100%;object-fit:cover;transition:filter 90ms linear}.glass-window:after{content:'';position:absolute;inset:0;box-shadow:inset 0 0 35px 12px #08080bd9;background:linear-gradient(0deg,#09080bb0,transparent 65%);pointer-events:none}.amp-brand{position:absolute;z-index:1;bottom:24px;left:0;right:0;text-align:center;display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;color:#e4d4e8;text-shadow:0 2px 8px #000}.amp-brand h1{font:38px Georgia,serif;letter-spacing:12px;margin:0 -12px 0 0}.brand-rule{height:1px;width:42px;background:#ad96b777}.amp-brand p{flex-basis:100%;font:7px var(--mono);letter-spacing:4px;margin:-6px 0 0}.amp-panel{display:flex;align-items:center;justify-content:space-around;gap:20px;padding:22px 20px 20px;background:linear-gradient(110deg,#313131,#232323);border:1px solid #565656;border-top:1px solid #777269}.guilt .amp-panel{background:linear-gradient(110deg,#322f34,#29262d 60%,#252329);border-color:#514852;border-top-color:#7b687e}.control-group{position:relative;border-left:1px solid #69616a55;padding-left:20px}.group-label{display:block;margin:0 auto 14px;font:8px var(--mono);letter-spacing:2px;color:#bcb2c0;background:none;border:0;cursor:pointer}.group-label span{font-size:7px;margin-left:5px;color:var(--knob-accent)}.group-label[aria-pressed=false]{opacity:.45}.knob-row{display:flex;gap:16px}.amp-signature{display:flex;flex-direction:column;align-items:center;gap:8px;min-width:110px;color:#c6b9cb}.amp-signature>span:not(.sig-symbol){font:italic 25px Georgia,serif}.sig-symbol{font-size:32px}.amp-signature small{font:6px var(--mono);letter-spacing:2px}.power-indicator{display:flex;flex-direction:column;align-items:center;gap:15px}.power-indicator>span{width:8px;height:8px;border-radius:50%;background:#5f5163;border:3px solid #252227;box-shadow:0 0 0 1px #75677b}.power-indicator>span.lit{background:#ddbae9;box-shadow:0 0 12px #c47adf}.power-indicator small{font:7px var(--mono);color:#b2aab7;letter-spacing:1px}.screw{position:absolute;width:5px;height:5px;background:linear-gradient(135deg,#777,#222 45%,#999 50%,#333 60%);border-radius:50%}.tl{top:6px;left:7px}.tr{top:6px;right:7px}.bl{bottom:6px;left:7px}.br{bottom:6px;right:7px}.amp-foot{display:flex;justify-content:space-between;margin:0 50px}.amp-foot span{width:65px;height:9px;background:#0f0f0f;border-radius:0 0 3px 3px}.capture-info{margin:0 0 24px;font-size:8px;letter-spacing:.4px}.capture-info>span:last-child{color:#7b7b7b;font-size:7px;letter-spacing:1px}.session-bar{display:flex;align-items:center;gap:24px;border:1px solid #3c3c3c;border-radius:6px;padding:19px 22px;background:#252525}.source-block{display:flex;flex-direction:column;gap:9px}.session-message{display:flex;flex:1;flex-direction:column;gap:6px;border-left:1px solid #414141;padding-left:24px}.session-message strong{font-size:13px;font-weight:500}.session-message>span{font-size:11px;color:#9c9c9c}.connect{padding:12px 18px;background:#c5c5c5;border:1px solid #d0d0d0;border-radius:4px;font-size:12px;color:#272727;cursor:pointer}.connect span{margin-left:20px}.connect:disabled{opacity:.5}.session-bar .demo{margin-left:auto;border:0;font-size:11px}.device-controls{display:flex;gap:24px;margin-top:18px;flex-wrap:wrap}.device-controls .levels{width:80px;align-items:center}.page-footer{margin-top:auto;padding:28px 0 22px;font-size:8px;letter-spacing:1px}.page-footer>span:last-child{color:#a5a5a5}.page-footer>span:last-child span{padding:0 8px;color:#636363}.file{margin:22px auto 0}.wash{background:#0f0f0fcc;z-index:10}.sheet{border:1px solid #555555;border-radius:8px}.notice{min-height:0;color:var(--ember);margin:10px 0}.alert{color:var(--ember);font-size:13px}.neutral-art{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:repeating-linear-gradient(0deg,#1b1b1b 0 2px,#2e2e2e 2px 3px);color:#848484}.neutral-art>span{font-size:80px;letter-spacing:-15px;font-weight:800;opacity:.35}.neutral-art small{font-size:8px;letter-spacing:6px}.neutral-art+.amp-brand h1{font:22px var(--body);letter-spacing:7px}.bypassed .glass-window{opacity:.5}:global(select option){background:#2c2c2c;color:#e4e4e4}:global(button:focus-visible){outline:2px solid var(--iris);outline-offset:4px}
+  @media(min-width:1500px){.glass-window{height:310px}.workspace{margin-top:48px}}
+  @media(max-width:1100px){.page{padding:0 24px}.global-controls{gap:14px;padding:22px 16px;grid-template-columns:85px 65px 1fr 1fr 90px}.rig-selectors{padding-left:16px}.tone-selector{padding:0 10px}.amp-panel{gap:10px;padding:20px 12px}.amp-signature{min-width:70px}.control-group{padding-left:12px}.knob-row{gap:5px}.power-indicator{display:flex}.session-bar{gap:15px}.session-message{padding-left:15px}}
+  @media(max-width:760px){.page{padding:0 16px}.bar{height:76px}.t-wordmark{font-size:20px}.bar-right{gap:10px}.workspace{margin-top:24px}.edition{display:none}.global-controls{grid-template-columns:1fr 1fr 1fr;gap:22px}.io-control{justify-content:center}.output-control{grid-column:3;grid-row:1}.gate-control{display:flex;justify-content:center}.enable{right:5px}.rig-selectors{grid-column:1/3;grid-row:2;padding:0;border:0}.tone-selector{grid-column:3;grid-row:2;padding:0;border:0;min-width:0}.preset-picker{gap:0}.preset-picker select{font-size:12px;min-width:0}.preset-note{display:none}.glass-window{height:210px}.amp-head{padding:12px}.amp-panel{flex-wrap:wrap;padding:18px 10px;gap:22px 12px}.amp-signature{display:none}.tone-group{flex-basis:100%;border:0;padding:0}.knob-row{justify-content:space-evenly;gap:15px}.control-group{border:0;padding:0}.amp-brand h1{font-size:30px}.capture-info{line-height:1.6}.capture-info>span:last-child{display:none}.session-bar{flex-wrap:wrap;padding:16px}.session-message{flex:1;min-width:130px}.session-message>span{line-height:1.6}.connect{margin-left:auto}.page-footer{font-size:6px}.amp-caption{font-size:7px;letter-spacing:.6px}.chain-label{letter-spacing:0;font-size:9px}.bar .start{font-size:11px;padding:0 10px}}
+  @media(prefers-reduced-motion:reduce){.glass-window img{transition:none;filter:brightness(.65)!important}}
 
-     - a wrapped strand must not leave a cord pointing at nothing, so the cords
-       go once the row can break;
-     - left alone, flex fits as many as it can and drops the remainder, which at
-       a 1440px laptop — the commonest size there is — put seven modules on one
-       row and left Out orphaned underneath. Capping the width forces the break
-       near the middle instead.
-
-     The single-row threshold is where eight modules stop fitting; it moved up
-     from 1100px when the amp and cab gained their selectors. */
-  @media (max-width: 1599px) {
-    .strand {
-      gap: calc(var(--u) * 2);
-      max-width: 900px;
-    }
-    .cord { display: none; }
-  }
-
-  @media (max-width: 950px) {
-    .strand { max-width: 100%; }
-  }
+  .settings-button{display:grid;place-items:center;width:40px;height:40px;padding:8px;border:0;background:none;color:var(--ink);cursor:pointer;border-radius:4px;font-size:26px}.settings-button:hover{background:#252525}.audio-settings{width:min(440px,calc(100vw - 64px));padding:24px;color:var(--ink);background:#171717;border:1px solid #444;border-radius:8px}.audio-settings::backdrop{background:#000a}.settings-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}.settings-heading h2{margin:0;font-size:18px;font-weight:500}.audio-settings .device-controls{flex-direction:column;gap:18px}.audio-settings select{max-width:100%;width:100%}.audio-settings .failure{margin-top:20px}.power-indicator{border:0;background:none;cursor:pointer;color:#bab0bf;padding:8px;min-width:44px}.power-indicator>span{width:28px;height:28px;display:grid;place-items:center;background:#29252d}.power-indicator>span.lit{color:#fff;background:#66536f}.power-indicator:disabled{opacity:.5;cursor:wait}
 </style>

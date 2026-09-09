@@ -1,23 +1,15 @@
-/**
- * The design tokens. DESIGN.md is the source of truth; nothing here invents a
- * value, and no component may hardcode one (UX-DR1).
- *
- * Light only. DESIGN.md section 2 puts dark mode in v1.1, and says why: doing
- * it properly means re-deriving the whole system, and a half-inverted palette
- * looks worse than none.
- */
-
+/* Tonecraft studio shell. Amplifier-specific materials stay inside the amp head. */
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 
-  /* Six tokens, no more. No gradients, no glass, no glow. */
-  --ink: #16181b;      /* all text, hairlines, fader caps. Cool near-black. */
-  --chalk: #e7e8e2;    /* page. Cool grey-green paper, deliberately not cream. */
-  --bone: #f4f4f0;     /* raised surfaces: module cards, sheets. */
-  --graphite: #767a78; /* secondary text, inactive labels, disabled. */
-  --celadon: #8fb09a;  /* the only accent. Active state, signal, the cord. */
-  --iris: #4a46d9;     /* focus rings and keyboard navigation only. */
-  --ember: #b24a34;    /* clipping and destructive confirmation only. */
+  /* Studio palette. */
+  --ink: #e4e4e4;      /* Primary text and controls. */
+  --chalk: #080808;    /* Black studio background. */
+  --bone: #2b2b2b;     /* raised surfaces: module cards, sheets. */
+  --graphite: #a0a0a0; /* secondary text, inactive labels, disabled. */
+  --celadon: #c4c4c4;  /* the only accent. Active state, signal, the cord. */
+  --iris: #cfcfcf;     /* focus rings and keyboard navigation only. */
+  --ember: #ec987f;    /* clipping and destructive confirmation only. */
 
   /* One elevation, one radius. Almost square, not sharp. */
   --radius: 2px;
