@@ -10,3 +10,5 @@ One island, one route, `client:only="svelte"`.
 - The GUILT stained-glass image comes from the supplied prototype. Its illumination uses existing output RMS meters, mapped from −60 to 0 dBFS; no microphone or second audio graph is created for visuals. Stopped, dry and unloaded states use the unlit baseline. Reduced motion keeps illumination steady.
 - `Waveform.svelte` provides file seeking; `presets.ts` pairs a capture filename, cabinet and parameter values.
 - `Fader.svelte` and `Module.svelte` are retained MVP components, no longer used by the studio layout.
+
+Welcome routes musicians directly to input settings. Testers use only the DI/file player, with no input enumeration or microphone access. Amplifier Power gates the entire output and live input through `Engine.setPowered`; it preserves the loaded DI and transport. It does not route the dry signal to the output.

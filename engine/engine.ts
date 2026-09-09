@@ -185,6 +185,7 @@ export class Engine {
 
   #source: Source = 'live';
   #direct = false;
+  #powered = true;
   #buffer: AudioBuffer | null = null;
   #fileNode: AudioBufferSourceNode | null = null;
   #filePlaying = false;
@@ -694,17 +695,24 @@ export class Engine {
    * Crossfaded rather than switched: a hard cut clicks, and a click is the
    * loudest thing in an A/B.
    */
+  /** Power gates all output, including effect tails, without releasing the DI. */
+  setPowered(powered: boolean): void {
+    this.#powered = powered;
+    this.setDirect(this.#direct);
+    this.#apply('out_master');
+  }
+
   setDirect(direct: boolean): void {
     this.#direct = direct;
     const nodes = this.#nodes;
     const ctx = this.#context;
     if (nodes === null || ctx === null) return;
     const now = ctx.currentTime;
-    nodes.chain.gain.setTargetAtTime(direct ? 0 : 1, now, 0.02);
+    nodes.chain.gain.setTargetAtTime(direct || !this.#powered ? 0 : 1, now, 0.02);
     nodes.direct.gain.setTargetAtTime(
-      direct ? dbToLinear(Engine.DIRECT_MAKEUP_DB) : 0, now, 0.02,
+      direct && this.#powered ? dbToLinear(Engine.DIRECT_MAKEUP_DB) : 0, now, 0.02,
     );
-    this.#setLiveOpen(!direct);
+    this.#setLiveOpen(this.#powered && !direct);
   }
 
   /**
@@ -819,7 +827,7 @@ export class Engine {
       case 'out_master':
       case 'out_mute':
         nodes.master.gain.setTargetAtTime(
-          on('out_mute') ? dbToLinear(v('out_master')) : 0, now, T,
+          this.#powered && on('out_mute') ? dbToLinear(v('out_master')) : 0, now, T,
         );
         break;
 
@@ -1036,7 +1044,7 @@ export class Engine {
       this.#liveSource = new MediaStreamAudioSourceNode(ctx, { mediaStream: this.#stream });
       this.#liveSource.connect(nodes.bus);
       // Changing device while the simulation is off must not reopen the input.
-      this.#setLiveOpen(!this.#direct);
+      this.#setLiveOpen(this.#powered && !this.#direct);
     }
   }
 
@@ -1110,7 +1118,7 @@ export class Engine {
       const track = this.#stream.getAudioTracks()[0];
       if (track !== undefined) this.#adopt(track);
       this.#wireSource();
-      this.#setLiveOpen(!this.#direct);
+      this.#setLiveOpen(this.#powered && !this.#direct);
       await this.#followInput();
     }
   }

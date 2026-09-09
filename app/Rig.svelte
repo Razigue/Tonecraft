@@ -14,17 +14,18 @@
   import Waveform from './Waveform.svelte';
   import './tokens.css';
 
+  let mode = $state<'musician' | 'tester'>('musician');
   let settingsDialog = $state<HTMLDialogElement | null>(null);
   let detecting = $state(false);
   let settingsError = $state('');
 
   async function detectInputs(): Promise<void> {
-    if (detecting || state === 'starting') return;
+    if (mode === 'tester' || detecting || state === 'starting') return;
     detecting = true;
     settingsError = '';
     let stream: MediaStream | undefined;
     try {
-      if (state !== 'running' || source !== 'live' || direct) {
+      if (state !== 'running' || source !== 'live' || poweredOff) {
         stream = await openInput(navigator.mediaDevices);
         channelCount = stream.getAudioTracks()[0]?.getSettings().channelCount ?? 1;
       }
@@ -40,8 +41,36 @@
   }
 
   function openSettings(): void {
+    if (mode === 'tester') return;
     settingsDialog?.showModal();
     void detectInputs();
+  }
+
+  function chooseMusician(): void {
+    mode = 'musician';
+    source = 'live';
+    asking = false;
+    welcomeDialog?.close();
+    openSettings();
+  }
+
+  async function chooseTester(): Promise<void> {
+    mode = 'tester';
+    asking = false;
+    welcomeDialog?.close();
+    settingsDialog?.close();
+    deviceId = '';
+    outputId = '';
+    devices = [];
+    outputs = [];
+    source = 'file';
+    await start('demo');
+  }
+
+  async function power(): Promise<void> {
+    if (state === 'starting' || detecting) return;
+    if (state === 'running') toggleChain();
+    else await start(source === 'file' ? 'demo' : 'play');
   }
 
   type State = 'idle' | 'starting' | 'running' | 'failed';
@@ -142,7 +171,7 @@
   let channelCount = $state(1);
   let source = $state<Source>('live');
   /** Hearing the guitar as it arrives rather than as the chain leaves it. */
-  let direct = $state(false);
+  let poweredOff = $state(false);
 
   let meters = $state<Meters>({
     input: 0, drive: 0, output: 0, outputRms: 0, gate: 1, channelPeaks: [0], channels: 1,
@@ -163,7 +192,7 @@
   const cabInfo = $derived(CABS.find((c) => c.id === cab) ?? CABS[0]!);
   const level = (v: number): number => Math.min(1, Math.sqrt(Math.max(0, v)) * 1.6);
   const isGuilt = $derived(captureFile === PRESETS[0]?.capture);
-  const light = $derived(state === 'running' && captureLoaded && !direct ? Math.max(0, Math.min(1, (20 * Math.log10(Math.max(0.0001, meters.outputRms)) + 60) / 60)) : 0);
+  const light = $derived(state === 'running' && captureLoaded && !poweredOff ? Math.max(0, Math.min(1, (20 * Math.log10(Math.max(0.0001, meters.outputRms)) + 60) / 60)) : 0);
   function nextPreset(direction: number) {
     const index = PRESETS.findIndex(p => p.name === preset);
     void applyPreset(PRESETS[(index + direction + PRESETS.length) % PRESETS.length]!);
@@ -189,7 +218,7 @@
       if (typeof saved['channel'] === 'string') channel = saved['channel'] as InputChannel;
       if (typeof saved['deviceId'] === 'string') deviceId = saved['deviceId'];
       if (typeof saved['outputId'] === 'string') outputId = saved['outputId'];
-      if (typeof saved['source'] === 'string') source = saved['source'] as Source;
+
 
     } catch { /* unreadable, so ignored */ }
   }
@@ -247,8 +276,8 @@
   }
 
   function toggleChain(): void {
-    direct = !direct;
-    engine?.setDirect(direct);
+    poweredOff = !poweredOff;
+    engine?.setPowered(!poweredOff);
   }
 
   /**
@@ -501,7 +530,7 @@
       // list is only meaningful from here on.
       // Only meaningful once permission has been granted, which the demo path
       // deliberately never asks for.
-      if (intent === 'play') {
+      if (intent === 'play' && mode === 'musician') {
         devices = await engine.listInputs();
         outputs = await engine.listOutputs();
         channelCount = engine.channelCount;
@@ -524,8 +553,8 @@
         fileName = '';
       }
       // Whatever was chosen before, the chain is what you hear first.
-      direct = false;
-      engine.setDirect(false);
+      poweredOff = false;
+      engine.setPowered(true);
     } catch (error) {
       // Cause in one sentence, fix in one sentence, no apology. Nothing is
       // blocked: the control stays available (FR-12).
@@ -583,25 +612,6 @@
     <span class="t-wordmark">tonecraft</span>
 
     <div class="bar-right">
-      {#if state === 'running'}
-        <button
-          class="chain"
-          type="button"
-          aria-label="Amp simulation"
-          aria-pressed={!direct}
-          title="Turn the whole simulation, and the input with it, on and off (B)"
-          onclick={toggleChain}
-        >
-          <span class="chain-dot"></span>
-          <!-- Both labels occupy the same cell, so the button is always as wide
-               as the longer one. A control whose whole purpose is being hit
-               repeatedly must not move out from under the pointer. -->
-          <span class="chain-label">
-            <span class="chain-ghost" aria-hidden="true">Tonecraft</span>
-            <span>{direct ? 'Direct' : 'Tonecraft'}</span>
-          </span>
-        </button>
-      {/if}
       {#if latencyMs !== null}
         <!-- The round trip is on screen permanently (FR-35), as a number and
              nothing more. It used to explain itself and turn red past 35 ms;
@@ -610,9 +620,11 @@
              informing. -->
         <span class="latency" title={latencyDetail}>{latencyMs.toFixed(1)} ms</span>
       {/if}
+      {#if mode === 'musician'}
       <button class="settings-button" type="button" aria-label="Audio settings" title="Audio settings" onclick={openSettings} disabled={state === 'starting'}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m9.5 3-.6 2.2-1.7 1L5 5.6 2.5 9.9l1.6 1.6v2L2.5 15 5 19.3l2.2-.6 1.7 1 .6 2.3h5l.6-2.3 1.7-1 2.2.6 2.5-4.3-1.6-1.5v-2l1.6-1.6L19 5.6l-2.2.6-1.7-1L14.5 3z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
       </button>
+      {/if}
     </div>
   </header>
 
@@ -628,7 +640,7 @@
       <div class="io-control output-control"><Knob param={param('out_master')} value={values.out_master!} onchange={v => setParam('out_master',v)} label="Output" /><Meter level={meters.outputRms} /></div>
     </section>
 
-    <section class="amp-head" class:guilt={isGuilt} class:bypassed={direct} aria-label={isGuilt ? 'GUILT amplifier' : 'Tonecraft amplifier'} style={`--energy:${light}`}>
+    <section class="amp-head" class:guilt={isGuilt} class:bypassed={poweredOff} aria-label={isGuilt ? 'GUILT amplifier' : 'Tonecraft amplifier'} style={`--energy:${light}`}>
       <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
       <div class="glass-window">
         {#if isGuilt}<img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.png`} alt="Purple Gothic stained glass with a central rose window" style={`filter:brightness(${0.42 + light * 1.25})`} />{:else}<div class="neutral-art"><span>TC</span><small>AMPLIFICATION</small></div>{/if}
@@ -639,17 +651,20 @@
         <div class="control-group tone-group"><button class="group-label" aria-label="Tone enabled" aria-pressed={values.tone_bypass !== 1} onclick={() => setParam('tone_bypass',values.tone_bypass === 1 ? 0 : 1)}>TONE <span>{values.tone_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['tone_bass','tone_mid','tone_treble','tone_presence'] as id}<Knob param={param(id)} value={values[id]!} onchange={v => setParam(id,v)} />{/each}</div></div>
         <div class="control-group"><button class="group-label" aria-label="Boost enabled" aria-pressed={values.drive_bypass !== 1} onclick={() => setParam('drive_bypass',values.drive_bypass === 1 ? 0 : 1)}>BOOST <span>{values.drive_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['drive_gain','drive_tone'] as id}<Knob param={param(id)} value={values[id]!} onchange={v => setParam(id,v)} />{/each}</div></div>
         <div class="control-group"><button class="group-label" aria-label="Reverb enabled" aria-pressed={values.reverb_bypass !== 1} onclick={() => setParam('reverb_bypass',values.reverb_bypass === 1 ? 0 : 1)}>REVERB <span>{values.reverb_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row"><Knob param={param('reverb_mix')} value={values.reverb_mix!} onchange={v => setParam('reverb_mix',v)} /></div></div>
-        <button class="power-indicator" type="button" aria-label="Amplifier power" aria-pressed={state === 'running'} aria-busy={state === 'starting'} disabled={state === 'starting' || detecting} onclick={() => state === 'running' ? stop() : start(source === 'file' ? 'demo' : 'play')}><span class:lit={state === 'running'}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></span><small>POWER</small></button>
+        <button class="power-indicator" type="button" aria-label="Amplifier power" aria-pressed={state === 'running' && !poweredOff} aria-busy={state === 'starting'} disabled={state === 'starting' || detecting} onclick={power}><span class:lit={state === 'running' && !poweredOff}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></span><small>POWER</small></button>
       </div>
     </section>
     <div class="amp-foot"><span></span><span></span></div>
     <div class="capture-info" data-capture={latencyMs === null ? 'idle' : captureLoaded ? 'loaded' : 'silent'}></div>
     {#if state === 'running' && !captureLoaded}<p class="alert">This capture is not running: you are hearing your dry guitar. Reload the page.</p>{/if}
     <p class="notice" role="status">{notice ?? dropoutWarning ?? ''}</p>
-    <section class="session-bar" aria-label="Audio session"><div class="source-block"><span class="eyebrow">AUDIO SOURCE</span><Segmented label="Source" options={SOURCES} value={source} onchange={chooseSource} /></div><button class="quiet demo" onclick={() => start('demo')} disabled={state === 'starting' || state === 'running'}>▷ Try the demo</button><button class="connect" onclick={() => state === 'running' ? stop() : start(source === 'file' ? 'demo' : 'play')} disabled={state === 'starting'}>{state === 'running' ? 'Stop audio' : state === 'starting' ? 'Connecting…' : 'Connect audio'} <span>↗</span></button></section>
+    {#if mode === 'musician'}
+      <section class="session-bar" aria-label="Audio session"><div class="source-block"><span class="eyebrow">AUDIO SOURCE</span><Segmented label="Source" options={SOURCES} value={source} onchange={chooseSource} /></div></section>
+    {/if}
 
   </main>
 
+  {#if mode === 'musician'}
   <dialog class="audio-settings" bind:this={settingsDialog} aria-labelledby="audio-settings-title">
     <div class="settings-heading"><h2 id="audio-settings-title">Audio settings</h2><button class="settings-button" aria-label="Close settings" onclick={() => settingsDialog?.close()}>×</button></div>
     <button class="start small" disabled={detecting || state === 'starting'} onclick={detectInputs}>{detecting ? 'Detecting inputs…' : 'Detect audio inputs'}</button>
@@ -657,7 +672,9 @@
     <div class="device-controls">{#if devices.length > 0}<label class="field"><span class="t-small">Input device</span><select disabled={detecting} value={deviceId} onchange={e => chooseDevice(e.currentTarget.value)}><option value="">Default input</option>{#each devices as d}<option value={d.id}>{d.label || 'Input'}</option>{/each}</select></label>{/if}{#if channelCount > 1}<Segmented label="Input channel" options={CHANNELS} value={channel} onchange={chooseChannel}/><div class="levels">{#each meters.channelPeaks as peak}<span class="level"><span class="level-fill" style={`transform:scaleX(${level(peak)})`}></span></span>{/each}</div>{/if}{#if outputs.length > 1}<label class="field"><span class="t-small">Output device</span><select value={outputId} onfocus={() => void probeOutputs()} onchange={e => chooseOutput(e.currentTarget.value)}><option value="">Same as input</option>{#each outputs as d}<option value={d.id}>{d.label || 'Output'}{d.outputMs === undefined ? '' : ` — ${d.outputMs.toFixed(0)} ms`}</option>{/each}</select></label>{/if}</div>
     </div>
     {#if settingsError}<p class="failure" role="alert">{settingsError}</p>{/if}
+    <button class="connect" disabled={detecting || state === 'starting'} onclick={() => { settingsDialog?.close(); if (state !== 'running') void power(); }}>Done</button>
   </dialog>
+  {/if}
 
   {#if source === 'file'}
     <!-- Below the strand, and only when it is the source. A DI take through the
@@ -725,7 +742,7 @@
           <button
             class="choice"
             type="button"
-            onclick={() => start('play')}
+            onclick={chooseMusician}
             disabled={state === 'starting'}
           >
             <span class="t-module">Musicien</span>
@@ -734,7 +751,7 @@
           <button
             class="choice"
             type="button"
-            onclick={() => start('demo')}
+            onclick={chooseTester}
             disabled={state === 'starting'}
           >
             <span class="t-module">Testeur</span>

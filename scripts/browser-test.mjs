@@ -111,8 +111,8 @@ console.log('\nTonecraft — end-to-end\n');
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
 
 check('the page renders the rig', await page.locator('.amp-head').isVisible());
-check('the studio offers live audio and a demo',
-  await page.locator('.connect').isVisible() && await page.locator('.session-bar .demo').isVisible());
+check('the welcome offers musician and tester paths',
+  await page.getByRole('button', { name: 'Musicien' }).isVisible() && await page.getByRole('button', { name: 'Testeur' }).isVisible());
 check('the capture catalogue is read before starting',
   (await page.locator('select').first().locator('option').count()) > 0);
 
@@ -120,6 +120,8 @@ check('the capture catalogue is read before starting',
 // and not as a 30 second stack trace, so whatever the page said about it is
 // read back — the product's whole voice is that it names the cause.
 await page.getByRole('button', { name: 'Musicien' }).click();
+check('musician opens audio settings immediately', await page.getByRole('dialog', { name: 'Audio settings' }).isVisible());
+await page.getByRole('button', { name: 'Done', exact: true }).click();
 let started = true;
 try {
   await page.waitForSelector('.latency', { timeout: 30_000 });
@@ -215,14 +217,14 @@ const meterPeak = (which, ms) => page.evaluate(async ([sel, d]) => {
   ? '.global-controls > .io-control:first-child .meter rect:last-child'
   : '.output-control .meter rect:last-child', ms]);
 
-await page.locator('button.chain').click();
+await page.locator('button.power-indicator').click();
 // Past the reverb tail, which is 1.3 s and legitimately still ringing.
 await page.waitForTimeout(2500);
 const mutedIn = await meterPeak('in', 2500);
 const mutedOut = await meterPeak('out', 2500);
 check('switching the simulation off closes the live input',
   mutedIn === 0 && mutedOut === 0, `in ${mutedIn}, out ${mutedOut}, of 96`);
-await page.locator('button.chain').click();
+await page.locator('button.power-indicator').click();
 await page.waitForTimeout(1200);
 const backIn = await page.evaluate(async () => {
   let peak = 0;
@@ -374,7 +376,7 @@ const integrate = (ms) => page.evaluate(async (d) => {
  * reads what the button says it is and flips it only if it has to.
  */
 async function monitor(want) {
-  const button = page.locator('button.chain');
+  const button = page.locator('button.power-indicator');
   const on = (await button.getAttribute('aria-pressed')) === 'true';
   if (on !== (want === 'Amp')) await button.click();
 }
@@ -395,15 +397,12 @@ async function passFromStart(label, ms) {
   return integrate(ms);
 }
 
-const ampLevel = await passFromStart('Amp', 14_000);
-const directLevel = await passFromStart('Direct', 14_000);
-await monitor('Amp');
-
-check('the direct path carries the dry signal', directLevel > 1e-3,
-  `mean amplitude ${directLevel.toExponential(2)}`);
-const offset = 20 * Math.log10(ampLevel / directLevel);
-check('the A/B is level-matched, so it compares tone', Math.abs(offset) < 1.5,
-  `${offset.toFixed(2)} dB apart`);
+const ampLevel = await passFromStart('Amp', 3000);
+const offLevel = await passFromStart('Off', 3000);
+const restoredLevel = await passFromStart('Amp', 3000);
+check('Power off silences the DI and effect tails', offLevel < 1e-5,
+  `mean amplitude ${offLevel.toExponential(2)}`);
+check('Power on restores the loaded DI', ampLevel > 1e-3 && restoredLevel > 1e-3);
 
 /**
  * The messages below the rig arrive and leave on their own — a hardware
@@ -430,11 +429,11 @@ check('and the rig keeps a place for it whether or not there is one',
 const bypasses = await page.locator('.amp-panel button[aria-pressed]').allTextContents();
 // The same A/B from the keyboard, which is what makes it usable more than twice.
 await monitor('Amp');
-const beforeKey = await page.locator('button.chain').getAttribute('aria-pressed');
+const beforeKey = await page.locator('button.power-indicator').getAttribute('aria-pressed');
 await page.locator('body').click({ position: { x: 5, y: 5 } });
 await page.keyboard.press('b');
 await page.waitForTimeout(300);
-const afterKey = await page.locator('button.chain').getAttribute('aria-pressed');
+const afterKey = await page.locator('button.power-indicator').getAttribute('aria-pressed');
 check('B flips the chain from the keyboard', beforeKey !== afterKey,
   `${beforeKey} then ${afterKey}`);
 await monitor('Amp');
@@ -468,6 +467,7 @@ await demoPage.getByRole('button', { name: 'Testeur' }).click();
 await demoPage.waitForSelector('.wave svg', { timeout: 40_000 });
 await demoPage.waitForTimeout(2500);
 
+check('tester cannot select an input', (await demoPage.locator('.audio-settings, .session-bar, button.chain').count()) === 0);
 const asked = await demoPage.evaluate(() => window.__mic);
 check('the demo path never asks for a microphone', asked === 0, `${asked} request(s)`);
 check('and the take is loaded and waiting, not playing at you',
@@ -475,7 +475,7 @@ check('and the take is loaded and waiting, not playing at you',
   (await demoPage.locator('.transport button.start').innerText()) === 'Play');
 // The chain is what you hear first; turning it off is the deliberate act.
 check('and the chain is on by default',
-  (await demoPage.locator('button.chain').getAttribute('aria-pressed')) === 'true');
+  (await demoPage.locator('button.power-indicator').getAttribute('aria-pressed')) === 'true');
 await demoPage.locator('.transport button.start').click();
 await demoPage.waitForTimeout(1200);
 
