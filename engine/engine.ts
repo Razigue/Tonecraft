@@ -698,6 +698,7 @@ export class Engine {
   /** Power gates all output, including effect tails, without releasing the DI. */
   setPowered(powered: boolean): void {
     this.#powered = powered;
+    if (powered) void this.#context?.resume();
     this.setDirect(this.#direct);
     this.#apply('out_master');
   }
@@ -1072,7 +1073,10 @@ export class Engine {
    * MB, and the page must not pay for it before anyone asks.
    */
   async loadDemoTake(): Promise<AudioBuffer> {
-    const response = await fetch(`${BASE}di/demo-di.wav`);
+    // The public file is not fingerprinted by Astro. Version the request so a
+    // cached 404 from GitHub Pages cannot survive a later deployment that
+    // contains the take.
+    const response = await fetch(`${BASE}di/demo-di.wav?v=riff-a-1`);
     if (!response.ok) throw new Error('the demo take is not installed');
     const bytes = await response.arrayBuffer();
     // Whatever was playing was playing the buffer this replaces. Leaving it
@@ -1137,6 +1141,11 @@ export class Engine {
     const nodes = this.#nodes;
     const buffer = this.#buffer;
     if (ctx === null || nodes === null || buffer === null) return;
+
+    // Loading the engine and the take can outlive the click that opened the
+    // tester flow. Resume again from the transport click for browsers that
+    // suspend an AudioContext once transient user activation has expired.
+    void ctx.resume();
 
     let at = clamp(from ?? this.#fileCursor, 0, buffer.duration);
     if (at >= buffer.duration - 1e-3) at = 0;   // restarting from the end starts over

@@ -97,7 +97,6 @@ const browser = await chromium.launch({
   args: [
     '--use-fake-device-for-media-stream',
     '--use-fake-ui-for-media-stream',
-    '--autoplay-policy=no-user-gesture-required',
   ],
 });
 const page = await browser.newPage();
@@ -461,7 +460,11 @@ await demoPage.addInitScript(() => {
   navigator.mediaDevices.getUserMedia = (...args) => { window.__mic++; return real(...args); };
 });
 const demoErrors = [];
+const demoRequests = [];
 demoPage.on('pageerror', (e) => demoErrors.push(String(e)));
+demoPage.on('request', (request) => {
+  if (request.url().includes('/di/demo-di.wav')) demoRequests.push(request.url());
+});
 await demoPage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
 await demoPage.getByRole('button', { name: 'Testeur' }).click();
 await demoPage.waitForSelector('.wave svg', { timeout: 40_000 });
@@ -470,6 +473,9 @@ await demoPage.waitForTimeout(2500);
 check('tester cannot select an input', (await demoPage.locator('.audio-settings, .session-bar, button.chain').count()) === 0);
 const asked = await demoPage.evaluate(() => window.__mic);
 check('the demo path never asks for a microphone', asked === 0, `${asked} request(s)`);
+check('the demo take bypasses stale CDN responses',
+  demoRequests.some((url) => url.endsWith('/di/demo-di.wav?v=riff-a-1')),
+  demoRequests[0] ?? 'no demo request');
 check('and the take is loaded and waiting, not playing at you',
   (await demoPage.locator('.capture-info').getAttribute('data-capture')) === 'loaded' &&
   (await demoPage.locator('.transport button.start').innerText()) === 'Play');
