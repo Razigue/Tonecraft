@@ -119,7 +119,7 @@ check('the capture catalogue is read before starting',
 // Start, from the opening sheet. A failure here must be reported as a failure
 // and not as a 30 second stack trace, so whatever the page said about it is
 // read back — the product's whole voice is that it names the cause.
-await page.locator('.connect').click();
+await page.getByRole('button', { name: 'Musicien' }).click();
 let started = true;
 try {
   await page.waitForSelector('.latency', { timeout: 30_000 });
@@ -464,7 +464,7 @@ await demoPage.addInitScript(() => {
 const demoErrors = [];
 demoPage.on('pageerror', (e) => demoErrors.push(String(e)));
 await demoPage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
-await demoPage.locator('.session-bar .demo').click();
+await demoPage.getByRole('button', { name: 'Testeur' }).click();
 await demoPage.waitForSelector('.wave svg', { timeout: 40_000 });
 await demoPage.waitForTimeout(2500);
 

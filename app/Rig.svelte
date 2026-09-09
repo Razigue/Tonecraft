@@ -102,7 +102,12 @@
   let dropoutWarning = $state<string | null>(null);
   const dropoutLog: { t: number; n: number }[] = [];
   /** The opening sheet. Dismissible: looking around is never blocked. */
-  let asking = $state(false);
+  let asking = $state(true);
+  let welcomeDialog = $state<HTMLDialogElement | null>(null);
+  $effect(() => {
+    if (asking && state !== 'running') welcomeDialog?.showModal();
+    else welcomeDialog?.close();
+  });
   let notice = $state<string | null>(null);
   /**
    * Whether the worklet has confirmed the capture is loaded and processing.
@@ -181,22 +186,11 @@
       const raw = localStorage.getItem(STORE);
       if (raw === null) return;
       const saved = JSON.parse(raw) as Record<string, unknown>;
-      const v = saved['values'];
-      if (typeof v === 'object' && v !== null) {
-        // Only ids the schema still declares, so a stored value cannot outlive
-        // the parameter it belonged to.
-        for (const p of PARAMS) {
-          const n = (v as Record<string, unknown>)[p.id];
-          if (typeof n === 'number') values[p.id] = n;
-        }
-      }
-      if (typeof saved['captureFile'] === 'string') captureFile = saved['captureFile'];
-      if (typeof saved['cab'] === 'string') cab = saved['cab'];
       if (typeof saved['channel'] === 'string') channel = saved['channel'] as InputChannel;
       if (typeof saved['deviceId'] === 'string') deviceId = saved['deviceId'];
       if (typeof saved['outputId'] === 'string') outputId = saved['outputId'];
       if (typeof saved['source'] === 'string') source = saved['source'] as Source;
-      preset = typeof saved['preset'] === 'string' ? saved['preset'] : null;
+
     } catch { /* unreadable, so ignored */ }
   }
 
@@ -476,7 +470,7 @@
     state = 'starting';
     problem = null;
     engine = new Engine({ onMeters, onModel, onEngineError });
-    if (intent === 'demo') source = 'file';
+    source = intent === 'demo' ? 'file' : 'live';
     /* A fresh engine defaults to the live input, so the source has to be pushed
        into it every time — not only on the demo path. Without this, stopping
        and starting again reopened the microphone while the interface still
@@ -645,7 +639,7 @@
         <div class="control-group tone-group"><button class="group-label" aria-label="Tone enabled" aria-pressed={values.tone_bypass !== 1} onclick={() => setParam('tone_bypass',values.tone_bypass === 1 ? 0 : 1)}>TONE <span>{values.tone_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['tone_bass','tone_mid','tone_treble','tone_presence'] as id}<Knob param={param(id)} value={values[id]!} onchange={v => setParam(id,v)} />{/each}</div></div>
         <div class="control-group"><button class="group-label" aria-label="Boost enabled" aria-pressed={values.drive_bypass !== 1} onclick={() => setParam('drive_bypass',values.drive_bypass === 1 ? 0 : 1)}>BOOST <span>{values.drive_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['drive_gain','drive_tone'] as id}<Knob param={param(id)} value={values[id]!} onchange={v => setParam(id,v)} />{/each}</div></div>
         <div class="control-group"><button class="group-label" aria-label="Reverb enabled" aria-pressed={values.reverb_bypass !== 1} onclick={() => setParam('reverb_bypass',values.reverb_bypass === 1 ? 0 : 1)}>REVERB <span>{values.reverb_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row"><Knob param={param('reverb_mix')} value={values.reverb_mix!} onchange={v => setParam('reverb_mix',v)} /></div></div>
-        <button class="power-indicator" type="button" aria-label="Amplifier power" aria-pressed={state === 'running'} aria-busy={state === 'starting'} disabled={state === 'starting' || detecting} onclick={() => state === 'running' ? stop() : start()}><span class:lit={state === 'running'}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></span><small>POWER</small></button>
+        <button class="power-indicator" type="button" aria-label="Amplifier power" aria-pressed={state === 'running'} aria-busy={state === 'starting'} disabled={state === 'starting' || detecting} onclick={() => state === 'running' ? stop() : start(source === 'file' ? 'demo' : 'play')}><span class:lit={state === 'running'}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></span><small>POWER</small></button>
       </div>
     </section>
     <div class="amp-foot"><span></span><span></span></div>
@@ -725,16 +719,8 @@
     </section>
   {/if}
 
-  {#if asking && state !== 'running'}
-    <!-- A sheet over the rig, not a screen instead of it (DESIGN.md section 4).
-         No backdrop blur: the design forbids it, and a plain wash reads calmer
-         anyway. -->
-    <div class="wash">
-      <div class="sheet" role="dialog" aria-modal="false" aria-label="Start playing">
-        <p class="t-body">
-          The amplifier is a Neural Amp Modeler capture; the cabinet is
-          synthesised here, and without it a capture is not an amp sound.
-        </p>
+  <dialog class="sheet welcome" bind:this={welcomeDialog} aria-labelledby="welcome-title" oncancel={() => (asking = false)}>
+        <h2 id="welcome-title">Bienvenue sur Tonecraft</h2>
         <div class="choices">
           <button
             class="choice"
@@ -742,9 +728,8 @@
             onclick={() => start('play')}
             disabled={state === 'starting'}
           >
-            <span class="t-module">I have a guitar</span>
-            <span class="t-small">Opens your input. The browser will ask for
-              permission to use it.</span>
+            <span class="t-module">Musicien</span>
+            <span class="t-small">Branchez votre guitare et sélectionnez votre entrée audio.</span>
           </button>
           <button
             class="choice"
@@ -752,13 +737,12 @@
             onclick={() => start('demo')}
             disabled={state === 'starting'}
           >
-            <span class="t-module">Just let me hear it</span>
-            <span class="t-small">Plays a guitar take through the chain. Nothing
-              is asked for and nothing listens.</span>
+            <span class="t-module">Testeur</span>
+            <span class="t-small">Explorez les sons avec une démo, sans guitare ni accès au micro.</span>
           </button>
         </div>
         <button class="quiet" type="button" onclick={() => (asking = false)}>
-          Look around first
+          Explorer d’abord
         </button>
 
         {#if problem !== null}
@@ -769,9 +753,7 @@
             <span class="fix">{problem.fix}</span>
           </p>
         {/if}
-      </div>
-    </div>
-  {/if}
+  </dialog>
 
 </div>
 
@@ -1030,4 +1012,5 @@
   @media(prefers-reduced-motion:reduce){.glass-window img{transition:none;filter:brightness(.65)!important}}
 
   .settings-button{display:grid;place-items:center;width:40px;height:40px;padding:8px;border:0;background:none;color:var(--ink);cursor:pointer;border-radius:4px;font-size:26px}.settings-button:hover{background:#252525}.audio-settings{width:min(440px,calc(100vw - 64px));padding:24px;color:var(--ink);background:#171717;border:1px solid #444;border-radius:8px}.audio-settings::backdrop{background:#000a}.settings-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}.settings-heading h2{margin:0;font-size:18px;font-weight:500}.audio-settings .device-controls{flex-direction:column;gap:18px}.audio-settings select{max-width:100%;width:100%}.audio-settings .failure{margin-top:20px}.power-indicator{border:0;background:none;cursor:pointer;color:#bab0bf;padding:8px;min-width:44px}.power-indicator>span{width:28px;height:28px;display:grid;place-items:center;background:#29252d}.power-indicator>span.lit{color:#fff;background:#66536f}.power-indicator:disabled{opacity:.5;cursor:wait}
+  .welcome{color:var(--ink);background:#101010;border:1px solid #3b3b3b;width:min(580px,calc(100vw - 64px));box-sizing:border-box;max-height:calc(100svh - 48px);overflow:auto}.welcome:not([open]){display:none}.welcome::backdrop{background:#000b}.welcome h2{font-size:21px;font-weight:500;margin:0}.welcome .choices{width:100%}.welcome .choice{background:#191919;border-color:#404040;border-radius:5px;padding:22px;min-width:0}.welcome .choice:hover{background:#252525;border-color:#888}.welcome .choice .t-module{font-size:12px;color:#ededed}.welcome .choice .t-small{line-height:1.6}.welcome .quiet{color:#aaa}
 </style>
