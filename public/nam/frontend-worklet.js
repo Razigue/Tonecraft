@@ -229,9 +229,19 @@ class FrontendProcessor extends AudioWorkletProcessor {
     super();
     // noise gate
     this.env = 0; this.gg = 0; this.open = false;
-    this.attC = 1 - Math.exp(-1 / (sampleRate * 0.0012));
-    this.relC = 1 - Math.exp(-1 / (sampleRate * 0.050));
-    this.envC = 1 - Math.exp(-1 / (sampleRate * 0.0025));
+    this.attC = 1 - Math.exp(-1 / (sampleRate * 0.0012));   // open: 1.2 ms
+    /* Close: 12 ms, down from 50.
+       The gain applied is gg squared, so the time constant is not the time you
+       hear. Silence is reached at roughly 3.45 tau: 50 ms put the gate fully
+       shut 172 ms after the phrase ended, which is long enough to hear the
+       hiss arrive before it left. 12 ms puts it at 41 ms, inside the gap
+       instead of after it.
+       The floor under this is chatter, and what holds it off is the 6 dB of
+       hysteresis below — a note decaying through the threshold cannot reopen
+       the gate it just closed. Faster than about 8 ms and the tails of held
+       notes start being clipped rather than released. */
+    this.relC = 1 - Math.exp(-1 / (sampleRate * 0.012));
+    this.envC = 1 - Math.exp(-1 / (sampleRate * 0.0025));   // detector: 2.5 ms
     // DC blocker
     this.dx = 0; this.dy = 0; this.dA = onePoleHP(18, sampleRate);
     // control smoothing (sGain at the base rate, sBoost/sTone in the

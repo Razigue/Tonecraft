@@ -28,9 +28,10 @@ export const PRESETS: readonly Preset[] = [
     capture: 'helga-b-jsx-ultra-od808.nam',
     cab: 'v30mod',
     values: {
-      // -65 rather than the -75.5 this used to carry: at that threshold the
-      // gate never closed on a real DI and the gain hissed between phrases.
-      in_trim: 11.4, gate_threshold: -65, drive_gain: 25.0, drive_tone: 6011,
+      // -60, and the reason is in schema/params.ts next to the same number:
+      // below this the gate closes after the hiss has been heard rather than
+      // before. Kept in step with the schema default by npm run check.
+      in_trim: 11.4, gate_threshold: -60, drive_gain: 25.0, drive_tone: 6011,
       tone_bass: -1.7, tone_mid: 3.4, tone_treble: 1.7, tone_presence: 1.0,
       reverb_mix: 0.30, out_master: -12.4,
     },

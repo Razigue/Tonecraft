@@ -141,11 +141,18 @@ export const PARAMS: readonly Param[] = [
   // captures amplify enormously — 0.02 in comes back out at -19 dBFS — so the
   // useful thresholds all sit in the last 20 dB above silence.
   //
-  // -65 rather than the -72.9 this carried: measured on the noise floor of a
-  // real DI rather than on pink noise, that threshold never closed, and a lead
-  // patch at this much gain hissed between phrases.
+  // -60 rather than the -65 this carried, which was itself -72.9 before that.
+  // Each move up came from the same place: playing it. At -72.9 the gate never
+  // closed on a real DI; at -65 it closed, but only once the hiss had already
+  // been heard. The last 5 dB are what put the close inside the gap between
+  // phrases rather than at the end of it.
+  //
+  // This is the top of the useful range, not a safe middle. These captures
+  // amplify enormously — 0.02 in comes back out at -19 dBFS — so every dB here
+  // is a dB of quiet playing the gate can swallow. Anyone whose picking hand is
+  // lighter than the one this was set by should pull it back down.
   { id: 'gate_threshold', stage: 'gate', label: 'Threshold', unit: 'dB',
-    min: -95, max: -30, default: -65, taper: 'linear' },
+    min: -95, max: -30, default: -60, taper: 'linear' },
   { id: 'gate_bypass', stage: 'gate', label: 'Bypass', unit: 'bool',
     min: 0, max: 1, default: 0, taper: 'switch' },
 
