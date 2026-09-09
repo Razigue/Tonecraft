@@ -444,7 +444,17 @@ check('Power on restores the loaded DI', ampLevel > 1e-3 && restoredLevel > 1e-3
  * goes. If they push the strand around, the interface feels unstable at exactly
  * the moment it is trying to tell somebody something.
  */
-const before = await page.locator('.amp-head').boundingBox();
+/* In document coordinates, not viewport ones. By this point the page is
+   scrolled to its maximum (the fader drags and the waveform focus above scroll
+   it there), so the rig's viewport position is a function of the scroll clamp:
+   a transient dropout warning expiring inside the window below shortens the
+   document by its one line, the browser clamps the scroll down to match, and
+   every element appears to move by exactly that line's 22 px. That is the
+   scroll clamp, not the layout, and it failed this check about half the time.
+   The document position answers the question actually being asked. */
+const rigTop = () => page.evaluate(
+  () => document.querySelector('.amp-head').getBoundingClientRect().top + window.scrollY);
+const before = await rigTop();
 // Written into the slot the rig keeps for it, which is what happens at runtime.
 // Appending a second element would be testing a case the product never makes.
 await page.evaluate(() => {
@@ -453,8 +463,8 @@ await page.evaluate(() => {
     + 'the take currently on screen and what to do about it.';
 });
 await page.waitForTimeout(300);
-const after = await page.locator('.amp-head').boundingBox();
-const moved = Math.abs(after.y - before.y);
+const after = await rigTop();
+const moved = Math.abs(after - before);
 check('a notice does not move the rig', moved < 1, `${moved.toFixed(1)} px`);
 check('and the rig keeps a place for it whether or not there is one',
   (await page.locator('.workspace .notice').count()) === 1);
