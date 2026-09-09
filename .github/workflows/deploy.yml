@@ -31,9 +31,9 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -67,7 +67,18 @@ jobs:
       - name: Build
         run: npm run build
 
-      - run: npx playwright install --with-deps chromium
+      # Playwright downloads its own Chromium. The runner's unrelated Chrome
+      # APT feed can publish inconsistent indexes and break dependency setup.
+      - name: Disable the unused Google Chrome APT repository
+        run: |
+          for source in /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources; do
+            if [ -f "$source" ]; then
+              sudo mv "$source" "$source.disabled"
+            fi
+          done
+
+      - name: Install Playwright Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
 
       - name: End-to-end in a browser
         run: npm run test:browser
