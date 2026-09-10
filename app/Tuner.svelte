@@ -108,16 +108,25 @@
   .note-wrap {
     place-self: center;
     display: grid;
-    place-items: center;
-    width: min(280px, 70vw);
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 20px;
+    width: min(390px, 76vw);
     min-height: 120px;
-    padding: 8px 24px 14px;
+    padding: 8px 0 14px;
     box-sizing: border-box;
-    border-bottom: 1px solid #332e36;
     color: #4f4852;
   }
-  .note-wrap.heard { color: #d7bfdc; border-color: #76627b; background: #161219; }
-  .note-wrap.in-tune { color: #eadff0; border-color: #b79abe; background: #1e1822; }
+  .note-wrap::before, .note-wrap::after {
+    content: '';
+    width: 100%;
+    height: 1px;
+    background: #302b32;
+  }
+  .note-wrap.heard { color: #d7bfdc; }
+  .note-wrap.heard::before, .note-wrap.heard::after { background: #695b6c; }
+  .note-wrap.in-tune { color: #eadff0; }
+  .note-wrap.in-tune::before, .note-wrap.in-tune::after { background: #a287a8; }
   .note-wrap strong {
     font-family: var(--display);
     font-size: clamp(78px, 12vw, 112px);
