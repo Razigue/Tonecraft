@@ -13,7 +13,7 @@
   const position = $derived(50 + cents);
   const inTune = $derived(reading !== null && Math.abs(reading.cents) <= 5);
   const direction = $derived(reading === null
-    ? 'Play a note'
+    ? ''
     : inTune ? 'In tune' : reading.cents < 0 ? 'Tune up' : 'Tune down');
   const valueText = $derived(reading === null
     ? 'Waiting for a note'
@@ -23,20 +23,18 @@
 <dialog
   class="tuner"
   bind:this={element}
-  aria-labelledby="tuner-title"
+  aria-label="Tuner"
   oncancel={(event) => { event.preventDefault(); element?.close(); }}
   onclose={onclose}
 >
-  <button class="close" type="button" aria-label="Close tuner" onclick={() => element?.close()}>×</button>
-
-  <div class="tuner-heading">
-    <span class="eyebrow">TUNER</span>
-    <p>Monitoring muted</p>
-  </div>
+  <button class="close" type="button" aria-label="Close tuner" onclick={() => element?.close()}>
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3 3l10 10M13 3L3 13" />
+    </svg>
+  </button>
 
   <div class="note-wrap" class:heard={reading !== null} class:in-tune={inTune}>
-    <strong id="tuner-title">{reading?.note ?? '—'}</strong>
-    <span>{reading === null ? '' : reading.octave}</span>
+    <strong>{reading?.note ?? '—'}</strong>
   </div>
 
   <div
@@ -69,53 +67,52 @@
 
 <style>
   .tuner {
-    width: 100vw;
-    max-width: none;
-    height: 100svh;
-    max-height: none;
-    margin: 0;
-    padding: clamp(28px, 5vw, 72px);
+    width: min(680px, calc(100vw - 40px));
+    max-width: 680px;
+    margin: auto;
+    padding: 64px 48px 38px;
     box-sizing: border-box;
-    border: 0;
+    border: 1px solid #403a43;
+    border-radius: 10px;
     color: var(--ink);
-    background: #0b0a0d;
+    background: #111013;
+    box-shadow: 0 24px 70px #000c;
     overflow: hidden;
   }
   .tuner[open] {
     display: grid;
-    grid-template-rows: auto 1fr auto auto;
+    grid-template-rows: auto auto auto;
     align-items: center;
+    row-gap: 26px;
     animation: tuner-in 200ms cubic-bezier(0.2, 0, 0, 1);
   }
-  .tuner::backdrop { background: #000; }
+  .tuner::backdrop { background: #000c; }
   .close {
     position: absolute;
-    top: 24px;
-    right: 28px;
+    top: 14px;
+    right: 14px;
     display: grid;
     place-items: center;
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
     padding: 0;
-    border: 1px solid #3f3a43;
-    border-radius: 50%;
-    background: #141217;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
     color: #c8c2ca;
-    font: 300 27px/1 var(--body);
     cursor: pointer;
   }
-  .close:hover { border-color: #786a7c; color: #fff; }
+  .close svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+  .close:hover { background: #1d1a20; color: #fff; }
   .close:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; }
-  .tuner-heading { align-self: start; display: flex; flex-direction: column; gap: 8px; }
-  .eyebrow { font: 9px var(--mono); letter-spacing: 2px; color: #9a909d; }
-  .tuner-heading p { margin: 0; font: 12px var(--body); color: #756e78; }
   .note-wrap {
-    place-self: end center;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    min-width: min(50vw, 360px);
-    padding: 12px 28px 18px;
+    place-self: center;
+    display: grid;
+    place-items: center;
+    width: min(280px, 70vw);
+    min-height: 120px;
+    padding: 8px 24px 14px;
+    box-sizing: border-box;
     border-bottom: 1px solid #332e36;
     color: #4f4852;
   }
@@ -123,14 +120,13 @@
   .note-wrap.in-tune { color: #eadff0; border-color: #b79abe; background: #1e1822; }
   .note-wrap strong {
     font-family: var(--display);
-    font-size: clamp(88px, 15vw, 150px);
+    font-size: clamp(78px, 12vw, 112px);
     font-weight: 300;
     line-height: .9;
     letter-spacing: .02em;
   }
-  .note-wrap span { min-width: 1ch; margin: 10px 0 0 8px; font: 18px var(--mono); color: #817685; }
-  .tuner-scale { width: min(820px, 88vw); place-self: center; margin-top: clamp(36px, 8vh, 80px); }
-  .rail { position: relative; height: 64px; border-top: 1px solid #4d4650; }
+  .tuner-scale { width: 100%; place-self: center; }
+  .rail { position: relative; height: 54px; border-top: 1px solid #4d4650; }
   .tick, .centre { position: absolute; top: -1px; width: 1px; height: 13px; background: #4d4650; }
   .low { left: 0; }.quarter-low { left: 25%; }.quarter-high { left: 75%; }.high { right: 0; }
   .centre { left: 50%; height: 31px; background: #918595; transform: translateX(-50%); }
@@ -145,16 +141,15 @@
     box-shadow: 0 0 16px #c79bd3aa;
   }
   .in-tune .position { background: #f0e5f2; box-shadow: 0 0 22px #d8b7df; }
-  .scale-labels { display: flex; justify-content: space-between; margin-top: -19px; font: 9px var(--mono); letter-spacing: 1.8px; color: #68606b; }
-  .scale-labels strong { font-weight: 400; color: #9f92a3; }
+  .scale-labels { display: grid; grid-template-columns: 1fr 1fr 1fr; margin-top: -19px; font: 9px var(--mono); letter-spacing: 1.8px; color: #68606b; }
+  .scale-labels strong { min-height: 1em; font-weight: 400; color: #9f92a3; text-align: center; }
+  .scale-labels span:last-child { text-align: right; }
   .in-tune .scale-labels strong { color: #d8bfdc; }
   .cents { place-self: start center; min-height: 1em; margin: 6px 0 0; font: 13px var(--mono); color: #8f8592; }
   @keyframes tuner-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
   @media (max-width: 600px) {
-    .tuner { padding: 24px; }
-    .close { top: 18px; right: 18px; }
-    .note-wrap { min-width: 58vw; }
-    .tuner-scale { width: 90vw; }
+    .tuner { width: calc(100vw - 28px); padding: 58px 24px 30px; }
+    .close { top: 10px; right: 10px; }
   }
   @media (prefers-reduced-motion: reduce) { .tuner[open] { animation: none; } }
 </style>

@@ -227,8 +227,12 @@ const meterPeak = (which, ms) => page.evaluate(async ([sel, d]) => {
 // The tuner keeps listening to the selected guitar input but owns silence at
 // the destination. Closing it must hand the exact running chain back.
 await page.getByRole('button', { name: 'Open tuner' }).click();
-check('the tuner opens as a full-screen dialog',
-  await page.locator('dialog.tuner').isVisible());
+const tunerBox = await page.locator('dialog.tuner').boundingBox();
+const viewport = page.viewportSize();
+check('the tuner opens as a centred popup',
+  tunerBox !== null && viewport !== null && tunerBox.width < viewport.width * 0.75
+    && Math.abs(tunerBox.x + tunerBox.width / 2 - viewport.width / 2) < 2,
+  tunerBox === null ? 'missing' : `${tunerBox.width.toFixed(0)} px wide at x ${tunerBox.x.toFixed(0)}`);
 check('the tuner exposes a centred accuracy meter',
   await page.getByRole('meter', { name: 'Tuning accuracy' }).isVisible());
 await page.waitForTimeout(400);
