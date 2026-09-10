@@ -14,6 +14,8 @@ check('fewer than four taps do not produce a tempo',
   bpmFromFourTaps([0, 500, 1000]) === null);
 check('a pause outside the playable range resets the measure',
   bpmFromFourTaps([0, 500, 1000, 4000]) === null);
+check('four taps can reach the 450 BPM ceiling',
+  bpmFromFourTaps([0, 400 / 3, 800 / 3, 400]) === 450);
 check('beats one through three share one voice',
   voiceForBeat(0) === voiceForBeat(1) && voiceForBeat(1) === voiceForBeat(2));
 check('the fourth beat has a distinct voice',

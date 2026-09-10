@@ -148,10 +148,6 @@
       await metronome.prepare(engine?.outputId ?? outputId);
       metronome.setVolume(metronomeVolume);
       metronomeDialog?.showModal();
-      if (metronomeBpm !== null) {
-        metronome.play(metronomeBpm);
-        metronomePlaying = true;
-      }
     } catch {
       notice = 'The metronome could not start. Check the browser audio output.';
     } finally {
@@ -212,9 +208,27 @@
     metronome.setVolume(value);
   }
 
+  async function toggleMetronome(): Promise<void> {
+    if (metronomeOpening || metronomeBpm === null) return;
+    if (metronomePlaying) {
+      metronome.pause();
+      metronomePlaying = false;
+      return;
+    }
+    metronomeOpening = true;
+    try {
+      await metronome.prepare(engine?.outputId ?? outputId);
+      metronome.setVolume(metronomeVolume);
+      metronome.play(metronomeBpm);
+      metronomePlaying = true;
+    } catch {
+      notice = 'The metronome could not start. Check the browser audio output.';
+    } finally {
+      metronomeOpening = false;
+    }
+  }
+
   function onMetronomeClosed(): void {
-    metronome.pause();
-    metronomePlaying = false;
     tapTimes = [];
     tapCount = 0;
     if (tapResetTimer !== null) clearTimeout(tapResetTimer);
@@ -919,6 +933,22 @@
   {/if}
 
   <button
+    class="metronome-toggle"
+    class:active={metronomePlaying}
+    type="button"
+    aria-label={metronomePlaying ? 'Pause metronome' : 'Start metronome'}
+    title={metronomeBpm === null ? 'Set a tempo first' : metronomePlaying ? 'Pause metronome' : 'Start metronome'}
+    aria-pressed={metronomePlaying}
+    disabled={metronomeBpm === null || metronomeOpening}
+    onclick={() => void toggleMetronome()}
+  >
+    {#if metronomePlaying}
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3" y="2.5" width="3.5" height="11" rx=".5"/><rect x="9.5" y="2.5" width="3.5" height="11" rx=".5"/></svg>
+    {:else}
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5 13 8l-9 5.5z"/></svg>
+    {/if}
+  </button>
+  <button
     class="metronome-launch"
     type="button"
     aria-label="Open metronome"
@@ -1090,7 +1120,7 @@
     color: var(--graphite);
   }
 
-  .tuner-launch, .metronome-launch {
+  .tuner-launch, .metronome-launch, .metronome-toggle {
     position: fixed;
     bottom: 20px;
     z-index: 4;
@@ -1107,9 +1137,11 @@
   }
   .tuner-launch { left: 22px; }
   .metronome-launch { right: 22px; }
-  .tuner-launch:hover, .metronome-launch:hover { color: #d4c9d7; border-color: #655b68; }
-  .tuner-launch:disabled, .metronome-launch:disabled { opacity: .45; cursor: wait; }
-  .tuner-launch:focus-visible, .metronome-launch:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; }
+  .metronome-toggle { right: 72px; width: 38px; height: 38px; bottom: 22px; }
+  .metronome-toggle.active { color: #e2cce6; border-color: #876f8c; background: #1b171d; }
+  .tuner-launch:hover, .metronome-launch:hover, .metronome-toggle:hover { color: #d4c9d7; border-color: #655b68; }
+  .tuner-launch:disabled, .metronome-launch:disabled, .metronome-toggle:disabled { opacity: .32; cursor: default; }
+  .tuner-launch:focus-visible, .metronome-launch:focus-visible, .metronome-toggle:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; }
 
   /* One target, hit as often as you like. The dot carries the state — the same
      idiom as a module's bypass — and the label says what you are hearing. */

@@ -251,6 +251,10 @@ check('the metronome opens as a centred popup',
     && Math.abs(metronomeBox.x + metronomeBox.width / 2 - viewport.width / 2) < 2);
 check('opening the metronome does not start a sound',
   await page.locator('dialog.metronome').getAttribute('data-playing') === 'false');
+const tempoInput = page.getByRole('spinbutton', { name: 'Tempo in BPM' });
+check('the tempo field is empty and accepts up to 450 BPM',
+  await tempoInput.inputValue() === '' && await tempoInput.getAttribute('placeholder') === null
+    && await tempoInput.getAttribute('max') === '450');
 await page.evaluate(async () => {
   const button = document.querySelector('dialog.metronome .tap');
   for (let i = 0; i < 4; i += 1) {
@@ -258,7 +262,7 @@ await page.evaluate(async () => {
     if (i < 3) await new Promise((resolve) => setTimeout(resolve, 500));
   }
 });
-const tappedBpm = Number(await page.getByRole('spinbutton', { name: 'Tempo in BPM' }).inputValue());
+const tappedBpm = Number(await tempoInput.inputValue());
 check('four taps set the tempo from their average interval',
   tappedBpm >= 117 && tappedBpm <= 122, `${tappedBpm} BPM`);
 check('the fourth tap starts the metronome',
@@ -267,6 +271,16 @@ await page.getByRole('slider', { name: 'Metronome volume' }).fill('0.25');
 check('the metronome volume is adjustable',
   await page.locator('dialog.metronome output').textContent() === '25%');
 await page.getByRole('button', { name: 'Close metronome' }).click();
+const metronomeToggle = page.getByRole('button', { name: 'Pause metronome' });
+check('the metronome keeps playing outside its popup',
+  await metronomeToggle.getAttribute('aria-pressed') === 'true');
+await metronomeToggle.click();
+check('the outside toggle pauses the metronome',
+  await page.getByRole('button', { name: 'Start metronome' }).getAttribute('aria-pressed') === 'false');
+await page.getByRole('button', { name: 'Start metronome' }).click();
+check('the outside toggle resumes the stored tempo',
+  await page.getByRole('button', { name: 'Pause metronome' }).getAttribute('aria-pressed') === 'true');
+await page.getByRole('button', { name: 'Pause metronome' }).click();
 
 await page.locator('button.power-indicator').click();
 // Past the reverb tail, which is 1.3 s and legitimately still ringing.

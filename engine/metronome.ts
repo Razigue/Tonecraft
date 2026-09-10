@@ -1,5 +1,5 @@
 export const MIN_BPM = 30;
-export const MAX_BPM = 300;
+export const MAX_BPM = 450;
 export const TAPS_PER_MEASURE = 4;
 
 export interface ClickVoice {
@@ -22,13 +22,14 @@ export function voiceForBeat(beat: number): ClickVoice {
 /** The average of the three intervals made by exactly four taps. */
 export function bpmFromFourTaps(taps: readonly number[]): number | null {
   if (taps.length !== TAPS_PER_MEASURE) return null;
+  const epsilon = 1e-6;
   for (let i = 1; i < taps.length; i += 1) {
     const interval = taps[i]! - taps[i - 1]!;
-    if (interval < 60_000 / MAX_BPM || interval > 60_000 / MIN_BPM) return null;
+    if (interval + epsilon < 60_000 / MAX_BPM || interval - epsilon > 60_000 / MIN_BPM) return null;
   }
   const average = (taps[3]! - taps[0]!) / 3;
   const bpm = 60_000 / average;
-  return bpm >= MIN_BPM && bpm <= MAX_BPM ? Math.round(bpm) : null;
+  return bpm + epsilon >= MIN_BPM && bpm - epsilon <= MAX_BPM ? Math.round(bpm) : null;
 }
 
 /**

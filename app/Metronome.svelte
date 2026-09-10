@@ -34,10 +34,9 @@
     <input
       type="number"
       min="30"
-      max="300"
+      max="450"
       step="1"
       inputmode="numeric"
-      placeholder="120"
       aria-label="Tempo in BPM"
       {value}
       oninput={(event) => onvalue(event.currentTarget.value)}
@@ -119,7 +118,6 @@
     appearance: textfield;
   }
   .tempo input::-webkit-inner-spin-button, .tempo input::-webkit-outer-spin-button { appearance: none; }
-  .tempo input::placeholder { color: #3d3740; }
   .tap-zone { display: grid; justify-items: center; gap: 12px; }
   .tap {
     width: 128px;
