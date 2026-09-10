@@ -33,6 +33,8 @@
   let tunerHistory: number[] = [];
   let tunerPreviousSource: Source | null = null;
   let tunerResumeFile = false;
+  const TUNER_REPORT_MS = 1000 / 60;
+  const TUNER_SMOOTHING_READINGS = 3;
   let metronomeDialog = $state<HTMLDialogElement | null>(null);
   let metronomeOpening = $state(false);
   let metronomeValue = $state('');
@@ -99,19 +101,21 @@
 
   function tickTuner(now: number): void {
     tunerFrame = requestAnimationFrame(tickTuner);
-    if (now - tunerReadAt < 50 || engine === null || tunerSamples === null) return;
+    // One report per display frame up to 60 Hz. The small tolerance prevents a
+    // nominal 16.67 ms frame from being skipped because of timer rounding.
+    if (now - tunerReadAt < TUNER_REPORT_MS - 1 || engine === null || tunerSamples === null) return;
     tunerReadAt = now;
     const rate = engine.readTunerInput(tunerSamples);
     const found = rate === null ? null : detectPitch(tunerSamples, rate);
 
     if (found !== null && found.confidence >= 0.7) {
       tunerHistory.push(found.frequency);
-      if (tunerHistory.length > 5) tunerHistory.shift();
+      if (tunerHistory.length > TUNER_SMOOTHING_READINGS) tunerHistory.shift();
       const ordered = [...tunerHistory].sort((a, b) => a - b);
       const frequency = ordered[Math.floor(ordered.length / 2)]!;
       tunerReading = noteFromFrequency(frequency, found.confidence);
       tunerLastNoteAt = now;
-    } else if (now - tunerLastNoteAt > 550) {
+    } else if (now - tunerLastNoteAt > 350) {
       tunerReading = null;
       tunerHistory = [];
     }

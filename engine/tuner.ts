@@ -25,8 +25,9 @@ export function noteFromFrequency(frequency: number, confidence = 1): PitchReadi
  * Finds the fundamental with the YIN difference function.
  *
  * The analysis is intentionally limited to the guitar register. The input is
- * decimated once, which leaves ample bandwidth for a guitar while keeping the
- * work below one million simple operations per visual update.
+ * reduced to a quarter of the device rate, which leaves ample bandwidth for a
+ * guitar and keeps a 60-report-per-second display cheaper than the old 20 Hz
+ * detector.
  */
 export function detectPitch(
   input: Float32Array,
@@ -48,7 +49,7 @@ export function detectPitch(
   // Well below a normal DI guitar, but above analyser noise and numerical dust.
   if (Math.sqrt(energy / input.length) < 0.0025) return null;
 
-  const step = 2;
+  const step = 4;
   const rate = sampleRate / step;
   const count = Math.floor(input.length / step);
   const minTau = Math.max(2, Math.floor(rate / maxFrequency));
