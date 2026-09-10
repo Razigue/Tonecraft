@@ -5,7 +5,6 @@
            type InputChannel, type InputDevice, type OutputDevice, type Source } from '../engine/engine.ts';
   import { openInput } from '../engine/input.ts';
   import { CABS } from '../engine/ir.ts';
-  import { judgeDropouts } from '../engine/diagnosis.ts';
   import { detectPitch, noteFromFrequency, type PitchReading } from '../engine/tuner.ts';
   import { bpmFromFourTaps, Metronome, MIN_BPM, MAX_BPM } from '../engine/metronome.ts';
   import type { Capture } from '../engine/catalog.ts';
@@ -317,15 +316,6 @@
   let latencyDetail = $state('');
   /** The two figures the sentence above is made of, to detect when it moves. */
   let latencyKey = '';
-  /**
-   * The one verdict that is read every frame: dropouts over the last minute.
-   * A crackle is the failure that decides whether this is playable at all
-   * (CLAUDE.md section 3), so it is the one thing said unprompted — and only
-   * while it is happening. The rate is over a rolling minute rather than the
-   * whole session, so a rough start does not name the machine for an hour.
-   */
-  let dropoutWarning = $state<string | null>(null);
-  const dropoutLog: { t: number; n: number }[] = [];
   /** The opening sheet. Dismissible: looking around is never blocked. */
   let asking = $state(true);
   let welcomeDialog = $state<HTMLDialogElement | null>(null);
@@ -612,15 +602,6 @@
         '. The chain itself adds a tenth of a millisecond. The input path is not ' +
         'reported by the browser and is not in this number.';
     }
-
-    // Dropouts over a rolling minute. The count arrives cumulative.
-    const now = performance.now();
-    const count = engine?.dropoutCount ?? 0;
-    dropoutLog.push({ t: now, n: count });
-    while (dropoutLog.length > 1 && now - dropoutLog[0]!.t > 60_000) dropoutLog.shift();
-    const first = dropoutLog[0]!;
-    const verdict = judgeDropouts(count - first.n, Math.max(1, (now - first.t) / 1000));
-    dropoutWarning = verdict.audible ? `${verdict.cause} ${verdict.remedy}` : null;
   }
 
   // --------------------------------------------------------------------------
@@ -834,8 +815,6 @@
     filePlaying = false;
     filePosition = 0;
     latencyMs = null;
-    dropoutWarning = null;
-    dropoutLog.length = 0;
     captureLoaded = false;
     state = 'idle';
     meters = { input: 0, drive: 0, output: 0, outputRms: 0, gate: 1, channelPeaks: [0], channels: 1 };
@@ -912,7 +891,7 @@
     <div class="amp-foot"><span></span><span></span></div>
     <div class="capture-info" data-capture={latencyMs === null ? 'idle' : captureLoaded ? 'loaded' : 'silent'}></div>
     {#if state === 'running' && !captureLoaded}<p class="alert">This capture is not running: you are hearing your dry guitar. Reload the page.</p>{/if}
-    <p class="notice" role="status">{notice ?? dropoutWarning ?? ''}</p>
+    <p class="notice" role="status">{notice ?? ''}</p>
     {#if mode === 'musician'}
       <section class="session-bar" aria-label="Audio session"><div class="source-block"><span class="eyebrow">AUDIO SOURCE</span><Segmented label="Source" options={SOURCES} value={source} onchange={chooseSource} /></div></section>
     {/if}
