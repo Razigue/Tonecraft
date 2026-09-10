@@ -1,11 +1,13 @@
 <script lang="ts">
   // Studio shell owns audio state; amplifier materials are scoped to its head.
+  import { onDestroy } from 'svelte';
   import { Engine, EngineError, readCatalog, type Meters,
            type InputChannel, type InputDevice, type OutputDevice, type Source } from '../engine/engine.ts';
   import { openInput } from '../engine/input.ts';
   import { CABS } from '../engine/ir.ts';
   import { judgeDropouts } from '../engine/diagnosis.ts';
   import { detectPitch, noteFromFrequency, type PitchReading } from '../engine/tuner.ts';
+  import { bpmFromFourTaps, Metronome, MIN_BPM, MAX_BPM } from '../engine/metronome.ts';
   import type { Capture } from '../engine/catalog.ts';
   import { PARAMS, STAGES, type Param } from '../schema/params.ts';
   import { PRESETS, DEFAULT_PRESET, type Preset } from './presets.ts';
@@ -14,6 +16,7 @@
   import Segmented from './Segmented.svelte';
   import Waveform from './Waveform.svelte';
   import Tuner from './Tuner.svelte';
+  import MetronomePanel from './Metronome.svelte';
   import './tokens.css';
 
   let mode = $state<'musician' | 'tester'>('musician');
@@ -30,6 +33,16 @@
   let tunerHistory: number[] = [];
   let tunerPreviousSource: Source | null = null;
   let tunerResumeFile = false;
+  let metronomeDialog = $state<HTMLDialogElement | null>(null);
+  let metronomeOpening = $state(false);
+  let metronomeValue = $state('');
+  let metronomeBpm = $state<number | null>(null);
+  let metronomePlaying = $state(false);
+  let metronomeVolume = $state(0.55);
+  let tapTimes: number[] = [];
+  let tapCount = $state(0);
+  let tapResetTimer: number | null = null;
+  const metronome = new Metronome();
 
   async function detectInputs(): Promise<void> {
     if (mode === 'tester' || detecting || state === 'starting') return;
@@ -126,6 +139,86 @@
       engine?.setTunerActive(false);
       tunerOpening = false;
     }
+  }
+
+  async function openMetronome(): Promise<void> {
+    if (metronomeOpening || metronomeDialog?.open) return;
+    metronomeOpening = true;
+    try {
+      await metronome.prepare(engine?.outputId ?? outputId);
+      metronome.setVolume(metronomeVolume);
+      metronomeDialog?.showModal();
+      if (metronomeBpm !== null) {
+        metronome.play(metronomeBpm);
+        metronomePlaying = true;
+      }
+    } catch {
+      notice = 'The metronome could not start. Check the browser audio output.';
+    } finally {
+      metronomeOpening = false;
+    }
+  }
+
+  function setMetronomeValue(raw: string): void {
+    if (tapResetTimer !== null) clearTimeout(tapResetTimer);
+    tapResetTimer = null;
+    metronomeValue = raw;
+    tapTimes = [];
+    tapCount = 0;
+    const value = Number(raw);
+    if (raw.trim() !== '' && Number.isFinite(value) && value >= MIN_BPM && value <= MAX_BPM) {
+      metronomeBpm = value;
+      metronome.play(value);
+      metronomePlaying = true;
+    } else {
+      metronomeBpm = null;
+      metronome.pause();
+      metronomePlaying = false;
+    }
+  }
+
+  function tapTempo(): void {
+    if (tapResetTimer !== null) clearTimeout(tapResetTimer);
+    tapResetTimer = null;
+    const now = performance.now();
+    const previous = tapTimes[tapTimes.length - 1];
+    if (previous === undefined || now - previous < 60_000 / MAX_BPM || now - previous > 60_000 / MIN_BPM) {
+      tapTimes = [now];
+      metronome.pause();
+      metronomeBpm = null;
+      metronomePlaying = false;
+      metronomeValue = '';
+    } else {
+      tapTimes.push(now);
+    }
+    tapCount = tapTimes.length;
+
+    if (tapTimes.length === 4) {
+      const bpm = bpmFromFourTaps(tapTimes);
+      if (bpm !== null) {
+        metronomeBpm = bpm;
+        metronomeValue = String(bpm);
+        metronome.play(bpm);
+        metronomePlaying = true;
+      }
+      tapTimes = [];
+      if (tapResetTimer !== null) clearTimeout(tapResetTimer);
+      tapResetTimer = self.setTimeout(() => { tapCount = 0; }, 420);
+    }
+  }
+
+  function setMetronomeVolume(value: number): void {
+    metronomeVolume = value;
+    metronome.setVolume(value);
+  }
+
+  function onMetronomeClosed(): void {
+    metronome.pause();
+    metronomePlaying = false;
+    tapTimes = [];
+    tapCount = 0;
+    if (tapResetTimer !== null) clearTimeout(tapResetTimer);
+    tapResetTimer = null;
   }
 
   function chooseMusician(): void {
@@ -437,6 +530,7 @@
     persist();
     await engine?.useOutput(id);
     outputId = engine?.outputId ?? outputId;
+    await metronome.useOutput(outputId);
   }
 
   async function chooseSource(next: string): Promise<void> {
@@ -745,6 +839,7 @@
     captures = catalog.models;
     settleCapture();
   });
+  onDestroy(() => { void metronome.dispose(); });
 </script>
 
 <svelte:window onkeydown={onWindowKey} />
@@ -822,6 +917,31 @@
     </button>
     <Tuner bind:element={tunerDialog} reading={tunerReading} onclose={() => void onTunerClosed()} />
   {/if}
+
+  <button
+    class="metronome-launch"
+    type="button"
+    aria-label="Open metronome"
+    title="Metronome"
+    aria-busy={metronomeOpening}
+    disabled={metronomeOpening}
+    onclick={() => void openMetronome()}
+  >
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M8 20h8M9 20l2-16h2l2 16M12 7l4 5M16 12l1.5-1.5" />
+    </svg>
+  </button>
+  <MetronomePanel
+    bind:element={metronomeDialog}
+    value={metronomeValue}
+    active={metronomePlaying}
+    volume={metronomeVolume}
+    {tapCount}
+    onvalue={setMetronomeValue}
+    onvolume={setMetronomeVolume}
+    ontap={tapTempo}
+    onclose={onMetronomeClosed}
+  />
 
   {#if mode === 'musician'}
   <dialog class="audio-settings" bind:this={settingsDialog} aria-labelledby="audio-settings-title">
@@ -970,9 +1090,8 @@
     color: var(--graphite);
   }
 
-  .tuner-launch {
+  .tuner-launch, .metronome-launch {
     position: fixed;
-    left: 22px;
     bottom: 20px;
     z-index: 4;
     display: grid;
@@ -986,9 +1105,11 @@
     color: #817a84;
     cursor: pointer;
   }
-  .tuner-launch:hover { color: #d4c9d7; border-color: #655b68; }
-  .tuner-launch:disabled { opacity: .45; cursor: wait; }
-  .tuner-launch:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; }
+  .tuner-launch { left: 22px; }
+  .metronome-launch { right: 22px; }
+  .tuner-launch:hover, .metronome-launch:hover { color: #d4c9d7; border-color: #655b68; }
+  .tuner-launch:disabled, .metronome-launch:disabled { opacity: .45; cursor: wait; }
+  .tuner-launch:focus-visible, .metronome-launch:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; }
 
   /* One target, hit as often as you like. The dot carries the state — the same
      idiom as a module's bypass — and the label says what you are hearing. */

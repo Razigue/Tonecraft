@@ -244,6 +244,30 @@ await page.getByRole('button', { name: 'Close tuner' }).click();
 const restoredOut = await meterPeak('out', 5000);
 check('closing the tuner restores the audio chain', restoredOut > 1, `out ${restoredOut} of 96`);
 
+await page.getByRole('button', { name: 'Open metronome' }).click();
+const metronomeBox = await page.locator('dialog.metronome').boundingBox();
+check('the metronome opens as a centred popup',
+  metronomeBox !== null && viewport !== null && metronomeBox.width < viewport.width * 0.5
+    && Math.abs(metronomeBox.x + metronomeBox.width / 2 - viewport.width / 2) < 2);
+check('opening the metronome does not start a sound',
+  await page.locator('dialog.metronome').getAttribute('data-playing') === 'false');
+await page.evaluate(async () => {
+  const button = document.querySelector('dialog.metronome .tap');
+  for (let i = 0; i < 4; i += 1) {
+    button.click();
+    if (i < 3) await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+});
+const tappedBpm = Number(await page.getByRole('spinbutton', { name: 'Tempo in BPM' }).inputValue());
+check('four taps set the tempo from their average interval',
+  tappedBpm >= 117 && tappedBpm <= 122, `${tappedBpm} BPM`);
+check('the fourth tap starts the metronome',
+  await page.locator('dialog.metronome').getAttribute('data-playing') === 'true');
+await page.getByRole('slider', { name: 'Metronome volume' }).fill('0.25');
+check('the metronome volume is adjustable',
+  await page.locator('dialog.metronome output').textContent() === '25%');
+await page.getByRole('button', { name: 'Close metronome' }).click();
+
 await page.locator('button.power-indicator').click();
 // Past the reverb tail, which is 1.3 s and legitimately still ringing.
 await page.waitForTimeout(2500);
