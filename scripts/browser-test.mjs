@@ -224,6 +224,22 @@ const meterPeak = (which, ms) => page.evaluate(async ([sel, d]) => {
   ? '.global-controls > .io-control:first-child .meter rect:last-child'
   : '.output-control .meter rect:last-child', ms]);
 
+// The tuner keeps listening to the selected guitar input but owns silence at
+// the destination. Closing it must hand the exact running chain back.
+await page.getByRole('button', { name: 'Open tuner' }).click();
+check('the tuner opens as a full-screen dialog',
+  await page.locator('dialog.tuner').isVisible());
+check('the tuner exposes a centred accuracy meter',
+  await page.getByRole('meter', { name: 'Tuning accuracy' }).isVisible());
+await page.waitForTimeout(400);
+const tuningIn = await meterPeak('in', 2200);
+const tuningOut = await meterPeak('out', 1200);
+check('the tuner keeps the guitar input alive while muting all monitoring',
+  tuningIn > 1 && tuningOut === 0, `in ${tuningIn}, out ${tuningOut}, of 96`);
+await page.getByRole('button', { name: 'Close tuner' }).click();
+const restoredOut = await meterPeak('out', 5000);
+check('closing the tuner restores the audio chain', restoredOut > 1, `out ${restoredOut} of 96`);
+
 await page.locator('button.power-indicator').click();
 // Past the reverb tail, which is 1.3 s and legitimately still ringing.
 await page.waitForTimeout(2500);

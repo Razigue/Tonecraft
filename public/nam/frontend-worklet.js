@@ -377,6 +377,12 @@ class FrontendProcessor extends AudioWorkletProcessor {
     else this.#pick(chans, n);
     const inp = this.mono;
 
+    /* Output 1 is a clean tuner tap: already mono and already following the
+       selected interface channel, but untouched by gain, gate or boost. It is
+       connected only to a zero-gain sink on the main graph. */
+    const tuner = outputs[1] && outputs[1][0];
+    if (tuner) tuner.set(inp.subarray(0, n));
+
     const gTarget = params.inputGain[0];
     const gateDb = params.gate[0];
     const boost = params.boost[0];

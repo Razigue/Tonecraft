@@ -137,6 +137,10 @@ const boostTone = (hz: number): number => clamp((hz / 5200 - 0.35) / 1.3, 0, 1);
 interface Nodes {
   bus: GainNode;
   frontend: AudioWorkletNode;
+  /** Clean, channel-selected input used only while the tuner sheet is open. */
+  tuner: AnalyserNode;
+  /** Keeps the analyser rendering without ever sending it to the headphones. */
+  tunerSink: GainNode;
   nam: AudioWorkletNode;
   trim: GainNode;
   cab: ConvolverNode;
@@ -186,6 +190,7 @@ export class Engine {
   #source: Source = 'live';
   #direct = false;
   #powered = true;
+  #tuning = false;
   #buffer: AudioBuffer | null = null;
   #fileNode: AudioBufferSourceNode | null = null;
   #filePlaying = false;
@@ -409,6 +414,7 @@ export class Engine {
     this.#nodes = null;
     this.#reverbWired = false;
     this.#context = null;
+    this.#tuning = false;
     // An output the rule picked belongs to the input it followed; a chosen one
     // belongs to the player and survives.
     if (!this.#sinkChosen) this.#sinkId = undefined;
@@ -429,8 +435,8 @@ export class Engine {
 
     const frontend = new AudioWorkletNode(context, 'frontend', {
       numberOfInputs: 1,
-      numberOfOutputs: 1,
-      outputChannelCount: [1],
+      numberOfOutputs: 2,
+      outputChannelCount: [1, 1],
       // Without these the node applies the default 'speakers' mixing rules,
       // which fold a two-channel capture down to one before the processor ever
       // sees it — and then choosing a channel is choosing between two copies of
@@ -441,6 +447,15 @@ export class Engine {
       channelInterpretation: 'discrete',
     });
     frontend.port.onmessage = (event: MessageEvent): void => this.#onFrontendMessage(event.data);
+
+    // The worklet's second output is the selected guitar channel before input
+    // gain, gate or boost. That gives pitch detection a clean signal without
+    // duplicating the interface/channel-selection rules on the main thread.
+    const tuner = new AnalyserNode(context, {
+      fftSize: 8192,
+      smoothingTimeConstant: 0,
+    });
+    const tunerSink = new GainNode(context, { gain: 0 });
 
     const nam = new AudioWorkletNode(context, 'nam', {
       numberOfInputs: 1,
@@ -484,7 +499,10 @@ export class Engine {
     meter.port.onmessage = (event: MessageEvent): void => this.#onOutputMessage(event.data);
 
     bus.connect(frontend);
-    frontend.connect(nam);
+    frontend.connect(nam, 0, 0);
+    frontend.connect(tuner, 1, 0);
+    tuner.connect(tunerSink);
+    tunerSink.connect(context.destination);
     nam.connect(trim);
     trim.connect(cab);
     cab.connect(bass);
@@ -514,7 +532,7 @@ export class Engine {
     meter.connect(context.destination);
 
     const nodes: Nodes = {
-      bus, frontend, nam, trim, cab, bass, mid, treble, presence, lowcut,
+      bus, frontend, tuner, tunerSink, nam, trim, cab, bass, mid, treble, presence, lowcut,
       chain, direct, dry, reverb, wet, master, meter,
     };
     nodes.cab.buffer = makeCabIR(context, this.#cab);
@@ -703,17 +721,42 @@ export class Engine {
     this.#apply('out_master');
   }
 
+  /**
+   * Silences every route to the output while leaving the clean input tap alive.
+   * The power state is deliberately untouched, so closing the tuner restores
+   * exactly what the player had before opening it.
+   */
+  setTunerActive(active: boolean): void {
+    this.#tuning = active;
+    if (active) void this.#context?.resume();
+    this.setDirect(this.#direct);
+    this.#apply('out_master');
+  }
+
+  /** Copies the latest clean input window and returns its sample rate. */
+  readTunerInput(target: Float32Array<ArrayBuffer>): number | null {
+    const nodes = this.#nodes;
+    const ctx = this.#context;
+    if (nodes === null || ctx === null || target.length !== nodes.tuner.fftSize) return null;
+    nodes.tuner.getFloatTimeDomainData(target);
+    return ctx.sampleRate;
+  }
+
+  get tunerBufferSize(): number {
+    return this.#nodes?.tuner.fftSize ?? 8192;
+  }
+
   setDirect(direct: boolean): void {
     this.#direct = direct;
     const nodes = this.#nodes;
     const ctx = this.#context;
     if (nodes === null || ctx === null) return;
     const now = ctx.currentTime;
-    nodes.chain.gain.setTargetAtTime(direct || !this.#powered ? 0 : 1, now, 0.02);
+    nodes.chain.gain.setTargetAtTime(direct || !this.#powered || this.#tuning ? 0 : 1, now, 0.02);
     nodes.direct.gain.setTargetAtTime(
-      direct && this.#powered ? dbToLinear(Engine.DIRECT_MAKEUP_DB) : 0, now, 0.02,
+      direct && this.#powered && !this.#tuning ? dbToLinear(Engine.DIRECT_MAKEUP_DB) : 0, now, 0.02,
     );
-    this.#setLiveOpen(this.#powered && !direct);
+    this.#setLiveOpen(this.#source === 'live' && (this.#tuning || (this.#powered && !direct)));
   }
 
   /**
@@ -828,7 +871,7 @@ export class Engine {
       case 'out_master':
       case 'out_mute':
         nodes.master.gain.setTargetAtTime(
-          this.#powered && on('out_mute') ? dbToLinear(v('out_master')) : 0, now, T,
+          this.#powered && !this.#tuning && on('out_mute') ? dbToLinear(v('out_master')) : 0, now, T,
         );
         break;
 

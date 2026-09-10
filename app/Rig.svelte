@@ -5,6 +5,7 @@
   import { openInput } from '../engine/input.ts';
   import { CABS } from '../engine/ir.ts';
   import { judgeDropouts } from '../engine/diagnosis.ts';
+  import { detectPitch, noteFromFrequency, type PitchReading } from '../engine/tuner.ts';
   import type { Capture } from '../engine/catalog.ts';
   import { PARAMS, STAGES, type Param } from '../schema/params.ts';
   import { PRESETS, DEFAULT_PRESET, type Preset } from './presets.ts';
@@ -12,12 +13,23 @@
   import Meter from './Meter.svelte';
   import Segmented from './Segmented.svelte';
   import Waveform from './Waveform.svelte';
+  import Tuner from './Tuner.svelte';
   import './tokens.css';
 
   let mode = $state<'musician' | 'tester'>('musician');
   let settingsDialog = $state<HTMLDialogElement | null>(null);
   let detecting = $state(false);
   let settingsError = $state('');
+  let tunerDialog = $state<HTMLDialogElement | null>(null);
+  let tunerOpening = $state(false);
+  let tunerReading = $state<PitchReading | null>(null);
+  let tunerFrame = 0;
+  let tunerReadAt = 0;
+  let tunerLastNoteAt = 0;
+  let tunerSamples: Float32Array<ArrayBuffer> | null = null;
+  let tunerHistory: number[] = [];
+  let tunerPreviousSource: Source | null = null;
+  let tunerResumeFile = false;
 
   async function detectInputs(): Promise<void> {
     if (mode === 'tester' || detecting || state === 'starting') return;
@@ -44,6 +56,76 @@
     if (mode === 'tester') return;
     settingsDialog?.showModal();
     void detectInputs();
+  }
+
+  async function openTuner(): Promise<void> {
+    if (tunerOpening || tunerDialog?.open || state === 'starting') return;
+    tunerOpening = true;
+    tunerPreviousSource = state === 'running' ? source : null;
+    tunerResumeFile = filePlaying;
+
+    try {
+      if (state !== 'running') await start('play');
+      else if (source !== 'live') await chooseSource('live');
+      if (state !== 'running' || engine === null) return;
+
+      tunerSamples = new Float32Array(engine.tunerBufferSize);
+      tunerHistory = [];
+      tunerReading = null;
+      tunerLastNoteAt = 0;
+      engine.setTunerActive(true);
+      tunerDialog?.showModal();
+      tunerFrame = requestAnimationFrame(tickTuner);
+    } catch (error) {
+      notice = error instanceof Error ? error.message : 'The tuner could not open.';
+      engine?.setTunerActive(false);
+    } finally {
+      tunerOpening = false;
+    }
+  }
+
+  function tickTuner(now: number): void {
+    tunerFrame = requestAnimationFrame(tickTuner);
+    if (now - tunerReadAt < 50 || engine === null || tunerSamples === null) return;
+    tunerReadAt = now;
+    const rate = engine.readTunerInput(tunerSamples);
+    const found = rate === null ? null : detectPitch(tunerSamples, rate);
+
+    if (found !== null && found.confidence >= 0.7) {
+      tunerHistory.push(found.frequency);
+      if (tunerHistory.length > 5) tunerHistory.shift();
+      const ordered = [...tunerHistory].sort((a, b) => a - b);
+      const frequency = ordered[Math.floor(ordered.length / 2)]!;
+      tunerReading = noteFromFrequency(frequency, found.confidence);
+      tunerLastNoteAt = now;
+    } else if (now - tunerLastNoteAt > 550) {
+      tunerReading = null;
+      tunerHistory = [];
+    }
+  }
+
+  async function onTunerClosed(): Promise<void> {
+    tunerOpening = true;
+    cancelAnimationFrame(tunerFrame);
+    tunerReading = null;
+    tunerSamples = null;
+    tunerHistory = [];
+
+    const previousSource = tunerPreviousSource;
+    const resumeFile = tunerResumeFile;
+    tunerPreviousSource = null;
+    tunerResumeFile = false;
+    try {
+      // Restore a file source while monitoring is still muted, so closing the
+      // sheet cannot leak a moment of live guitar before the old route returns.
+      if (engine !== null && previousSource !== null && source !== previousSource) {
+        await chooseSource(previousSource);
+        if (resumeFile && previousSource === 'file') play();
+      }
+    } finally {
+      engine?.setTunerActive(false);
+      tunerOpening = false;
+    }
   }
 
   function chooseMusician(): void {
@@ -725,6 +807,23 @@
   </main>
 
   {#if mode === 'musician'}
+    <button
+      class="tuner-launch"
+      type="button"
+      aria-label="Open tuner"
+      title="Tuner"
+      aria-busy={tunerOpening}
+      disabled={state === 'starting' || tunerOpening}
+      onclick={() => void openTuner()}
+    >
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+        <path d="M7 3v7a5 5 0 0 0 10 0V3M7 6h3M14 6h3M12 15v6M9.5 21h5" />
+      </svg>
+    </button>
+    <Tuner bind:element={tunerDialog} reading={tunerReading} onclose={() => void onTunerClosed()} />
+  {/if}
+
+  {#if mode === 'musician'}
   <dialog class="audio-settings" bind:this={settingsDialog} aria-labelledby="audio-settings-title">
     <div class="settings-heading"><h2 id="audio-settings-title">Audio settings</h2><button class="settings-button" aria-label="Close settings" onclick={() => settingsDialog?.close()}>×</button></div>
     <button class="start small" disabled={detecting || state === 'starting'} onclick={detectInputs}>{detecting ? 'Detecting inputs…' : 'Detect audio inputs'}</button>
@@ -870,6 +969,26 @@
     font-variant-numeric: tabular-nums;
     color: var(--graphite);
   }
+
+  .tuner-launch {
+    position: fixed;
+    left: 22px;
+    bottom: 20px;
+    z-index: 4;
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border: 1px solid #343136;
+    border-radius: 50%;
+    background: #111012;
+    color: #817a84;
+    cursor: pointer;
+  }
+  .tuner-launch:hover { color: #d4c9d7; border-color: #655b68; }
+  .tuner-launch:disabled { opacity: .45; cursor: wait; }
+  .tuner-launch:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; }
 
   /* One target, hit as often as you like. The dot carries the state — the same
      idiom as a module's bypass — and the label says what you are hearing. */

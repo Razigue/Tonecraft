@@ -19,9 +19,10 @@
     "measure:latency": "node scripts/measure-latency.mjs",
     "design:halfband": "tsx scripts/design-halfband.ts",
     "check": "tsx scripts/check-schema.ts",
-    "test": "npm run check && npm run test:input && npm run test:diagnosis",
+    "test": "npm run check && npm run test:input && npm run test:diagnosis && npm run test:tuner",
     "test:input": "tsx engine/input.test.ts",
     "test:diagnosis": "tsx engine/diagnosis.test.ts",
+    "test:tuner": "tsx engine/tuner.test.ts",
     "test:browser": "node scripts/browser-test.mjs",
     "verify": "npm test && npm run build && npm run test:browser"
   },
