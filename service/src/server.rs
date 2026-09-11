@@ -12,7 +12,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tungstenite::handshake::server::{ErrorResponse, Request, Response};
@@ -28,11 +28,18 @@ pub const DEFAULT_PORT: u16 = 47800;
 const MAX_PAYLOAD: usize = 256 << 20;
 /// Tuner samples per binary frame: about 21 ms at 48 kHz, one display frame.
 const TUNER_FRAME: usize = 1024;
+/// How long an engine the player launched outlives the last page. A reload
+/// reconnects within a couple of seconds (the settings sheet connects at load
+/// when the engine is the chosen backend); a closed tab never does.
+const GRACE: Duration = Duration::from_secs(10);
 
 pub struct Options {
     pub port: u16,
     /// Extra origins, lower case, no trailing slash.
     pub origins: Vec<String>,
+    /// Stays running with no page: started at login, or headless. Otherwise
+    /// the engine leaves `GRACE` after the last page does.
+    pub resident: bool,
 }
 
 impl Default for Options {
@@ -40,6 +47,7 @@ impl Default for Options {
         Self {
             port: DEFAULT_PORT,
             origins: Vec::new(),
+            resident: false,
         }
     }
 }
@@ -101,7 +109,7 @@ pub fn bind(port: u16) -> Result<TcpListener, RunError> {
 
 /// Binds and serves on this thread, with no tray.
 pub fn run(options: Options) -> Result<(), RunError> {
-    serve(bind(options.port)?, options.origins, None)
+    serve(bind(options.port)?, options.origins, options.resident, None)
 }
 
 // tungstenite's refusal type is large; it is built once per refused handshake.
@@ -109,6 +117,7 @@ pub fn run(options: Options) -> Result<(), RunError> {
 pub fn serve(
     listener: TcpListener,
     origins: Vec<String>,
+    resident: bool,
     hooks: Option<Hooks>,
 ) -> Result<(), RunError> {
     let (tx, rx) = mpsc::channel::<WebSocket<TcpStream>>();
@@ -157,6 +166,10 @@ pub fn serve(
         let busy = control.read();
         control.pump();
         control.report();
+        if !resident && control.alone_since.is_some_and(|t| t.elapsed() >= GRACE) {
+            log::write("no page came back: leaving");
+            control.quit = true;
+        }
         if control
             .hooks
             .as_ref()
@@ -188,6 +201,9 @@ struct Control {
     hooks: Option<Hooks>,
     /// Whether a page was connected at the last report to the tray.
     connected: bool,
+    /// When the last page left, while none has come back. Never set before a
+    /// first page: an engine launched ahead of the site waits for it.
+    alone_since: Option<Instant>,
     tuner_on: bool,
     tuner: Vec<f32>,
     quit: bool,
@@ -206,20 +222,37 @@ impl Control {
             config: Config::load(),
             hooks,
             connected: false,
+            alone_since: None,
             tuner_on: false,
             tuner: Vec::with_capacity(TUNER_FRAME),
             quit: false,
         })
     }
 
-    /// Tells the tray when a page arrives or leaves, and only then.
+    /// Acts when a page arrives or leaves, and only then.
+    ///
+    /// A page leaving takes the sound with it: the streams stop at once, so a
+    /// closed tab never leaves the guitar playing in the headphones with
+    /// nothing on screen to stop it, nor the ASIO driver held away from every
+    /// other program. A reloaded page reopens them when the player starts
+    /// again, exactly as after a first connection.
     fn report(&mut self) {
         let now = self.client.is_some();
-        if now != self.connected {
-            self.connected = now;
-            if let Some(h) = &self.hooks {
-                (h.on_connected)(now);
-            }
+        if now == self.connected {
+            return;
+        }
+        self.connected = now;
+        if now {
+            self.alone_since = None;
+        } else {
+            log::write("no page connected: streams stopped");
+            self.session = None;
+            self.tuner_on = false;
+            self.tuner.clear();
+            self.alone_since = Some(Instant::now());
+        }
+        if let Some(h) = &self.hooks {
+            (h.on_connected)(now);
         }
     }
 
@@ -259,8 +292,9 @@ impl Control {
     }
 
     fn adopt(&mut self, ws: WebSocket<TcpStream>) {
-        // A reloaded tab takes over from itself. The streams keep running:
-        // the new page decides whether to reopen them.
+        // A second tab takes over from the first. The streams keep running:
+        // the new page decides whether to reopen them. (A closed or reloaded
+        // tab is a page leaving, not this: see `report`.)
         if let Some(mut old) = self.client.take() {
             let _ = old.send(Message::text(json!({"type": "replaced"}).to_string()));
             let _ = old.close(None);

@@ -20,7 +20,12 @@ missing here.
   `http://127.0.0.1:<port>`, or an origin given with `--allow-origin`. Without
   this, any site open in the browser could drive the audio interface.
 - One client at a time. A new connection replaces the old one, which receives
-  `{"type":"replaced"}` and is closed: a reloaded tab takes over from itself.
+  `{"type":"replaced"}` and is closed: a second tab takes over from the first.
+- **A page leaving takes the sound with it.** When the connection ends — the
+  tab closed, reloaded or crashed — the engine stops the streams and drops the
+  chain at once, as `close` would. Launched by hand, it then exits if no page
+  connects within 10 seconds; a reload reconnects well inside that. Started at
+  login (`--background`) or `--headless`, it stays, idle, until the next page.
 - Text frames are JSON. Binary frames start with a one-byte kind.
 
 ## Page → engine

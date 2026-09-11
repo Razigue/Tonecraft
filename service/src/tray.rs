@@ -78,7 +78,7 @@ fn sender(proxy: &EventLoopProxy<UiEvent>) -> impl Fn(UiEvent) + Send + Sync + '
     }
 }
 
-pub fn run(listener: TcpListener, origins: Vec<String>) -> ! {
+pub fn run(listener: TcpListener, origins: Vec<String>, resident: bool) -> ! {
     #[allow(unused_mut)]
     let mut event_loop = EventLoopBuilder::<UiEvent>::with_user_event().build();
     #[cfg(target_os = "macos")]
@@ -110,7 +110,9 @@ pub fn run(listener: TcpListener, origins: Vec<String>) -> ! {
                     on_connected: Box::new(move |c| status(UiEvent::Connected(c))),
                     quit,
                 };
-                if let Err(server::RunError::Other(e)) = server::serve(listener, origins, Some(hooks)) {
+                if let Err(server::RunError::Other(e)) =
+                    server::serve(listener, origins, resident, Some(hooks))
+                {
                     log::write(&format!("fatal: {e}"));
                 }
                 send(UiEvent::Exit);

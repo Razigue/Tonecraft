@@ -40,12 +40,19 @@ it, and run `tonecraft-engine`. It has no window: open Tonecraft, choose
 - **Linux** — `tonecraft-engine-linux-x64.tar.gz`. Uses ALSA, which PipeWire
   and PulseAudio systems also provide.
 
+### When Tonecraft closes
+
+Closing Tonecraft's tab stops the sound at once and releases the interface.
+Launched by hand, the engine then exits by itself a few seconds later —
+reloading the page is quick enough to keep it.
+
 ### Start with the session
 
 `tonecraft-engine --install-autostart` starts it at every login (the page
 offers the same switch); `--uninstall-autostart` stops that. It is per user:
 the Windows `Run` key in HKCU, a LaunchAgent on macOS, an XDG autostart entry
-on Linux.
+on Linux. Started that way it stays by the clock, idle, when the tab closes:
+it was asked to live with the computer, not with the tab.
 
 Logs: `%LOCALAPPDATA%\Tonecraft\Engine\engine.log`, `~/Library/Logs/Tonecraft/`,
 or `~/.local/state/tonecraft/`.
