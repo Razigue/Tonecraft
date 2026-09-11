@@ -6,67 +6,40 @@
  * can fold aliasing back into the audible band, and the whole reason the
  * oversampling and the antiderivative anti-aliasing are there at all.
  *
- * Method: a pure sine goes into the stage; any energy that does not land on a
- * harmonic of that sine is aliasing. For the measurement to mean anything, the
- * analysis window's sidelobes must be lower than what is being measured: a Hann
- * window (-31 dB) would pass its own spectral leakage off as aliasing. So this
- * uses a 7-term Blackman-Harris, whose sidelobes are around -180 dB.
+ * Measured on the shipped chain.wasm itself, through `tc_measure_boost`: a
+ * separate instance of the input stage that can be built at any oversampling
+ * factor, with or without ADAA, for this table. The live chain always runs
+ * what ships (AD-5) and cannot be reached from here.
  *
- * Only the audible band counts: what survives above 17 kHz comes from the last
- * decimator's transition band and cannot be heard.
+ * Method: a pure sine goes in; any energy not on a harmonic of it is aliasing.
+ * The analysis window's sidelobes must sit below what is measured, so this uses
+ * a 7-term Blackman-Harris (around -180 dB) rather than a Hann (-31 dB). Only
+ * the audible band counts: what survives above 17 kHz comes from the last
+ * decimator's transition band.
  *
  * Usage:  npm run measure
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
-import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+
+import { instantiateChain } from '../public/dsp/chain-core.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SR = 48_000;
-const WORKLET = path.join(ROOT, 'public/nam/frontend-worklet.js');
 
-interface Processor {
-  process(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    params: Record<string, number[]>,
-  ): boolean;
-}
-type ProcessorClass = new () => Processor;
-
-/** Loads the worklet into a minimal sandbox, optionally rewritten. */
-function loadWorklet(source: string): ProcessorClass {
-  const registry: Record<string, ProcessorClass> = {};
-  const sandbox: Record<string, unknown> = {
-    sampleRate: SR, Math, console, Float32Array, Float64Array, Uint8Array,
-    AudioWorkletProcessor: class {
-      port = { postMessage(): void { /* nothing listens here */ }, onmessage: null };
-    },
-    registerProcessor: (n: string, c: ProcessorClass): void => { registry[n] = c; },
-  };
-  sandbox['globalThis'] = sandbox;
-  vm.createContext(sandbox);
-  vm.runInContext(source, sandbox);
-  return registry['frontend']!;
+interface MeasureExports {
+  memory: WebAssembly.Memory;
+  tc_alloc(bytes: number): number;
+  tc_free(ptr: number): void;
+  tc_measure_boost(stages: number, adaa: number, amount: number, tone: number,
+    inPtr: number, outPtr: number, frames: number, reset: number): number;
 }
 
-function withOversampling(factor: number): string {
-  return fs.readFileSync(WORKLET, 'utf8')
-    .replace('new OverSampler(osStages(4))', `new OverSampler(osStages(${factor}))`);
-}
-
-/** Isolates what ADAA contributes by reverting to a pointwise tanh. */
-function withoutADAA(factor: number): string {
-  const before = withOversampling(factor);
-  const after = before.replace(
-    /const y = \(du > 1e-6[\s\S]*?tnh\(0\.5 \* \(u \+ this\.pu\)\);/,
-    'const y = tnh(u);',
-  );
-  if (after === before) throw new Error('the ADAA substitution did not match');
-  return after;
-}
+const core = await instantiateChain(fs.readFileSync(path.join(ROOT, 'public/dsp/chain.wasm')));
+core.init(SR, 128);
+const e = core.exports as unknown as MeasureExports;
 
 /* ---------------------------- spectral tools ----------------------------- */
 
@@ -107,21 +80,18 @@ function bh7(N: number): Float64Array {
   return w;
 }
 
-function aliasDbc(Proc: ProcessorClass, f0: number): number {
-  const p = new Proc();
-  const inputs: Float32Array[][] = [[new Float32Array(128)]];
-  const outputs: Float32Array[][] = [[new Float32Array(128)]];
-  const params = { inputGain: [1], gate: [-100], boost: [1], boostTone: [0.5] };
+function aliasDbc(stages: number, adaa: boolean, f0: number): number {
   const H = 32768, WARM = 96000, M = H + WARM;   // 2 s of warm-up: steady state only
-  const rec = new Float64Array(M);
-  let k = 0;
-  for (let b = 0; b < M / 128; b++) {
-    for (let i = 0; i < 128; i++) {
-      inputs[0]![0]![i] = 0.5 * Math.sin((2 * Math.PI * f0 * (b * 128 + i)) / SR);
-    }
-    p.process(inputs, outputs, params);
-    for (let i = 0; i < 128; i++) rec[k++] = outputs[0]![0]![i]!;
-  }
+  const inPtr = e.tc_alloc(M * 4);
+  const outPtr = e.tc_alloc(M * 4);
+  const input = new Float32Array(e.memory.buffer, inPtr, M);
+  for (let n = 0; n < M; n++) input[n] = 0.5 * Math.sin((2 * Math.PI * f0 * n) / SR);
+  // Boost at maximum, tone at the middle of its travel: what the old table used.
+  e.tc_measure_boost(stages, adaa ? 1 : 0, 1, 0.5, inPtr, outPtr, M, 1);
+  const rec = new Float32Array(e.memory.buffer, outPtr, M).slice();
+  e.tc_free(inPtr);
+  e.tc_free(outPtr);
+
   const seg = rec.subarray(WARM), w = bh7(H);
   const re = new Float64Array(H), im = new Float64Array(H);
   for (let i = 0; i < H; i++) re[i] = seg[i]! * w[i]!;
@@ -152,14 +122,13 @@ const TONES = [1237, 2311, 3733];
 const FACTORS = [1, 2, 4, 8];
 
 console.log('\nBoost aliasing (boost at maximum), out-of-harmonic energy below');
-console.log('17 kHz, relative to the fundamental.\n');
+console.log('17 kHz, relative to the fundamental. Measured on public/dsp/chain.wasm.\n');
 console.log(`              ${TONES.map((f) => `${f} Hz`.padStart(11)).join('')}`);
 
 const rows: { adaa: boolean; os: number; values: number[] }[] = [];
 for (const adaa of [false, true]) {
   for (const os of FACTORS) {
-    const Proc = loadWorklet(adaa ? withOversampling(os) : withoutADAA(os));
-    const values = TONES.map((f) => aliasDbc(Proc, f));
+    const values = TONES.map((f) => aliasDbc(Math.log2(os), adaa, f));
     const label = `${adaa ? 'ADAA  x' : 'plain x'}${os}`;
     console.log(`  ${label.padEnd(12)}${values.map((v) => `${v.toFixed(1)} dBc`.padStart(11)).join('')}`);
     rows.push({ adaa, os, values });

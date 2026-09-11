@@ -1,6 +1,6 @@
 /**
  * Designs the half-band filters the boost's oversampler runs on, and prints
- * what they measure. The coefficients in public/nam/frontend-worklet.js are
+ * what they measure. The coefficients in dsp/frontend.cpp are
  * this script's output.
  *
  * Each 2x stage is an elliptic half-band split into two all-pass branches

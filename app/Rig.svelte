@@ -1,8 +1,9 @@
 <script lang="ts">
   // Studio shell owns audio state; amplifier materials are scoped to its head.
   import { onDestroy } from 'svelte';
-  import { Engine, EngineError, readCatalog, type Meters,
+  import { Engine, EngineError, readCatalog, type Meters, type Backend,
            type InputChannel, type InputDevice, type OutputDevice, type Source } from '../engine/engine.ts';
+  import type { NativeOpened } from '../engine/native-host.ts';
   import { openInput } from '../engine/input.ts';
   import { CABS } from '../engine/ir.ts';
   import { detectPitch, noteFromFrequency, type PitchReading } from '../engine/tuner.ts';
@@ -10,12 +11,15 @@
   import type { Capture } from '../engine/catalog.ts';
   import { PARAMS, STAGES, type Param } from '../schema/params.ts';
   import { PRESETS, DEFAULT_PRESET, type Preset } from './presets.ts';
+  import { loadSession, saveSession } from '../store/session.ts';
+  import { loadMedia, saveMedia, deleteMedia } from '../store/media.ts';
   import Knob from './Knob.svelte';
   import Meter from './Meter.svelte';
   import Segmented from './Segmented.svelte';
   import Waveform from './Waveform.svelte';
   import Tuner from './Tuner.svelte';
   import MetronomePanel from './Metronome.svelte';
+  import EngineSettings from './EngineSettings.svelte';
   import './tokens.css';
 
   let mode = $state<'musician' | 'tester'>('musician');
@@ -46,7 +50,8 @@
   const metronome = new Metronome();
 
   async function detectInputs(): Promise<void> {
-    if (mode === 'tester' || detecting || state === 'starting') return;
+    // Tonecraft Engine lists its own devices, and needs no microphone permission.
+    if (mode === 'tester' || detecting || state === 'starting' || backend === 'native') return;
     detecting = true;
     settingsError = '';
     let stream: MediaStream | undefined;
@@ -174,6 +179,7 @@
       metronome.pause();
       metronomePlaying = false;
     }
+    persist();
   }
 
   function tapTempo(): void {
@@ -199,6 +205,7 @@
         metronomeValue = String(bpm);
         metronome.play(bpm);
         metronomePlaying = true;
+        persist();
       }
       tapTimes = [];
       if (tapResetTimer !== null) clearTimeout(tapResetTimer);
@@ -209,6 +216,7 @@
   function setMetronomeVolume(value: number): void {
     metronomeVolume = value;
     metronome.setVolume(value);
+    persist();
   }
 
   async function toggleMetronome(): Promise<void> {
@@ -299,8 +307,6 @@
     { value: 'sum', label: 'Both' },
   ] as const;
 
-  const STORE = 'tonecraft-v1';
-
   let state = $state<State>('idle');
   let problem = $state<{ cause: string; fix: string } | null>(null);
   /**
@@ -347,6 +353,8 @@
   /** Whether the player has chosen a cabinet themselves since the last capture. */
   let cabTouched = $state(false);
   let preset = $state<string | null>(DEFAULT_PRESET);
+  /** The preset double-click returns to; survives an edit, unlike `preset`. */
+  let resetPreset: string | null = DEFAULT_PRESET;
 
   let devices = $state<InputDevice[]>([]);
   let deviceId = $state('');
@@ -357,6 +365,15 @@
    */
   let outputs = $state<OutputDevice[]>([]);
   let outputId = $state('');
+  /**
+   * Where the chain runs: this tab, or Tonecraft Engine, the native companion
+   * that plays through ASIO. The player's choice, remembered; the tone is the
+   * same either way, because both run the same chain. Which interface the
+   * engine plays through is its own saved configuration, edited from the
+   * settings sheet.
+   */
+  let backend = $state<Backend>('browser');
+  let nativeOpened = $state<NativeOpened | null>(null);
   let channel = $state<InputChannel>('follow');
   let channelCount = $state(1);
   let source = $state<Source>('live');
@@ -373,6 +390,8 @@
   let filePosition = $state(0);
   let filePlaying = $state(false);
   let fileLoop = $state(true);
+  /** The player's last take, kept in IndexedDB so Stop, Start and a reload keep it. */
+  let takeId: string | null = null;
   let dragging = $state(false);
 
   let engine: Engine | null = null;
@@ -417,28 +436,49 @@
   }
 
   // --------------------------------------------------------------------------
-  // Persistence. Local only, and never a reason to fail: a private window that
-  // refuses storage still plays.
+  // Persistence (store/). Local only, and never a reason to fail: a private
+  // window that refuses storage still plays.
+
+  /** Nothing is written until the saved session has been read, or the defaults would overwrite it. */
+  let restored = false;
 
   function persist(): void {
-    try {
-      localStorage.setItem(STORE, JSON.stringify({
-        values, captureFile, cab, channel, deviceId, outputId, source, preset,
-      }));
-    } catch { /* storage refused */ }
+    if (!restored) return;
+    // Snapshot: IndexedDB cannot structured-clone Svelte's state proxies.
+    saveSession($state.snapshot({
+      values, captureFile, cab, cabTouched, preset, resetPreset,
+      // Tonecraft Engine keeps its own device configuration now; nothing to save here.
+      deviceId, outputId, channel, backend, native: null,
+      source, takeId, fileLoop, metronomeBpm, metronomeVolume,
+    }));
   }
 
-  function restore(): void {
-    try {
-      const raw = localStorage.getItem(STORE);
-      if (raw === null) return;
-      const saved = JSON.parse(raw) as Record<string, unknown>;
-      if (typeof saved['channel'] === 'string') channel = saved['channel'] as InputChannel;
-      if (typeof saved['deviceId'] === 'string') deviceId = saved['deviceId'];
-      if (typeof saved['outputId'] === 'string') outputId = saved['outputId'];
-
-
-    } catch { /* unreadable, so ignored */ }
+  async function restore(): Promise<void> {
+    const saved = await loadSession();
+    if (saved.values !== undefined) values = { ...DEFAULT_VALUES, ...saved.values };
+    if (saved.resetPreset !== undefined) {
+      resetPreset = saved.resetPreset;
+      const from = PRESETS.find((p) => p.name === resetPreset);
+      resetValues = { ...DEFAULT_VALUES, ...(from?.values ?? {}) };
+    }
+    if (saved.preset !== undefined) preset = saved.preset;
+    if (saved.captureFile !== undefined) captureFile = saved.captureFile;
+    if (saved.cab !== undefined) cab = saved.cab;
+    if (saved.cabTouched !== undefined) cabTouched = saved.cabTouched;
+    if (saved.deviceId !== undefined) deviceId = saved.deviceId;
+    if (saved.outputId !== undefined) outputId = saved.outputId;
+    if (saved.channel !== undefined) channel = saved.channel;
+    if (saved.backend !== undefined) backend = saved.backend;
+    if (saved.source !== undefined) source = saved.source;
+    if (saved.takeId !== undefined) takeId = saved.takeId;
+    if (saved.fileLoop !== undefined) fileLoop = saved.fileLoop;
+    if (saved.metronomeVolume !== undefined) metronomeVolume = saved.metronomeVolume;
+    // The tempo comes back ready, never playing: sound waits for a gesture.
+    if (saved.metronomeBpm != null && saved.metronomeBpm >= MIN_BPM && saved.metronomeBpm <= MAX_BPM) {
+      metronomeBpm = saved.metronomeBpm;
+      metronomeValue = String(saved.metronomeBpm);
+    }
+    if (captures.length > 0) settleCapture();
   }
 
   // --------------------------------------------------------------------------
@@ -454,6 +494,7 @@
   async function applyPreset(p: Preset): Promise<void> {
     values = { ...values, ...p.values };
     resetValues = { ...DEFAULT_VALUES, ...p.values };
+    resetPreset = p.name;
     for (const [id, v] of Object.entries(p.values)) engine?.setParam(id, v);
     // A preset may name a capture that is not installed.
     const wanted = captures.some((c) => c.file === p.capture) ? p.capture : captures[0]?.file;
@@ -541,11 +582,29 @@
     await metronome.useOutput(outputId);
   }
 
+  /** Moving the chain between the browser and Tonecraft Engine restarts it; nothing else changes. */
+  async function chooseBackend(next: Backend): Promise<void> {
+    if (next === backend) return;
+    backend = next;
+    persist();
+    await restart();
+  }
+
+  /* The chain is rebuilt from the rig's state on every start, in either host,
+     so a restart is how a device or buffer change takes effect. */
+  async function restart(): Promise<void> {
+    if (state !== 'running') return;
+    const intent: Intent = source === 'file' ? 'demo' : 'play';
+    await stop();
+    await start(intent);
+  }
+
   async function chooseSource(next: string): Promise<void> {
     source = next as Source;
     persist();
     await engine?.setSource(source);
     if (source === 'live') { engine?.stopFile(); filePlaying = false; }
+    else if (filePeaks === null) await loadTake();
   }
 
   function onModel(file: string, ok: boolean): void {
@@ -554,8 +613,9 @@
 
   function onEngineError(message: string): void {
     captureLoaded = false;
-    notice = `The amplifier engine did not start (${message}). Reload the page; ` +
-      'if it persists, run `npm run vendor`.';
+    notice = backend === 'native'
+      ? `${message}. Start Tonecraft Engine again, or switch the audio engine back to the browser in the settings.`
+      : `The amplifier engine did not start (${message}). Reload the page; if it persists, run \`npm run build:dsp\`.`;
   }
 
   /**
@@ -577,6 +637,9 @@
 
   function onMeters(m: Meters): void {
     meters = m;
+    // The engine can reopen by itself when a device changes: follow what it opened.
+    const opened = engine?.nativeOpened ?? null;
+    if (opened !== nativeOpened) nativeOpened = opened;
     channelCount = m.channels;
     latencyMs = engine?.roundTripMs ?? null;
     const parts = engine?.latencyParts ?? null;
@@ -592,15 +655,18 @@
        garbage the collector has to come back for — on the one thread that
        must not stall. */
     const key = parts === null ? '' :
-      `${parts.base.toFixed(1)}/${parts.output.toFixed(1)}/${outputs.length > 1}`;
+      `${backend}/${parts.input.toFixed(1)}/${parts.output.toFixed(1)}/${outputs.length > 1}`;
     if (key !== latencyKey) {
       latencyKey = key;
-      latencyDetail = parts === null ? '' :
-        `${parts.base.toFixed(1)} ms of render buffer, which is one block and cannot ` +
-        `go lower, and ${parts.output.toFixed(1)} ms in the output device` +
-        (outputs.length > 1 ? ', which the Output selector can change' : '') +
-        '. The chain itself adds a tenth of a millisecond. The input path is not ' +
-        'reported by the browser and is not in this number.';
+      latencyDetail = parts === null ? '' : backend === 'native'
+        ? `${parts.input.toFixed(1)} ms in and ${parts.output.toFixed(1)} ms out, as the driver reports them` +
+          (nativeOpened?.bufferSize == null ? '' : ` at ${nativeOpened.bufferSize}-frame buffers`) +
+          '. The chain itself adds nothing; a smaller buffer in the settings lowers both.'
+        : `${parts.input.toFixed(1)} ms of render buffer, which is one block and cannot ` +
+          `go lower, and ${parts.output.toFixed(1)} ms in the output device` +
+          (outputs.length > 1 ? ', which the Output selector can change' : '') +
+          '. The chain itself adds a tenth of a millisecond. The input path is not ' +
+          'reported by the browser and is not in this number.';
     }
   }
 
@@ -632,7 +698,8 @@
     return peaks;
   }
 
-  async function loadFile(file: File | undefined): Promise<void> {
+  /** `remember`: false when the file already came out of storage. */
+  async function loadFile(file: File | undefined, remember = true): Promise<void> {
     if (file === undefined || engine === null) return;
     pause();
     try {
@@ -642,9 +709,27 @@
       filePeaks = peaksOf(buffer);
       filePosition = 0;
       notice = null;
+      if (remember) void rememberTake(file);
     } catch (error) {
       notice = `That file could not be decoded: ${String((error as Error).message)}`;
     }
+  }
+
+  /** Only a take that decoded is kept; the one it replaces is deleted, so the store holds one. */
+  async function rememberTake(file: File): Promise<void> {
+    const previous = takeId;
+    takeId = await saveMedia(file, 'take');
+    if (previous !== null && previous !== takeId) void deleteMedia(previous);
+    persist();
+  }
+
+  /** The remembered take, back from IndexedDB. False when there is none any more. */
+  async function loadTake(): Promise<boolean> {
+    if (takeId === null || engine === null) return false;
+    const file = await loadMedia(takeId);
+    if (file === null) { takeId = null; persist(); return false; }
+    await loadFile(file, false);
+    return filePeaks !== null;
   }
 
   const DEMO_NAME = 'Demo take (Tonecraft)';
@@ -733,7 +818,11 @@
     if (state === 'starting' || state === 'running' || detecting) return;
     state = 'starting';
     problem = null;
+    // Milliseconds after load, long settled by the first click; awaited so a
+    // very fast one cannot start the chain on defaults.
+    await ready;
     engine = new Engine({ onMeters, onModel, onEngineError });
+    engine.useNative(backend === 'native');
     source = intent === 'demo' ? 'file' : 'live';
     /* A fresh engine defaults to the live input, so the source has to be pushed
        into it every time — not only on the demo path. Without this, stopping
@@ -753,6 +842,9 @@
       if (deviceId !== '') await engine.useDevice(deviceId);
       outputsProbed = false;
       await engine.start();
+      nativeOpened = engine.nativeOpened;
+      // Under ASIO the clicks have to leave through the interface too.
+      metronome.useChain(engine.clickTransport);
       // Anything moved before starting carries over — the rig is live-looking
       // from the first frame, so it has to be honest about what it shows.
       for (const p of PARAMS) {
@@ -766,8 +858,10 @@
       // Only meaningful once permission has been granted, which the demo path
       // deliberately never asks for.
       if (intent === 'play' && mode === 'musician') {
-        devices = await engine.listInputs();
-        outputs = await engine.listOutputs();
+        if (backend === 'browser') {
+          devices = await engine.listInputs();
+          outputs = await engine.listOutputs();
+        }
         channelCount = engine.channelCount;
       }
       frame = requestAnimationFrame(tick);
@@ -780,8 +874,13 @@
          A file has to be re-decoded on every start, because the buffer belongs
          to the engine and stopping threw the engine away. The waveform on
          screen outlived it, so without this, Start after Stop left a take
-         drawn, a Play button that responded, and no sound. */
-      if (intent === 'demo' || fileName === DEMO_NAME) await loadDemo();
+         drawn, a Play button that responded, and no sound.
+         The player's own take is read back from IndexedDB for the same
+         reason, so a restart or a reload no longer loses it. */
+      engine.setLoop(fileLoop);
+      const ownTake = intent === 'demo' && mode === 'musician' && fileName !== DEMO_NAME && await loadTake();
+      if (ownTake) { /* nothing else to load */ }
+      else if (intent === 'demo' || fileName === DEMO_NAME) await loadDemo();
       else if (source === 'file' && filePeaks !== null) {
         notice = 'Load the file again — stopping released it.';
         filePeaks = null;
@@ -810,8 +909,10 @@
 
   async function stop(): Promise<void> {
     cancelAnimationFrame(frame);
+    metronome.useChain(null);
     await engine?.stop();
     engine = null;
+    nativeOpened = null;
     filePlaying = false;
     filePosition = 0;
     latencyMs = null;
@@ -830,8 +931,8 @@
 
   // Component init, not an effect: restore() writes the same state the effect
   // would then be reading, which is how an effect turns into a loop. The island
-  // is client:only, so localStorage exists by the time this runs.
-  restore();
+  // is client:only, so IndexedDB exists by the time this runs.
+  const ready = restore().catch(() => {}).finally(() => { restored = true; });
   void readCatalog().then((catalog) => {
     captures = catalog.models;
     settleCapture();
@@ -959,10 +1060,15 @@
   {#if mode === 'musician'}
   <dialog class="audio-settings" bind:this={settingsDialog} aria-labelledby="audio-settings-title">
     <div class="settings-heading"><h2 id="audio-settings-title">Audio settings</h2><button class="settings-button" aria-label="Close settings" onclick={() => settingsDialog?.close()}>×</button></div>
+    <EngineSettings {backend} opened={nativeOpened} onbackend={chooseBackend} />
+    {#if backend === 'native'}
+    {#if nativeOpened !== null && channelCount > 1}<div class="device-controls"><Segmented label="Input channel" options={CHANNELS} value={channel} onchange={chooseChannel}/><div class="levels">{#each meters.channelPeaks as peak}<span class="level"><span class="level-fill" style={`transform:scaleX(${level(peak)})`}></span></span>{/each}</div></div>{/if}
+    {:else}
     <button class="start small" disabled={detecting || state === 'starting'} onclick={detectInputs}>{detecting ? 'Detecting inputs…' : 'Detect audio inputs'}</button>
     <div aria-busy={detecting}>
     <div class="device-controls">{#if devices.length > 0}<label class="field"><span class="t-small">Input device</span><select disabled={detecting} value={deviceId} onchange={e => chooseDevice(e.currentTarget.value)}><option value="">Default input</option>{#each devices as d}<option value={d.id}>{d.label || 'Input'}</option>{/each}</select></label>{/if}{#if channelCount > 1}<Segmented label="Input channel" options={CHANNELS} value={channel} onchange={chooseChannel}/><div class="levels">{#each meters.channelPeaks as peak}<span class="level"><span class="level-fill" style={`transform:scaleX(${level(peak)})`}></span></span>{/each}</div>{/if}{#if outputs.length > 1}<label class="field"><span class="t-small">Output device</span><select value={outputId} onfocus={() => void probeOutputs()} onchange={e => chooseOutput(e.currentTarget.value)}><option value="">Same as input</option>{#each outputs as d}<option value={d.id}>{d.label || 'Output'}{d.outputMs === undefined ? '' : ` — ${d.outputMs.toFixed(0)} ms`}</option>{/each}</select></label>{/if}</div>
     </div>
+    {/if}
     {#if settingsError}<p class="failure" role="alert">{settingsError}</p>{/if}
     <button class="connect" disabled={detecting || state === 'starting'} onclick={() => { settingsDialog?.close(); if (state !== 'running') void power(); }}>Done</button>
   </dialog>
@@ -1013,7 +1119,7 @@
             <input
               type="checkbox"
               checked={fileLoop}
-              onchange={(e) => { fileLoop = e.currentTarget.checked; engine?.setLoop(fileLoop); }}
+              onchange={(e) => { fileLoop = e.currentTarget.checked; engine?.setLoop(fileLoop); persist(); }}
             /> Loop
           </label>
           <span class="t-small name">{fileName}</span>

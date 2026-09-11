@@ -1,63 +1,67 @@
-# `engine/` — the chain, the captures, the meters
+# `engine/` — what the product does with the chain
 
 **Depends on `schema/`.**
 
-Builds the audio graph on the main thread, opens the input, hands the WASM bytes
-and the capture to the worklets, and reads metering back.
+The chain itself is one WebAssembly module, `public/dsp/chain.wasm`, compiled
+from `dsp/` by `npm run build:dsp`:
 
 ```
-source (live DI or an audio file)
-  -> public/nam/frontend-worklet.js   channel choice, trim, gate, TS boost (4x + ADAA)
-  -> public/nam/nam-processor.js      the capture — NeuralAmpModelerCore in WASM
-  -> capture trim                     measured offline, so captures match each other
-  -> cabinet                          ConvolverNode, IR synthesised in ir.ts
-  -> four-band correction             native biquads, post-cabinet
-  -> reverb, in parallel
+source (live DI or an audio file, played by the chain itself)
+  -> frontend      channel choice, trim, gate, TS boost (4x + ADAA)
+  -> amp           the NAM capture — NeuralAmpModelerCore
+  -> capture trim  measured offline, so captures match each other
+  -> cabinet       IR synthesised in ir.ts, zero-latency convolution
+  -> four-band correction, the Web Audio biquad formulas exactly
+  -> reverb, in parallel, computed only while audible
   -> master
-  -> public/nam/output-worklet.js     the limiter, then peak, RMS, dropouts
+  -> limiter       always on, no control anywhere; then peak, RMS, meter frame
 ```
 
-The limiter is in the output worklet rather than in a `WaveShaperNode` because
-a WaveShaperNode at 4x delays the signal by 192 frames in Chromium — 4 ms at
-48 kHz, measured by `scripts/measure-latency.mjs`. Inside the worklet it runs
-sample by sample at zero latency; the residual above the knee goes through
-antiderivative anti-aliasing, and below the knee the stage is exactly
-transparent.
+It has two hosts, and this directory is what keeps them from drifting apart:
 
-The reverb is connected only while its mix is above zero. A `ConvolverNode`
-with a live input renders its whole 1.3 s tail on every quantum whether or
-not anything listens; disconnected, the browser lets it finish its tail and
-then stops calling it.
+| File | Role |
+|---|---|
+| `engine.ts` | Everything the product decides: parameters, power, the tuner's silence, the source, the capture, the cabinet. Sends the same `tc_*` calls to either host. |
+| `chain-host.ts` | The interface a host implements. Hosts move samples and forward calls; they carry no feature. |
+| `web-host.ts` | The browser: one AudioContext, the single AudioWorklet (`public/dsp/chain-processor.js`), the input, the output device. |
+| `native-host.ts` | Tonecraft Engine (`service/`), for ASIO: a loopback WebSocket to the native program that runs the same `chain.wasm`. The engine owns its device configuration; the page edits it with `configure` and re-sends the chain's state when the engine reopens. Protocol: `service/PROTOCOL.md`. |
+
+A feature added to `dsp/` or to `engine.ts` is in both hosts the moment it
+exists, because neither host has anywhere to put one. `npm run test:parity`
+holds them to it: the same calls through `chain-core.js` (V8) and through
+`tonecraft-engine render` (wasmtime) must produce bit-identical output.
+
+**Nothing in the chain adds latency.** The cabinet and reverb are split into a
+direct-form head and a partitioned tail whose delay is exactly the head's
+length, so both are zero-latency at any host block size; the limiter runs
+sample by sample. `npm run test:chain` asserts it and `npm run measure:latency`
+prints it: 0 frames for the chain, 4.6 frames (0.1 ms) inside the boost's
+oversampler. What is left is the host's buffer — the browser's render quantum
+and output device, or the ASIO buffer the player chose.
+
+Parameters cross as raw engineering units (AD-9) and the chain glides to them
+itself (`dsp/smooth.h`, AD-20): the native host has no AudioParam, and one
+smoothing layer for both is what makes them sound the same while a fader moves.
+Metering is one-way and lossy-tolerant (AD-12): a frame of `schema/chain.ts`'s
+layout, about 30 times a second, from whichever host is running.
 
 The output device follows the input's hardware (`groupId`) unless the player
-chose one: the headphones are in the interface, and one clock in and out
-means no drift and no resampling to hide it. `Engine.canChooseOutput` is false
-on Firefox, which has no `setSinkId` on AudioContext; nothing is offered or
-said there.
+chose one: the headphones are in the interface, and one clock in and out means
+no drift. `canChooseOutput()` is false on Firefox, which has no `setSinkId` on
+AudioContext. Under Tonecraft Engine the driver decides, and with ASIO input
+and output are the same device by construction.
 
-The worklets live in `public/` because an AudioWorklet module is loaded by URL
-and evaluated in its own global scope; they are plain JS and go out untouched.
-The order they are added in matters: `nam-glue.js` publishes `createNamModule`
-on the worklet's globalThis and `nam-processor.js` reads it from there.
+`ir.ts` synthesises both impulse responses as plain samples at the chain's
+rate — no `.wav`, and a minimum-phase cabinet, the most compact transient a
+given magnitude admits. One synthesis for both hosts: the native engine
+receives the samples.
 
-`ir.ts` synthesises both impulse responses — no `.wav` to download, and a
-minimum-phase cabinet, which is the most compact transient response a given
-magnitude admits. Without a cabinet these captures are not an amp sound: they
-are captures of the amplifier alone and still +5 dB at 7 kHz.
-
-Continuous parameters cross as `AudioParam` values so they interpolate
-sample-accurately (AD-20). `postMessage` carries only discrete changes — a
-capture, a channel, a bypass — and the metering return. Metering is one-way and
-lossy-tolerant: a dropped frame must never affect audio, state or correctness
-(AD-12).
+The metronome keeps its own AudioContext in the browser, because it ticks with
+the engine off. Under Tonecraft Engine it hands its voices to the chain's click
+generator instead (`dsp/click.h`): with ASIO the browser's output is not where
+the headphones are.
 
 `diagnosis.ts` turns measurements into sentences and nothing else. Every
 function in it is pure, and no verdict it can return stops anyone playing.
-
-**Nothing displays those sentences at the moment.** The rig used to carry a
-permanent report at the foot of the page — the latency tier, the impedance
-diagnosis, the dropout warning — and it was removed: on a healthy machine it
-named the operating system's buffering on every frame, which is nagging rather
-than informing. `engine.health` still computes all of it for whoever wants it
-back, and `app/` deliberately reads `roundTripMs` instead, so the metering loop
-does not run four verdicts thirty times a second for nobody.
+Nothing displays those sentences at the moment; `engine.health` still computes
+them for whoever wants them back.

@@ -63,6 +63,7 @@ Dependencies point one way only. `dsp/` never imports TypeScript. `app/` never i
 - **Binds:** FR-14, FR-15, NFR-1
 - **Prevents:** a node-per-effect graph, where every boundary is a buffer copy and metering spans contexts.
 - **Rule:** all audio processing lives in a single `AudioWorkletProcessor`. No `AudioNode` sits between the input and the output except the nodes required to reach the worklet itself.
+- **Amended 2026-09-11:** achieved, and extended. The whole chain is one module, `public/dsp/chain.wasm`, run by the one worklet — and by a second host, Tonecraft Engine (`service/`), which runs the same module under wasmtime so the chain can play through ASIO. Hosts carry no DSP and no product logic; `engine/engine.ts` drives both with the same `tc_*` calls, and `npm run test:parity` holds their output bit-identical.
 
 ### AD-2 — Non-linear stages are contiguous
 
@@ -75,6 +76,7 @@ Dependencies point one way only. `dsp/` never imports TypeScript. `app/` never i
 - **Binds:** FR-6, FR-14, NFR-6
 - **Prevents:** a cab that renders differently in each browser, and a convolution implementation written twice.
 - **Rule:** impulse-response convolution is a SIMD direct-form FIR compiled into the WASM module. `ConvolverNode` is not used anywhere. IRs are capped at 2048 taps; a longer IR requires revisiting this decision, not silently switching algorithm.
+- **Amended 2026-09-11 (the revisit):** the reverb's 1.3 s impulse is 62k taps, and in direct form it would cost about 3 GMAC/s. Both convolvers (`dsp/convolver.cpp`) are therefore a direct-form SIMD head of 128 taps — where latency is decided — plus a uniformly partitioned FFT tail whose own delay is exactly the head's length. Zero latency at any host block size, and within -139 dB of the textbook sum (`npm run test:chain`). The summation order is written out, so the result is the same on every engine (AD-4).
 
 ### AD-4 — Deterministic floating point
 
@@ -94,6 +96,7 @@ Dependencies point one way only. `dsp/` never imports TypeScript. `app/` never i
 - **Binds:** FR-1, FR-6, FR-33
 - **Prevents:** a demo that sounds better than the real-time path.
 - **Rule:** build-time renders load the identical `.wasm` artifact the browser loads, driven from Node. There is no second implementation, no native build of the chain, and no separate "offline quality" configuration. The runtime `OfflineAudioContext` fallback composes the same stages through the same worklet.
+- **Amended 2026-09-11:** Tonecraft Engine is not a native build of the chain. The page uploads its own `chain.wasm` to it and it runs that file under wasmtime; `tonecraft-engine render` is the same code path, and is what `npm run test:parity` compares with Node.
 
 ### AD-7 — The parameter schema is the only source of truth
 
@@ -123,7 +126,7 @@ Dependencies point one way only. `dsp/` never imports TypeScript. `app/` never i
 
 - **Binds:** FR-19, FR-27, FR-32
 - **Prevents:** two sources of truth, and a state read that requires an audio-thread round trip.
-- **Rule:** chain state lives in main-thread stores. The worklet is a sink for parameters and a source only for measurement. `localStorage`, the URL hash and the tone file are projections of that store. Nothing reads state back out of the worklet.
+- **Rule:** chain state lives in main-thread stores. The worklet is a sink for parameters and a source only for measurement. IndexedDB (`store/`), the URL hash and the tone file are projections of that store. Nothing reads state back out of the worklet.
 
 ### AD-12 — Metering is one-way and lossy-tolerant
 
@@ -179,6 +182,7 @@ Dependencies point one way only. `dsp/` never imports TypeScript. `app/` never i
 - **Binds:** FR-19, FR-27
 - **Prevents:** double smoothing, which is sluggish and inconsistent between stages, and its opposite, which zippers.
 - **Rule:** continuous parameters are smoothed once, by `AudioParam` interpolation at the worklet boundary. A `dsp/` stage receives an already-smoothed value and must add no smoothing of its own. A stage deriving coefficients recomputes them per block from the value it was handed.
+- **Amended 2026-09-11:** the one layer is the chain's own boundary (`dsp/smooth.h`, exactly `setTargetAtTime`), not `AudioParam`: the native host has no AudioParam, and two hosts smoothing differently would make a moving fader sound different in each. Hosts pass raw engineering values; stages still add none of their own, except the boost's per-sample smoothing in the oversampled domain, which predates this and exists to avoid a 375 Hz staircase modulating the non-linearity.
 
 ### AD-21 — Meter slots and bypass are declared, never positional
 

@@ -158,27 +158,23 @@ function gainAt(h: Float32Array, len: number, f: number, sr: number): number {
 }
 
 /**
- * The cabinet IR — mono.
+ * The cabinet IR — mono, at the chain's rate.
  *
- * It used to be stereo: two channels of the same curve with a micro-variation
- * of timbre on the right, to open the image slightly without a phase
- * difference. Nobody ever heard it. The chain ends at the output worklet — the
- * limiter and the meter — declared `channelCount: 1` with
- * `channelInterpretation: 'discrete'`, and a discrete down-mix does not sum the
- * extra channel, it drops it. So the right channel was convolved on every
- * quantum and thrown away at the last node in the graph.
+ * Plain samples rather than an AudioBuffer: the chain convolves it itself, in
+ * the browser's worklet and in the native engine alike, and the native engine
+ * has no AudioContext to make a buffer with. One synthesis, here, for both.
  *
- * Halving it changes nothing audible (what survived was channel 0, which is
- * exactly this) and halves the cost of the convolution. Reinstating the width
- * is a decision about the output stage, not about this file: it would mean
- * carrying two channels all the way to the destination, and paying for them.
+ * It used to be stereo, with a micro-variation of timbre on the right. Nobody
+ * ever heard it: the chain's output stage was mono and a discrete down-mix
+ * drops the extra channel. Reinstating the width is a decision about the
+ * output stage, not about this file.
  */
-export function makeCabIR(ctx: BaseAudioContext, id: string): AudioBuffer {
+export function cabIR(sampleRate: number, id: string): Float32Array<ArrayBuffer> {
   const cab = cabById(id);
-  const sr = ctx.sampleRate;
+  const sr = sampleRate;
   const N = 8192;
   const LEN = 1024;                          // ~21 ms at 48 kHz, plenty
-  const buf = ctx.createBuffer(1, LEN, sr);
+  const out = new Float32Array(LEN);
 
   {
     const ch = 0;
@@ -192,7 +188,6 @@ export function makeCabIR(ctx: BaseAudioContext, id: string): AudioBuffer {
     }
 
     const h = minPhaseIR(mag);
-    const out = buf.getChannelData(ch);
 
     // Half-cosine window over the last quarter, rather than a hard truncation.
     const fadeStart = Math.floor(LEN * 0.72);
@@ -222,21 +217,21 @@ export function makeCabIR(ctx: BaseAudioContext, id: string): AudioBuffer {
     const g = gainAt(out, LEN, 1000, sr);
     if (g > 1e-9) for (let i = 0; i < LEN; i++) out[i]! /= g;
   }
-  return buf;
+  return out;
 }
 
 /**
  * A small dark plate, enough to place the sound without drowning it. Mono, for
- * the reason the cabinet is: the second channel never reached the destination.
+ * the reason the cabinet is. Its 14 ms of pre-delay are exact zeros, which the
+ * chain's convolver skips: the head of the impulse costs nothing.
  */
-export function makeReverbIR(ctx: BaseAudioContext, seconds = 1.3): AudioBuffer {
-  const sr = ctx.sampleRate;
+export function reverbIR(sampleRate: number, seconds = 1.3): Float32Array<ArrayBuffer> {
+  const sr = sampleRate;
   const n = Math.floor(sr * seconds);
-  const buf = ctx.createBuffer(1, n, sr);
+  const d = new Float32Array(n);
   const pre = Math.floor(sr * 0.014);
   {
     const ch = 0;
-    const d = buf.getChannelData(ch);
     let seed = 987654321 + ch * 31337, lp = 0, hp = 0;
     for (let i = 0; i < n; i++) {
       if (i < pre) { d[i] = 0; continue; }
@@ -261,5 +256,5 @@ export function makeReverbIR(ctx: BaseAudioContext, seconds = 1.3): AudioBuffer 
     const g = Math.sqrt(e);
     if (g > 1e-9) for (let i = 0; i < n; i++) d[i]! /= g;
   }
-  return buf;
+  return d;
 }

@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PARAMS, STAGES } from '../schema/params.ts';
 import { validateSchema } from '../schema/validate.ts';
+import { generateHeader, GENERATED_HEADER } from '../schema/generate.ts';
 import { PRESETS, DEFAULT_PRESET } from '../app/presets.ts';
 import { CABS } from '../engine/ir.ts';
 
@@ -40,9 +41,17 @@ const onFaders = [
     .flatMap(m => [...m[1]!.matchAll(/'([^']+)'/g)].map(x => x[1]!)),
 ];
 
-/** What the engine actually applies, read the same way. */
-const engine = readFileSync(join(ROOT, 'engine/engine.ts'), 'utf8');
-const applied = new Set([...engine.matchAll(/case '([a-z_]+)':/g)].map((m) => m[1]!));
+/**
+ * What the chain actually applies: the cases of tc_set_param in dsp/chain.cpp.
+ * Both hosts run that one chain, so this is the whole answer for both.
+ */
+const chain = readFileSync(join(ROOT, 'dsp/chain.cpp'), 'utf8');
+const applied = new Set([...chain.matchAll(/case TC_P_([A-Z0-9_]+):/g)].map((m) => m[1]!.toLowerCase()));
+
+/** AD-7: the C++ header is generated from the schema, never edited by hand. */
+if (readFileSync(GENERATED_HEADER, 'utf8') !== generateHeader()) {
+  errors.push('dsp/chain.generated.h does not match the schema — run `npm run generate` (and never edit it by hand)');
+}
 
 for (const id of onFaders) {
   if (!declared.has(id)) errors.push(`the rig shows a control for "${id}", which the schema does not declare`);

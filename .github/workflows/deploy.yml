@@ -2,11 +2,11 @@
 # either committed source or derived from it by this job, so a rollback is a
 # revert.
 #
-# The NAM engine (`public/nam/nam.wasm`) is the one binary in the tree. It is a
-# pinned third-party artifact, not our build output — `scripts/vendor-nam.mjs`
-# fetches one exact version and patches it for the AudioWorklet scope. Vendoring
-# it rather than fetching it here is what keeps this job free of network access
-# beyond npm, and keeps a clean checkout deployable.
+# The chain (`public/dsp/chain.wasm`) is the one binary in the tree: dsp/ and
+# the pinned NAM core, compiled by `scripts/build-dsp.mjs`. Committing it rather
+# than building it here keeps this job free of a C++ toolchain and of network
+# access beyond npm, and keeps a clean checkout deployable. Tonecraft Engine
+# runs the same file; `.github/workflows/engine.yml` builds and tests that.
 name: Build and deploy
 
 on:

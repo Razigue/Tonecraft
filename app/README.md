@@ -1,6 +1,8 @@
 # `app/` — the Svelte island
 
-Depends on `engine/` and `schema/`. Never touches the audio graph directly.
+Depends on `engine/`, `schema/` and `store/`. Never touches the audio graph directly.
+
+The session — tone, capture, cabinet, devices, backend, metronome tempo and volume, loop, the last DI take — is saved to IndexedDB through `store/` and restored at load. It pre-fills the rig; it never starts the engine or a sound.
 
 One island, one route, `client:only="svelte"`.
 

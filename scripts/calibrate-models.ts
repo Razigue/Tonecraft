@@ -5,13 +5,16 @@
  * Uncorrected, their levels span 8.8 dB — changing capture makes the sound
  * jump, which is unpleasant on a laptop and genuinely unpleasant in headphones.
  *
- * So each model's real level is measured offline:
+ * So each model's real level is measured offline, on the shipped chain:
  *
- *     calibrated pink noise -> NAM model -> default cabinet IR -> RMS
+ *     calibrated pink noise -> the input stage, neutral -> NAM model
+ *       -> default cabinet -> RMS, read from the cabinet's own meter slot
  *
  * The measurement is taken AFTER the cabinet, because the cabinet is what sets
  * the perceived level: a bright model loses far more to the convolution than a
  * dark one, and a measurement taken before it would rank the models wrongly.
+ * The input stage at its neutral settings is a unity gain behind an 18 Hz DC
+ * blocker, which is what every capture really receives.
  *
  * The result is written into `public/models/index.json` as `trimDb`.
  *
@@ -20,65 +23,24 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-import { makeCabIR, DEFAULT_CAB } from '../engine/ir.ts';
+
+import { instantiateChain } from '../public/dsp/chain-core.js';
+import { PARAMS } from '../schema/params.ts';
+import { IR_SLOTS, STAGE_RMS_OFFSET } from '../schema/chain.ts';
+import { STAGES } from '../schema/params.ts';
+import { cabIR, DEFAULT_CAB } from '../engine/ir.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SR = 48_000;
 /** Output level aimed for, before the master fader. */
 const TARGET_RMS_DB = -18;
 
-/* ---------------------- the NAM engine, in a sandbox --------------------- */
+const wasm = fs.readFileSync(path.join(ROOT, 'public/dsp/chain.wasm'));
+const wire = (id: string): number => PARAMS.findIndex((p) => p.id === id);
+const CAB_RMS = STAGE_RMS_OFFSET + STAGES.find((s) => s.id === 'cab')!.meterSlot;
+const cab = cabIR(SR, DEFAULT_CAB);
 
-const glue = fs.readFileSync(path.join(ROOT, 'public/nam/nam-glue.js'), 'utf8');
-const wasm = fs.readFileSync(path.join(ROOT, 'public/nam/nam.wasm'));
-
-interface NamModule {
-  _malloc(bytes: number): number;
-  _free(ptr: number): void;
-  _nam_setSampleRate(rate: number): void;
-  _nam_setMaxBufferSize(frames: number): void;
-  _nam_createInstance(): number;
-  _nam_destroyInstance(id: number): void;
-  _nam_loadModel(id: number, ptr: number): boolean;
-  _nam_reset(id: number): void;
-  _nam_process(id: number, inPtr: number, outPtr: number, n: number): void;
-  lengthBytesUTF8(s: string): number;
-  stringToUTF8(s: string, ptr: number, len: number): void;
-  HEAPF32: Float32Array;
-}
-
-const sandbox: Record<string, unknown> = {
-  WebAssembly, TextDecoder, TextEncoder, Math, Date, console,
-  Uint8Array, Int8Array, Int32Array, Uint32Array, Float32Array, Float64Array,
-  ArrayBuffer, Object, Array, Error, JSON, String, Number, Promise, Symbol,
-  setTimeout, clearTimeout, performance,
-};
-sandbox['globalThis'] = sandbox;
-vm.createContext(sandbox);
-vm.runInContext(`${glue}\n;globalThis.__create = createNamModule;`, sandbox);
-
-const create = sandbox['__create'] as (o: { wasmBinary: ArrayBuffer }) => Promise<NamModule>;
-const mod = await create({
-  wasmBinary: wasm.buffer.slice(wasm.byteOffset, wasm.byteOffset + wasm.byteLength) as ArrayBuffer,
-});
-mod._nam_setSampleRate(SR);
-mod._nam_setMaxBufferSize(128);
-
-/* ------------------------------ the cabinet ------------------------------ */
-/* engine/ir.ts uses only `createBuffer` and `sampleRate` off the audio
-   context, so a minimal stand-in is enough to run it outside a browser. */
-const fakeCtx = {
-  sampleRate: SR,
-  createBuffer(ch: number, len: number) {
-    const data = Array.from({ length: ch }, () => new Float32Array(len));
-    return { numberOfChannels: ch, length: len, getChannelData: (i: number) => data[i]! };
-  },
-} as unknown as BaseAudioContext;
-const cab = makeCabIR(fakeCtx, DEFAULT_CAB).getChannelData(0);
-
-/* ------------------------------ test signal ------------------------------ */
 /* Pink noise (a simplified Voss-McCartney): its spectrum is close to a musical
    signal, which makes it far more representative than a sine for measuring a
    perceived level. */
@@ -107,42 +69,27 @@ function pinkNoise(n: number, rmsDb: number): Float32Array {
 /** A guitar at line level, once the player has set the trim sensibly. */
 const testSig = pinkNoise(SR * 4, -20);
 
-const inPtr = mod._malloc(128 * 4), outPtr = mod._malloc(128 * 4);
+/** Level after the cabinet in dB RMS, one second skipped for settling; null if the model fails. */
+async function measure(json: string): Promise<number | null> {
+  const core = await instantiateChain(wasm);
+  core.init(SR, 128);
+  for (const [id, v] of Object.entries({
+    in_trim: 0, gate_bypass: 1, drive_bypass: 1, tone_bypass: 1, reverb_bypass: 1, out_master: -40,
+  })) core.call('tc_set_param', [wire(id), v]);
+  core.call('tc_set_ir', [IR_SLOTS.cab], cab);
+  if (core.call('tc_load_model', [], new TextEncoder().encode(json)) !== 1) return null;
 
-function runModel(json: string): Float32Array | null {
-  const id = mod._nam_createInstance();
-  const len = mod.lengthBytesUTF8(json) + 1;
-  const ptr = mod._malloc(len);
-  mod.stringToUTF8(json, ptr, len);
-  const ok = mod._nam_loadModel(id, ptr);
-  mod._free(ptr);
-  if (!ok) { mod._nam_destroyInstance(id); return null; }
-
-  const N = testSig.length, out = new Float32Array(N);
-  mod._nam_reset(id);
-  for (let b = 0; b + 128 <= N; b += 128) {
-    mod.HEAPF32.set(testSig.subarray(b, b + 128), inPtr >> 2);
-    mod._nam_process(id, inPtr, outPtr, 128);
-    out.set(mod.HEAPF32.subarray(outPtr >> 2, (outPtr >> 2) + 128), b);
+  let energy = 0, frames = 0;
+  for (let at = 0; at + 128 <= testSig.length; at += 128) {
+    core.inputs[0]!.set(testSig.subarray(at, at + 128));
+    // Every frame covers the same number of samples, so their mean square is the mean.
+    if (core.process(128, 1) && at >= SR) {
+      energy += core.meters![CAB_RMS]! ** 2;
+      frames++;
+    }
   }
-  mod._nam_destroyInstance(id);
-  return out;
+  return 10 * Math.log10(energy / frames + 1e-30);
 }
-
-/** Direct convolution: slow but unambiguous, and it runs once per model. */
-function convolveRmsDb(x: Float32Array, h: Float32Array, skip: number): number {
-  const M = h.length, N = x.length;
-  let e = 0, count = 0;
-  for (let i = skip; i < N; i++) {
-    let s = 0;
-    const kmax = i < M ? i + 1 : M;
-    for (let k = 0; k < kmax; k++) s += h[k]! * x[i - k]!;
-    e += s * s; count++;
-  }
-  return 10 * Math.log10(e / count + 1e-30);
-}
-
-/* -------------------------------- measure -------------------------------- */
 
 interface Entry { file: string; name?: string; rmsDb?: number; trimDb?: number }
 
@@ -153,10 +100,8 @@ console.log('\nCalibration (pink noise at -20 dBFS RMS -> model -> V30 Modern ca
 console.log(`Target: ${TARGET_RMS_DB} dBFS RMS\n`);
 
 for (const entry of catalog.models) {
-  const json = fs.readFileSync(path.join(ROOT, 'public/models', entry.file), 'utf8');
-  const out = runModel(json);
-  if (out === null) { console.log(`  FAILED  ${entry.file}`); continue; }
-  const rms = convolveRmsDb(out, cab, SR);        // one second skipped: settling
+  const rms = await measure(fs.readFileSync(path.join(ROOT, 'public/models', entry.file), 'utf8'));
+  if (rms === null) { console.log(`  FAILED  ${entry.file}`); continue; }
   entry.rmsDb = Math.round(rms * 100) / 100;
   entry.trimDb = Math.round((TARGET_RMS_DB - rms) * 10) / 10;
   console.log(`  ${(entry.name ?? entry.file).padEnd(34)}measured ${rms.toFixed(1).padStart(7)} dB   ->  trim ` +

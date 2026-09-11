@@ -30,17 +30,26 @@ The direct path carries 5.9 dB of measured makeup so the two match in level —
 otherwise the comparison is a loudness test, and louder wins every loudness test
 regardless of what it sounds like.
 
+**With an ASIO interface, the chain can leave the browser.** A tab cannot open
+an ASIO driver, so on Windows the smallest buffers an interface offers are out
+of its reach. **Tonecraft Engine** (`service/`) is a small native program that
+reaches them: it runs the very same chain, and the page becomes its controls.
+Choose ASIO in the audio settings; if the program is not running, the settings
+say where to download it and connect by themselves once it starts. It also runs
+on macOS (CoreAudio) and Linux (ALSA).
+
 ---
 
 ## Requirements
 
 - **Node 24 LTS** (Krypton). Checked by `engines` in `package.json`.
 
-Nothing else, to run, test or deploy. The amp engine is committed as a built
+Nothing else, to run, test or deploy. The chain is committed as a built
 `.wasm`. Rebuilding *that* is the one step that needs a C++ toolchain: an
 Emscripten SDK, found through `EMSDK`, `.toolchain/emsdk` or `PATH`. See
-`scripts/build-nam.mjs` for the flags and what each one was measured to be
-worth.
+`scripts/build-dsp.mjs` for the flags and what each one was measured to be
+worth. Building Tonecraft Engine needs Rust, and on Windows LLVM (libclang,
+for the ASIO SDK bindings) — see `service/README.md`.
 
 ## Commands
 
@@ -48,13 +57,16 @@ worth.
 npm ci            # install exactly what the lockfile pins
 npm run dev       # dev server
 npm run build     # check, then static build into dist/
-npm test          # schema consistency, input constraints, diagnosis verdicts
+npm test          # schema consistency, the chain, input constraints, diagnosis verdicts
 npm run check     # the invariants that span files, on their own
+npm run test:chain   # the chain from Node: ABI, convolution, zero latency, a capture
+npm run test:parity  # browser and Tonecraft Engine, bit for bit (needs service/ built)
 npm run measure   # the boost's aliasing, as a table
 npm run vendor    # re-fetch the captures (network)
-npm run build:nam # recompile the NAM engine to WebAssembly with SIMD (needs Emscripten)
-npm run bench:nam # time the engine per 128-frame block, and compare builds
-npm run measure:latency  # what each node and the oversampler delay the signal by
+npm run generate  # rewrite dsp/chain.generated.h from the schema
+npm run build:dsp # recompile the chain to WebAssembly with SIMD (needs Emscripten)
+npm run bench     # time the whole chain per 128-frame block
+npm run measure:latency  # what the chain and the oversampler delay the signal by
 npm run design:halfband  # the oversampler's filters, with their measured figures
 npm run calibrate # re-measure every capture's level and write its trim
 ```
@@ -71,26 +83,36 @@ that failure goes red instead of silent.
 
 ## The chain
 
+All of it is one WebAssembly module, `public/dsp/chain.wasm`, built from
+`dsp/`, and run by one AudioWorklet:
+
 ```
-source (live DI or an audio file)
-  -> frontend worklet     channel choice, trim, noise gate, TS boost (4x + ADAA)
-  -> NAM worklet          the amplifier itself, WebAssembly
+source (live DI or an audio file, played by the chain itself)
+  -> frontend             channel choice, trim, noise gate, TS boost (4x + ADAA)
+  -> amp                  the NAM capture, NeuralAmpModelerCore
   -> capture trim         measured offline, so captures match each other
-  -> cabinet              ConvolverNode, synthesised minimum-phase IR
-  -> four-band correction native biquads, post-cabinet
-  -> reverb, in parallel
+  -> cabinet              synthesised minimum-phase IR, zero-latency convolution
+  -> four-band correction the Web Audio biquad formulas, exactly
+  -> reverb, in parallel  computed only while audible
   -> master
-  -> output worklet       limiter, always on, no control anywhere; peak, RMS, dropouts
+  -> limiter              always on, no control anywhere; then the meter frame
 ```
 
-**Nothing in that graph adds latency of its own.** Every node was measured with
-an impulse (`npm run measure:latency`): biquads and convolvers delay by zero,
-the boost's oversampler by 4.6 frames (0.1 ms), and the limiter by nothing —
-it runs sample by sample inside the output worklet, because the
-`WaveShaperNode` at 4x it replaced delayed by 192 frames in Chromium, 4 ms at
-48 kHz, more than a whole render quantum. What is left is the browser's render
-buffer and the operating system's, which the figure at the top right reports
-and which hover explains.
+**Nothing in the chain adds latency of its own.** `npm run test:chain` asserts
+it with an impulse and `npm run measure:latency` prints it: zero frames for the
+chain — the convolvers are a direct-form head plus a partitioned tail whose own
+delay is exactly the head's length — and 4.6 frames (0.1 ms) inside the boost's
+oversampler. What is left is the host's buffer: the browser's render quantum
+and output device, which the figure at the top right reports and hover
+explains — or, under Tonecraft Engine, the ASIO buffer.
+
+**One chain, two hosts.** The browser's worklet and Tonecraft Engine run the
+same `chain.wasm`, and neither contains a line of DSP: they move samples and
+forward calls from `engine/engine.ts`. A feature therefore cannot exist in one
+and be missing from the other, and `npm run test:parity` holds them to the bit —
+the same calls through V8 and through wasmtime give identical output.
+The whole chain costs 157 µs per 128-frame block in the browser and 171 µs
+under wasmtime (`npm run bench`, Ryzen 9850X3D): about 6% of one core.
 
 **The output follows the input.** With an interface open, the sound comes out
 of that interface — where the headphones are — rather than the browser's
@@ -110,12 +132,14 @@ would be 25 dB down. Without one the result is not an amp sound.
 ## Layout
 
 ```
-schema/   parameter definitions — depends on nothing
-engine/   graph composition, capture loading, IR synthesis, meters, diagnosis
+schema/   parameter definitions and the chain's ABI — depends on nothing
+dsp/      the chain, in C++: every stage, and the flat tc_* interface
+engine/   what the product does with the chain, and its two hosts
 app/      the Svelte island — never touches the audio graph directly
 site/     Astro pages (this is Astro's srcDir)
 render/   measurement tools; the offline renderer is not rebuilt yet
-public/   the NAM engine, the worklets and the captures, served as-is
+public/   the chain, its one worklet, and the captures, served as-is
+service/  Tonecraft Engine: the native host, for ASIO (Rust, GPLv3)
 scripts/  vendoring, calibration, measurement, checks
 ```
 
@@ -128,24 +152,44 @@ schema ──> engine ──> app ──> site
 
 ## What is in this repository that is binary
 
-One file: `public/nam/nam.wasm`, NeuralAmpModelerCore at a pinned tag compiled
-by `scripts/build-nam.mjs` from `dsp/nam-engine.cpp`, with SIMD. Committing it
-is what makes a clean checkout deployable without a C++ toolchain and without
-CI needing network access beyond npm.
+One file: `public/dsp/chain.wasm`, `dsp/` and NeuralAmpModelerCore at a pinned
+tag, compiled by `scripts/build-dsp.mjs` with SIMD. Committing it is what makes
+a clean checkout deployable without a C++ toolchain and without CI needing
+network access beyond npm — and it is the file Tonecraft Engine is tested
+against.
 
-It is built rather than vendored because the prebuilt package was scalar.
-Measured per 128-frame block on the shipped captures (`npm run bench:nam`,
-Ryzen 9850X3D): 352 µs vendored, 122 µs this build, identical output to
--115 dB. The CPU budget is the dropout budget, and that factor is the
+The NAM core is built rather than vendored because the prebuilt package was
+scalar: 352 µs per 128-frame block vendored, 122 µs built with SIMD, identical
+output to -115 dB. The CPU budget is the dropout budget, and that factor is the
 difference between a chain that fits a weak laptop and one that crackles on
 it.
+
+## Tonecraft Engine (ASIO)
+
+`service/` is the native host: Rust, cpal for the devices, wasmtime for the
+chain, a WebSocket on the loopback address for the page. On the player's
+machine it is an icon by the clock and nothing more — it starts minimized, a
+click opens Tonecraft, and its menu only offers to open Tonecraft, to start
+with the computer, or to quit. The interface, the buffer and the headphone
+level are all set from Tonecraft's settings; the engine keeps them. It is optional — the
+browser path is complete without it — and it is not a server: it runs on the
+player's machine, listens on 127.0.0.1 only, and refuses any page whose origin
+is not Tonecraft's. `service/README.md` covers building, installing and the
+latency design; `service/PROTOCOL.md` the protocol.
+
+Releases are built by `.github/workflows/engine.yml` when a tag `engine-v*` is
+pushed, with asset names that never change, so the settings sheet links to
+`releases/latest/download/…` and always offers the newest.
 
 ## Licences
 
 - The application — yours to do as you like with.
 - **The NAM engine** —
   [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore),
-  MIT, © Steven Atkinson, compiled here. See `public/nam/nam-wasm-LICENSE.txt`.
+  MIT, © Steven Atkinson, compiled here. See `public/dsp/nam-core-LICENSE.txt`.
+- **Tonecraft Engine** (`service/`) — **GNU GPL v3**, because the Steinberg
+  ASIO SDK it links is freely redistributable only under the GPL v3. See
+  `service/LICENSE`.
 - **The amp captures** — [`pelennor2170/NAM_models`](https://github.com/pelennor2170/NAM_models),
   **GNU GPL v3**. See `public/models/COPYING`.
 

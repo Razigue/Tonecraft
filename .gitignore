@@ -13,18 +13,21 @@ build/
 *.wasm
 *.wasm.map
 
-# Exception: the NAM engine. scripts/build-nam.mjs compiles it from pinned
-# sources with SIMD, and it is committed so a clean checkout is deployable
-# without a C++ toolchain and CI needs no network access beyond npm. Rebuild
-# with `npm run build:nam`; the flags and what each was measured to be worth
-# are in the script.
-!public/nam/nam.wasm
+# Exception: the chain. scripts/build-dsp.mjs compiles dsp/ and the pinned NAM
+# core into it with SIMD, and it is committed so a clean checkout is deployable
+# without a C++ toolchain and CI needs no network access beyond npm. Both hosts
+# run this one file — the browser's worklet and Tonecraft Engine — so it is
+# also what `npm run test:parity` holds them to. Rebuild with
+# `npm run build:dsp`; the flags and what each was measured to be worth are in
+# the script.
+!public/dsp/chain.wasm
 
-# The NAM core sources the engine is built from, cloned at a pinned tag by
-# scripts/build-nam.mjs. Not ours; re-fetched on demand. And the build's
-# scratch directory.
+# The NAM core sources the chain is built from, cloned at a pinned tag by
+# scripts/build-dsp.mjs. Not ours; re-fetched on demand.
 .nam-src/
-.nam-build-*/
+
+# Tonecraft Engine's build output.
+service/target/
 
 # Build-time renders: preset audio and its per-stage RMS envelope. Both are a
 # pure function of the .wasm plus the DI loop in assets/, so CI regenerates
@@ -54,8 +57,8 @@ Thumbs.db
 # BMAD — personal install answers (see _bmad/custom/.gitignore)
 *.user.toml
 
-# Local Emscripten SDK (~2 GB), used only by scripts/build-nam.mjs. The
-# committed engine means nobody needs it to run, test or deploy the site.
+# Local Emscripten SDK (~2 GB), used only by scripts/build-dsp.mjs. The
+# committed chain means nobody needs it to run, test or deploy the site.
 .toolchain/
 
 # The proof of concept this repository was ported from. A local input, kept out

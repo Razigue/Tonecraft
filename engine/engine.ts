@@ -1,42 +1,50 @@
 /**
- * Main-thread side of the engine: it builds the graph, opens the input, hands
- * the WASM bytes and the capture to the worklets, and reads metering back.
+ * Everything the product does with the chain, for both of its hosts.
  *
- * The chain, in order:
+ * The chain itself is `public/dsp/chain.wasm`, built from `dsp/`:
  *
  *     source (live DI or an audio file)
- *       -> frontend worklet     channel choice, trim, noise gate, TS boost (4x)
- *       -> NAM worklet          the amplifier itself, WebAssembly
- *       -> capture trim         measured offline, so captures match each other
- *       -> cabinet              ConvolverNode, synthesised minimum-phase IR
- *       -> four-band correction native biquads, post-cabinet
- *       -> reverb, in parallel  connected only while its mix is above zero
+ *       -> frontend      channel choice, trim, noise gate, TS boost (4x, ADAA)
+ *       -> amp           the NAM capture
+ *       -> capture trim  measured offline, so captures match each other
+ *       -> cabinet       synthesised minimum-phase IR, zero-latency convolution
+ *       -> four-band correction, exactly the Web Audio biquads it replaced
+ *       -> reverb, in parallel, computed only while audible
  *       -> master
- *       -> output worklet       limiter (zero latency) and the output meter
+ *       -> limiter       always on, no control anywhere (FR-18)
  *
- * Nothing in this graph adds latency of its own: the worklets run inside the
- * render quantum, and biquads and convolvers are measured at zero delay. The
- * limiter used to be a WaveShaperNode at 4x, which Chromium delays by 192
- * frames — 4 ms at 48 kHz. It is now sample-by-sample inside the output
- * worklet (scripts/measure-latency.mjs is the measurement).
+ * Two hosts run it: the browser's AudioWorklet (`web-host.ts`) and Tonecraft
+ * Engine, the native companion for ASIO (`native-host.ts`). This file is the
+ * only place that decides what the chain is told — parameter values, power,
+ * the tuner's silence, which source plays, which capture and cabinet — and it
+ * tells both hosts the same thing through the same calls. That is what keeps a
+ * feature from existing in one host and missing from the other: hosts carry no
+ * feature of their own to fall out of step.
  *
- * A NAM capture is a frozen snapshot of one amplifier at one setting. Its own
- * gain, channel and EQ are baked in and cannot be driven from here — what is
- * set here is what we send into it and what we do with what comes out. The
- * capture and the cabinet are the two real tone choices.
- *
- * The main thread owns state; the worklets own nothing (AD-11). Metering is a
+ * Nothing in the chain adds latency (`npm run test:chain` asserts it). The main
+ * thread owns state; the chain owns nothing (AD-11). Metering is a
  * measurement, not state, and it flows one way (AD-12).
  */
 
 import { PARAMS } from '../schema/params.ts';
-import { makeCabIR, makeReverbIR, DEFAULT_CAB } from './ir.ts';
+import { IR_SLOTS, CHANNEL_CODES, CLICK_WAVES, meterIndex } from '../schema/chain.ts';
+import { cabIR, reverbIR, DEFAULT_CAB } from './ir.ts';
 import { loadCatalog, EMPTY_CATALOG, type Catalog, type Capture } from './catalog.ts';
-import { openInput, InputError, type DeviceKind, classifyDevice } from './input.ts';
+import { classifyDevice } from './input.ts';
 import {
   judgeLatency, judgeDropouts, jitterOf, judgeInput,
   type LatencyVerdict, type DropoutVerdict, type JitterStats, type InputVerdict,
 } from './diagnosis.ts';
+import { EngineError, type ChainHost, type HostEvents, type LatencyParts } from './chain-host.ts';
+import {
+  WebHost, listInputs, listOutputs, probeOutputs, canChooseOutput,
+  type InputDevice, type OutputDevice,
+} from './web-host.ts';
+import { NativeHost, NativeLink, type NativeOpened } from './native-host.ts';
+import type { ClickTransport, ClickVoice } from './metronome.ts';
+
+export { EngineError, type EngineFailure, type LatencyParts } from './chain-host.ts';
+export type { InputDevice, OutputDevice } from './web-host.ts';
 
 export interface Meters {
   /** Peak at the input, before our own gain. */
@@ -69,120 +77,71 @@ export interface EngineOptions {
   /** Called when a capture finishes loading, or fails to. */
   onModel?: (file: string, ok: boolean) => void;
   /**
-   * Called once, if the NAM engine itself fails to come up. Distinct from a
-   * capture failing: when the engine is dead every capture will fail, and the
-   * chain passes the dry signal through while looking and sounding alive.
+   * Called once, if the host itself fails. Distinct from a capture failing:
+   * when the engine is dead every capture fails, and a chain passing the dry
+   * signal looks and sounds alive.
    */
   onEngineError?: (message: string) => void;
 }
 
-export type EngineFailure =
-  | { kind: 'no-input-device' }
-  | { kind: 'permission-denied' }
-  | { kind: 'engine-missing' }
-  | { kind: 'engine-broken'; detail: string };
-
-export class EngineError extends Error {
-  constructor(readonly failure: EngineFailure, message: string) {
-    super(message);
-    this.name = 'EngineError';
-  }
-}
-
-// Resolved against the deployment's base, because GitHub Pages serves a project
-// repository under /<repo>/ and an absolute path would 404 there.
 const BASE = import.meta.env.BASE_URL;
 
 /** Which captured channel feeds the chain. `follow` picks whichever has signal. */
 export type InputChannel = 'left' | 'right' | 'sum' | 'follow';
-
-const CHANNEL_CODE: Record<InputChannel, number> = {
-  left: 0, right: 1, sum: -1, follow: -2,
-};
-
 export type Source = 'live' | 'file';
+/** Where the chain runs: in this tab, or in Tonecraft Engine for ASIO. */
+export type Backend = 'browser' | 'native';
 
-export interface InputDevice {
-  readonly id: string;
-  readonly label: string;
-  readonly kind: DeviceKind;
-}
-
-/**
- * The catalogue, without an engine. It is only JSON, and the selectors have to
- * be populated and honest before anything is powered up.
- */
+/** The catalogue, without an engine: the selectors must be honest before anything is powered up. */
 export function readCatalog(): Promise<Catalog> {
   return loadCatalog(BASE);
 }
 
-const dbToLinear = (db: number): number => Math.pow(10, db / 20);
+const WIRE = new Map(PARAMS.map((p, i) => [p.id, i]));
+const M_INPUT = meterIndex('input_peak');
+const M_DRIVE = meterIndex('drive_peak');
+const M_GATE = meterIndex('gate');
+const M_BRIGHTNESS = meterIndex('brightness');
+const M_CH0 = meterIndex('channel0_peak');
+const M_CH1 = meterIndex('channel1_peak');
+const M_OUT_PEAK = meterIndex('output_peak');
+const M_OUT_RMS = meterIndex('output_rms');
+const M_FILE_SECONDS = meterIndex('file_seconds');
+const M_FILE_PLAYING = meterIndex('file_playing');
+
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 
-/**
- * The boost's pre-clip gain, in dB, as the worklet's 0..1 amount.
- *
- * The wire format carries engineering units and nothing else (AD-9), and the
- * worklet's `boost` control is one macro over gain, blend and make-up. The
- * conversion is the inverse of the gain law inside it: `1 + 24 * amount`.
- */
-const boostAmount = (db: number): number => clamp((dbToLinear(db) - 1) / 24, 0, 1);
+type ClickState = { readonly bpm: number; readonly gain: number; readonly voices: readonly ClickVoice[] } | null;
 
-/**
- * The boost's tone control, in Hz, as the worklet's 0..1 amount. Inverse of the
- * one-pole's cutoff law there: `5200 * (0.35 + 1.3 * amount)`.
- */
-const boostTone = (hz: number): number => clamp((hz / 5200 - 0.35) / 1.3, 0, 1);
-
-interface Nodes {
-  bus: GainNode;
-  frontend: AudioWorkletNode;
-  /** Clean, channel-selected input used only while the tuner sheet is open. */
-  tuner: AnalyserNode;
-  /** Keeps the analyser rendering without ever sending it to the headphones. */
-  tunerSink: GainNode;
-  nam: AudioWorkletNode;
-  trim: GainNode;
-  cab: ConvolverNode;
-  bass: BiquadFilterNode;
-  mid: BiquadFilterNode;
-  treble: BiquadFilterNode;
-  presence: BiquadFilterNode;
-  lowcut: BiquadFilterNode;
-  /** Everything the chain did, in one place, so the A/B can mute it. */
-  chain: GainNode;
-  /** The raw input, level-matched, for the A/B. */
-  direct: GainNode;
-  dry: GainNode;
-  reverb: ConvolverNode;
-  wet: GainNode;
-  master: GainNode;
-  /** The output stage: the limiter, always on, and the meter behind it. */
-  meter: AudioWorkletNode;
+/** Decodes a file at the chain's rate, so the chain plays samples and never resamples. */
+async function decodeAt(bytes: ArrayBuffer, sampleRate: number): Promise<AudioBuffer> {
+  const ctx = new OfflineAudioContext(1, 1, sampleRate);
+  // decodeAudioData detaches what it is given; the original is kept for the
+  // next rate.
+  return ctx.decodeAudioData(bytes.slice(0));
 }
 
-export interface OutputDevice {
-  readonly id: string;
-  readonly label: string;
-  /**
-   * What this device adds on the way out, in ms, measured rather than assumed.
-   * `undefined` when it has not been probed or would not open.
-   */
-  readonly outputMs?: number;
+/** One or two channels, planar, as `tc_file_load` takes them. */
+function planar(buffer: AudioBuffer): Float32Array<ArrayBuffer> {
+  const channels = Math.min(2, buffer.numberOfChannels);
+  const out = new Float32Array(buffer.length * channels);
+  for (let c = 0; c < channels; c++) out.set(buffer.getChannelData(c), c * buffer.length);
+  return out;
 }
 
 export class Engine {
-  #context: AudioContext | null = null;
-  #nodes: Nodes | null = null;
-  #stream: MediaStream | null = null;
-  #liveSource: MediaStreamAudioSourceNode | null = null;
+  #host: ChainHost | null = null;
+  #web: WebHost | null = null;
+  #native: NativeHost | null = null;
+  #backend: Backend = 'browser';
+  /** The metronome as last started through the chain, replayed into a fresh one. */
+  #click: ClickState = null;
 
-  #deviceKind: DeviceKind = 'unknown';
-  #deviceLabel = '';
+  // Browser preferences: they outlive a host, which is rebuilt on every start.
   #deviceId: string | undefined;
-  #channel: InputChannel = 'follow';
-  #channels = 1;
+  #sinkId: string | undefined;
 
+  #channel: InputChannel = 'follow';
   #catalog: Catalog = EMPTY_CATALOG;
   #capture: Capture | null = null;
   #cab = DEFAULT_CAB;
@@ -191,27 +150,26 @@ export class Engine {
   #direct = false;
   #powered = true;
   #tuning = false;
+
+  #fileBytes: ArrayBuffer | null = null;
   #buffer: AudioBuffer | null = null;
-  #fileNode: AudioBufferSourceNode | null = null;
   #filePlaying = false;
   #fileLoop = true;
-  #fileOffset = 0;
-  #fileStartedAt = 0;
   #fileCursor = 0;
+  #playAskedAt = 0;
 
   #startedAt = 0;
   #firstAudioAt: number | null = null;
   #dropouts = 0;
   #peak = 0;
   #brightness = 0;
+  #lastMeters: Float32Array | null = null;
   #meterArrivals: number[] = [];
   #values = new Map<string, number>();
-  #pendingLoad: { file: string; resolve: (ok: boolean) => void; timer: number } | null = null;
 
   /**
-   * Set once the NAM engine reports it cannot run. It is latched because every
-   * later load would otherwise sit on the 15 second timeout below, one after
-   * another, while the interface says nothing.
+   * Set once the host reports it cannot run. Latched, because every later
+   * load would otherwise wait out its timeout while the interface says nothing.
    */
   #engineError: string | null = null;
 
@@ -226,60 +184,47 @@ export class Engine {
     for (const p of PARAMS) this.#values.set(p.id, p.default);
   }
 
-  get context(): AudioContext | null { return this.#context; }
-  /** Why the NAM engine is not running, or null if it is. */
   get engineError(): string | null { return this.#engineError; }
-  get running(): boolean { return this.#context !== null; }
+  get running(): boolean { return this.#host !== null; }
+  get backend(): Backend { return this.#backend; }
   get catalog(): Catalog { return this.#catalog; }
   get capture(): Capture | null { return this.#capture; }
   get cab(): string { return this.#cab; }
   get source(): Source { return this.#source; }
   get inputChannel(): InputChannel { return this.#channel; }
-  get channelCount(): number { return this.#channels; }
   get fileLoaded(): boolean { return this.#buffer !== null; }
   get filePlaying(): boolean { return this.#filePlaying; }
   get fileDuration(): number { return this.#buffer?.duration ?? 0; }
+  get sampleRate(): number | null { return this.#host?.sampleRate ?? null; }
+  /** What Tonecraft Engine opened, while it is the host. */
+  get nativeOpened(): NativeOpened | null { return this.#native?.opened ?? null; }
 
-  /** The catalogue can be read before anything is started — it is only JSON. */
+  /** Channels the input delivers; the choice between them only exists above one. */
+  get channelCount(): number {
+    if (this.#web !== null) return this.#web.channels;
+    const opened = this.#native?.opened;
+    return opened === undefined || opened === null ? 1 : Math.min(2, opened.inputChannels);
+  }
+
   async loadCatalog(): Promise<Catalog> {
     this.#catalog = await loadCatalog(BASE);
     return this.#catalog;
   }
 
   /**
-   * Round trip, as the browser reports it (FR-35). Shown permanently, never
-   * used to decide anything: quality never adapts to the machine (AD-5).
+   * Chooses the host for the next start. Which interface Tonecraft Engine
+   * plays through is its own configuration, not this page's.
    */
-  get roundTripMs(): number | null {
-    const ctx = this.#context;
-    if (ctx === null) return null;
-    const output = 'outputLatency' in ctx ? ctx.outputLatency : 0;
-    return (ctx.baseLatency + output) * 1000;
+  useNative(native: boolean): void {
+    this.#backend = native ? 'native' : 'browser';
   }
 
-  /**
-   * The two halves of that figure, in ms. `base` is the render buffer the
-   * browser chose for `latencyHint: 0`; `output` is what the operating system
-   * and the device add on the way out. Neither includes the input path, which
-   * the Web Audio API does not expose.
-   */
-  get latencyParts(): { readonly base: number; readonly output: number } | null {
-    const ctx = this.#context;
-    if (ctx === null) return null;
-    return {
-      base: ctx.baseLatency * 1000,
-      output: ('outputLatency' in ctx ? ctx.outputLatency : 0) * 1000,
-    };
-  }
+  /** The round trip as the host reports it (FR-35). Shown, never used to decide anything (AD-5). */
+  get roundTripMs(): number | null { return this.#host?.roundTripMs ?? null; }
+  get latencyParts(): LatencyParts | null { return this.#host?.latencyParts ?? null; }
 
-  /**
-   * Blocks the audio thread did not render in time, counted by the output
-   * worklet since start (AD-12: the worklet is the only detector). Cheap to
-   * read every metering frame, unlike `health`.
-   */
-  get dropoutCount(): number {
-    return this.#dropouts;
-  }
+  /** Blocks the audio thread did not render in time, counted by the host (AD-12). */
+  get dropoutCount(): number { return this.#dropouts; }
 
   /** The whole picture, judged. No verdict here refuses anything (FR-37). */
   get health(): Health | null {
@@ -290,19 +235,19 @@ export class Engine {
     for (let i = 1; i < this.#meterArrivals.length; i += 1) {
       intervals.push(this.#meterArrivals[i]! - this.#meterArrivals[i - 1]!);
     }
+    const label = this.#web?.deviceLabel ?? this.#native?.opened?.input ?? '';
     return {
-      latency: judgeLatency(ms, this.#deviceKind),
+      latency: judgeLatency(ms, this.#web?.deviceKind ?? classifyDevice(label)),
       dropouts: judgeDropouts(this.#dropouts, elapsed),
       jitter: jitterOf(intervals),
       input: judgeInput({
-        deviceKind: this.#deviceKind,
-        deviceLabel: this.#deviceLabel,
+        deviceKind: this.#web?.deviceKind ?? classifyDevice(label),
+        deviceLabel: label,
         roundTripMs: ms,
         peak: this.#peak,
         brightness: this.#brightness,
       }),
-      timeToFirstNoteMs:
-        this.#firstAudioAt === null ? null : this.#firstAudioAt - this.#startedAt,
+      timeToFirstNoteMs: this.#firstAudioAt === null ? null : this.#firstAudioAt - this.#startedAt,
     };
   }
 
@@ -310,476 +255,221 @@ export class Engine {
   // Starting and stopping
 
   /**
-   * Must be called from a user gesture — the autoplay policy will not create a
-   * running context otherwise.
+   * Must be called from a user gesture on the browser host — the autoplay
+   * policy will not create a running context otherwise.
    */
   async start(): Promise<void> {
-    if (this.#context !== null) return;
-    // NFR-3 measures from the gesture, not from when the engine happens to be
-    // ready: the permission prompt is part of what the player waits through.
+    if (this.#host !== null) return;
+    // NFR-3 measures from the gesture: the permission prompt is part of the wait.
     this.#startedAt = performance.now();
     if (this.#catalog.models.length === 0) await this.loadCatalog();
 
-    // Read the device's rate BEFORE the context exists, then create the context
-    // at exactly that rate. Letting the browser resample implicitly costs both
-    // latency and quality, and neither is visible from here (FR-9).
-    let rate: number | undefined;
-    if (this.#source === 'live') {
-      const stream = await this.#open();
-      this.#stream = stream;
-      const track = stream.getAudioTracks()[0];
-      if (track === undefined) {
-        throw new EngineError({ kind: 'no-input-device' }, 'No audio track on the input stream.');
+    const events: HostEvents = {
+      onMeters: (frame, dropouts) => this.#onFrame(frame, dropouts),
+      onFailure: (message) => this.#onFailure(message),
+      // A device changed from the engine's tray panel: its chain is new.
+      onReopened: () => { void this.#pushState(); },
+    };
+
+    if (this.#backend === 'native') {
+      const host = new NativeHost(NativeLink.shared, events);
+      const response = await fetch(`${BASE}dsp/chain.wasm`);
+      if (!response.ok) {
+        throw new EngineError({ kind: 'engine-missing' }, 'The audio engine is missing. Run `npm run build:dsp` and reload.');
       }
-      this.#adopt(track);
-      rate = track.getSettings().sampleRate;
+      await host.start(await response.arrayBuffer());
+      this.#native = host;
+      this.#host = host;
+    } else {
+      const host = new WebHost(events, { deviceId: this.#deviceId, sinkId: this.#sinkId });
+      try {
+        await host.start(this.#source === 'live');
+      } catch (cause) {
+        await host.stop();
+        throw cause;
+      }
+      this.#web = host;
+      this.#host = host;
     }
 
-    // The output device, decided before the context exists because Chromium
-    // takes it in the constructor and moving it afterwards rebuilds the output
-    // stream. See #pickOutput for why it follows the input.
-    const sinkId = await this.#pickOutput();
+    await this.#pushState();
+  }
 
-    // `latencyHint: 0` asks for the smallest buffer the device offers. Not
-    // 'interactive', which is more conservative than we want.
-    const options = {
-      latencyHint: 0,
-      ...(rate === undefined ? {} : { sampleRate: rate }),
-    } as AudioContextOptions;
-    let context: AudioContext;
-    try {
-      // `sinkId` is in the specification and in Chromium; the lib typings
-      // this project compiles against do not carry it yet.
-      context = new AudioContext(
-        sinkId === undefined ? options : ({ ...options, sinkId } as AudioContextOptions),
-      );
-    } catch {
-      // An output the browser will not open: the default is better than no
-      // engine at all, and the round trip on screen says which one is in use.
-      this.#sinkId = undefined;
-      context = new AudioContext(options);
+  /**
+   * Everything the chain should be, sent from nothing. The chain starts empty
+   * on every start, in both hosts, so there is exactly one way it gets its
+   * state — this one — and no host-specific path that could forget a piece.
+   */
+  async #pushState(): Promise<void> {
+    const host = this.#host;
+    if (host === null) return;
+    host.send('tc_set_input_channel', [CHANNEL_CODES[this.#channel]]);
+    for (const p of PARAMS) {
+      if (p.deprecated !== true) host.send('tc_set_param', [WIRE.get(p.id)!, this.#values.get(p.id) ?? p.default]);
     }
-    this.#context = context;
-    await context.resume();
-
-    // The bytes are fetched here and handed over. A worklet scope has no fetch,
-    // and no business doing I/O anyway (AD-13). The request goes out before the
-    // worklet modules load, so the two wait on the network together rather
-    // than one after the other: time to first note, not latency.
-    const wasmRequest = fetch(`${BASE}nam/nam.wasm`);
-
-    // Order matters: nam-glue.js puts createNamModule in the worklet's global
-    // scope, and nam-processor.js reads it from there.
-    try {
-      await context.audioWorklet.addModule(`${BASE}nam/frontend-worklet.js`);
-      await context.audioWorklet.addModule(`${BASE}nam/nam-glue.js`);
-      await context.audioWorklet.addModule(`${BASE}nam/nam-processor.js`);
-      await context.audioWorklet.addModule(`${BASE}nam/output-worklet.js`);
-    } catch (cause) {
-      throw new EngineError(
-        { kind: 'engine-broken', detail: String(cause) },
-        'The audio engine could not be loaded. Reload the page; if it persists ' +
-        'the build is incomplete.',
-      );
+    host.send('tc_set_powered', [this.#powered ? 1 : 0]);
+    host.send('tc_set_direct', [this.#direct ? 1 : 0]);
+    host.send('tc_set_tuning', [this.#tuning ? 1 : 0]);
+    host.send('tc_set_source', [this.#source === 'file' ? 1 : 0]);
+    host.send('tc_file_loop', [this.#fileLoop ? 1 : 0]);
+    this.#syncLive();
+    host.send('tc_set_ir', [IR_SLOTS.cab], cabIR(host.sampleRate, this.#cab));
+    host.send('tc_set_ir', [IR_SLOTS.reverb], reverbIR(host.sampleRate, 1.3));
+    if (this.#fileBytes !== null) {
+      // Decoded again at the chain's rate: a take loaded before starting was
+      // decoded at whatever rate there was then.
+      this.#buffer = await decodeAt(this.#fileBytes, host.sampleRate);
+      host.send('tc_file_load', [Math.min(2, this.#buffer.numberOfChannels)], planar(this.#buffer));
     }
-
-    const response = await wasmRequest;
-    if (!response.ok) {
-      // Without this the worklet would try to instantiate a 404 page and the UI
-      // would sit on "Starting" forever with nothing said. Silence is the one
-      // failure mode this product must not have.
-      throw new EngineError(
-        { kind: 'engine-missing' },
-        'The NAM engine is missing. Run `npm run vendor` and reload.',
-      );
-    }
-    const wasmBinary = await response.arrayBuffer();
-
-    this.#nodes = this.#build(context, wasmBinary);
-    this.#wireSource();
-    this.setInputChannel(this.#channel);
-    this.setDirect(this.#direct);
-    this.#applyAll();
-
+    if (this.#click !== null) this.clickTransport?.play(this.#click.bpm, this.#click.gain, this.#click.voices);
     const capture = this.#capture ?? this.#catalog.models[0] ?? null;
     if (capture !== null) await this.setCapture(capture.file);
   }
 
   async stop(): Promise<void> {
-    this.#stopFile();
-    this.#stream?.getTracks().forEach((t) => t.stop());
-    await this.#context?.close();
-    this.#stream = null;
-    this.#liveSource = null;
-    this.#nodes = null;
-    this.#reverbWired = false;
-    this.#context = null;
+    const host = this.#host;
+    this.#host = null;
+    this.#web = null;
+    this.#native = null;
+    this.#filePlaying = false;
     this.#tuning = false;
-    // An output the rule picked belongs to the input it followed; a chosen one
-    // belongs to the player and survives.
-    if (!this.#sinkChosen) this.#sinkId = undefined;
     this.#dropouts = 0;
     this.#meterArrivals = [];
     this.#firstAudioAt = null;
     this.#engineError = null;
-  }
-
-  #build(context: AudioContext, wasmBinary: ArrayBuffer): Nodes {
-    const mono = {
-      channelCount: 1,
-      channelCountMode: 'explicit',
-      channelInterpretation: 'discrete',
-    } as const;
-
-    const bus = new GainNode(context, { gain: 1 });
-
-    const frontend = new AudioWorkletNode(context, 'frontend', {
-      numberOfInputs: 1,
-      numberOfOutputs: 2,
-      outputChannelCount: [1, 1],
-      // Without these the node applies the default 'speakers' mixing rules,
-      // which fold a two-channel capture down to one before the processor ever
-      // sees it — and then choosing a channel is choosing between two copies of
-      // the same mixed signal. A Scarlett Solo's XLR and instrument jack are
-      // two separate inputs, not a stereo pair to be mixed.
-      channelCount: 2,
-      channelCountMode: 'explicit',
-      channelInterpretation: 'discrete',
-    });
-    frontend.port.onmessage = (event: MessageEvent): void => this.#onFrontendMessage(event.data);
-
-    // The worklet's second output is the selected guitar channel before input
-    // gain, gate or boost. That gives pitch detection a clean signal without
-    // duplicating the interface/channel-selection rules on the main thread.
-    const tuner = new AnalyserNode(context, {
-      fftSize: 8192,
-      smoothingTimeConstant: 0,
-    });
-    const tunerSink = new GainNode(context, { gain: 0 });
-
-    const nam = new AudioWorkletNode(context, 'nam', {
-      numberOfInputs: 1,
-      numberOfOutputs: 1,
-      outputChannelCount: [1],
-      ...mono,
-      processorOptions: { wasmBinary },
-    });
-    nam.port.onmessage = (event: MessageEvent): void => this.#onNamMessage(event.data);
-
-    const trim = new GainNode(context, { gain: 1 });
-    const cab = new ConvolverNode(context, { disableNormalization: true });
-
-    // Post-cabinet correction. The frequencies are the classic four-band amp
-    // layout, not a parametric: they are fixed and only their gains move.
-    const bass = new BiquadFilterNode(context, { type: 'lowshelf', frequency: 110 });
-    const mid = new BiquadFilterNode(context, { type: 'peaking', frequency: 650, Q: 0.9 });
-    const treble = new BiquadFilterNode(context, { type: 'highshelf', frequency: 2600 });
-    const presence = new BiquadFilterNode(context, { type: 'highshelf', frequency: 4200 });
-    // Below the low E there is nothing but cone excursion and rumble.
-    const lowcut = new BiquadFilterNode(context, { type: 'highpass', frequency: 55, Q: 0.707 });
-
-    const chain = new GainNode(context, { gain: 1 });
-    const direct = new GainNode(context, { gain: 0 });
-    const dry = new GainNode(context, { gain: 1 });
-    const reverb = new ConvolverNode(context, { disableNormalization: true });
-    const wet = new GainNode(context, { gain: 0 });
-    reverb.buffer = makeReverbIR(context, 1.3);
-
-    const master = new GainNode(context, { gain: 0.5 });
-
-    // The limiter lives inside this worklet, sample by sample: a WaveShaperNode
-    // at 4x costs 192 frames of latency in Chromium (measured), for a stage
-    // that is transparent nearly all of the time.
-    const meter = new AudioWorkletNode(context, 'output-meter', {
-      numberOfInputs: 1,
-      numberOfOutputs: 1,
-      outputChannelCount: [1],
-      ...mono,
-    });
-    meter.port.onmessage = (event: MessageEvent): void => this.#onOutputMessage(event.data);
-
-    bus.connect(frontend);
-    frontend.connect(nam, 0, 0);
-    frontend.connect(tuner, 1, 0);
-    tuner.connect(tunerSink);
-    tunerSink.connect(context.destination);
-    nam.connect(trim);
-    trim.connect(cab);
-    cab.connect(bass);
-    bass.connect(mid);
-    mid.connect(treble);
-    treble.connect(presence);
-    presence.connect(lowcut);
-
-    lowcut.connect(chain);
-    chain.connect(dry);
-    // chain -> reverb is wired by #wireReverb, only while the mix is above
-    // zero: a ConvolverNode with a live input renders its whole 1.3 s tail on
-    // every quantum whether or not anything listens, and on a weak machine
-    // that is CPU spent on silence.
-    reverb.connect(wet);
-    dry.connect(master);
-    wet.connect(master);
-
-    /* The A/B tap, taken at the very front — before the trim, the gate and the
-       boost — because the question it answers is "what does this do to my
-       guitar", and half an answer is worse than none. It rejoins at the master
-       so the volume fader and the limiter still apply to both. */
-    bus.connect(direct);
-    direct.connect(master);
-
-    master.connect(meter);
-    meter.connect(context.destination);
-
-    const nodes: Nodes = {
-      bus, frontend, tuner, tunerSink, nam, trim, cab, bass, mid, treble, presence, lowcut,
-      chain, direct, dry, reverb, wet, master, meter,
-    };
-    nodes.cab.buffer = makeCabIR(context, this.#cab);
-    return nodes;
-  }
-
-  #reverbWired = false;
-
-  /**
-   * Connects the reverb only while it is audible.
-   *
-   * Disconnecting is safe mid-note: a convolver keeps rendering its tail after
-   * its input goes away, and the wet gain is already fading, so nothing is
-   * cut. Once the tail is out the browser stops calling the node at all. On
-   * the way back in, the connection is made before the gain rises.
-   */
-  #wireReverb(on: boolean): void {
-    const nodes = this.#nodes;
-    if (nodes === null || on === this.#reverbWired) return;
-    this.#reverbWired = on;
-    if (on) nodes.chain.connect(nodes.reverb);
-    else nodes.chain.disconnect(nodes.reverb);
+    await host?.stop();
   }
 
   // -------------------------------------------------------------------------
   // Metering
 
-  #onFrontendMessage(data: {
-    in: number; out: number; gate: number; brightness: number;
-    channels: number; channelPeaks: number[]; following: number;
-  }): void {
-    this.#peak = data.in;
-    this.#brightness = data.brightness;
-    /* `data.channels` is always two: the node is configured `explicit` at two
-       channels so a two-input interface cannot be folded down before we choose
-       between its inputs, which means a mono device arrives up-mixed with a
-       silent second channel. The count that decides whether there is a choice
-       to offer is therefore the device's own, taken from the track. */
+  #onFrame(frame: Float32Array, dropouts: number): void {
+    this.#lastMeters = frame;
+    this.#peak = frame[M_INPUT]!;
+    this.#brightness = frame[M_BRIGHTNESS]!;
+    this.#dropouts = dropouts;
 
     const now = performance.now();
-    // A rolling window: jitter is a property of how things are going now, not
-    // an average over the whole session.
+    // A rolling window: jitter is how things are going now, not a session average.
     this.#meterArrivals.push(now);
     if (this.#meterArrivals.length > 90) this.#meterArrivals.shift();
-    // First audible note: the first frame carrying real signal, not the first
-    // frame at all — silence is not a note.
-    if (this.#firstAudioAt === null && data.in > 0.01) this.#firstAudioAt = now;
+    // The first audible note is the first frame carrying signal; silence is not a note.
+    if (this.#firstAudioAt === null && frame[M_INPUT]! > 0.01) this.#firstAudioAt = now;
 
+    /* The chain reports where the take is. A frame computed before the chain
+       saw a play request can arrive after it, so the first few after asking
+       are not allowed to say "stopped". */
+    if (this.#filePlaying && now - this.#playAskedAt > 150) {
+      this.#fileCursor = frame[M_FILE_SECONDS]!;
+      if (frame[M_FILE_PLAYING]! < 0.5) {
+        this.#filePlaying = false;
+        this.#fileCursor = this.fileDuration;
+      }
+    }
+
+    const channels = this.channelCount;
     this.#onMeters?.({
-      input: data.in,
-      drive: data.out,
-      output: this.#lastOutPeak,
-      outputRms: this.#lastOutRms,
-      gate: data.gate,
-      channelPeaks: data.channelPeaks.slice(0, Math.max(1, this.#channels)),
-      channels: this.#channels,
+      input: frame[M_INPUT]!,
+      drive: frame[M_DRIVE]!,
+      output: frame[M_OUT_PEAK]!,
+      outputRms: frame[M_OUT_RMS]!,
+      gate: frame[M_GATE]!,
+      channelPeaks: [frame[M_CH0]!, frame[M_CH1]!].slice(0, Math.max(1, channels)),
+      channels,
     });
   }
 
-  #lastOutPeak = 0;
-  #lastOutRms = 0;
+  /** The latest meter frame, in the chain's own layout (schema/chain.ts). */
+  get meterFrame(): Float32Array | null { return this.#lastMeters; }
 
-  #onOutputMessage(data: { peak: number; rms: number; dropouts: number }): void {
-    this.#lastOutPeak = data.peak;
-    this.#lastOutRms = data.rms;
-    this.#dropouts = data.dropouts;
-  }
-
-  #onNamMessage(data: { type: string; ok?: boolean; file?: string; message?: string }): void {
-    if (data.type === 'modelLoaded') {
-      const pending = this.#pendingLoad;
-      if (pending !== null && pending.file === data.file) {
-        clearTimeout(pending.timer);
-        this.#pendingLoad = null;
-        pending.resolve(data.ok === true);
-      }
-      this.#onModel?.(data.file ?? '', data.ok === true);
-    } else if (data.type === 'error') {
-      // This arrives from the worklet's own initialisation, usually before any
-      // capture has been asked for, so there is nothing pending to reject — and
-      // that is exactly how it used to go unnoticed.
-      this.#engineError = data.message ?? 'the NAM engine did not start';
-      const pending = this.#pendingLoad;
-      if (pending !== null) {
-        clearTimeout(pending.timer);
-        this.#pendingLoad = null;
-        pending.resolve(false);
-      }
-      this.#onModel?.('', false);
-      this.#onEngineError?.(this.#engineError);
-    }
+  #onFailure(message: string): void {
+    if (this.#engineError !== null) return;
+    this.#engineError = message;
+    this.#onModel?.('', false);
+    this.#onEngineError?.(message);
   }
 
   // -------------------------------------------------------------------------
   // Tone
 
   /**
-   * Loads a capture, and waits for the worklet to confirm it.
+   * Loads a capture and waits for the chain to confirm it.
    *
-   * Waiting matters: if the engine quietly fails, the chain passes the raw DI
-   * through, which sounds bad and looks like nothing at all. Confirmation is
-   * the difference between a stated failure and a mystery.
+   * Waiting matters: when a load fails the chain passes the raw DI through,
+   * which sounds bad and looks like nothing at all. Confirmation is the
+   * difference between a stated failure and a mystery.
    */
   async setCapture(file: string): Promise<boolean> {
     const capture = this.#catalog.models.find((m) => m.file === file);
     if (capture === undefined) return false;
     this.#capture = capture;
 
-    const nodes = this.#nodes;
-    const ctx = this.#context;
-    if (nodes === null || ctx === null) return false;
-    // Fail immediately rather than waiting out the timeout below: with the
-    // engine down, no capture is ever going to answer.
+    const host = this.#host;
+    if (host === null) return false;
     if (this.#engineError !== null) return false;
 
     const response = await fetch(`${BASE}models/${encodeURIComponent(file)}`);
     if (!response.ok) return false;
-    const json = await response.text();
+    const json = new Uint8Array(await response.arrayBuffer());
+    if (this.#host !== host) return false;
 
-    const settled = new Promise<boolean>((resolve) => {
-      // A load that never answers must not leave the UI waiting forever.
-      const timer = self.setTimeout(() => {
-        if (this.#pendingLoad?.file === file) {
-          this.#pendingLoad = null;
-          resolve(false);
-        }
-      }, 15_000);
-      this.#pendingLoad = { file, resolve, timer };
-    });
-
-    nodes.nam.port.postMessage({ type: 'model', json, name: capture.name, file });
-    // Trim measured offline by scripts/calibrate-models.mjs, through the
+    // Trim measured offline by scripts/calibrate-models.ts, through the
     // cabinet, because the cabinet is what sets the perceived level.
-    nodes.trim.gain.setTargetAtTime(dbToLinear(capture.trimDb), ctx.currentTime, 0.05);
-    return settled;
+    host.send('tc_set_capture_trim', [capture.trimDb]);
+    const result = await host.call('tc_load_model', [], json);
+    const ok = result.value === 1;
+    this.#onModel?.(file, ok);
+    return ok;
   }
 
   /**
-   * Makeup gain on the direct path, in dB.
-   *
-   * Measured, not guessed: the demo take through the shipped preset against the
-   * same take raw, both seeked to zero first and integrated over fourteen
-   * seconds off the output meter. Re-measured whenever the default preset
-   * changes — it moved 1.6 dB when the default became "Lead", which carries 8
-   * more decibels of boost — and whenever the take changes, which is what has
-   * moved it 10.2 dB across three takes today: the direct path *is* the take,
-   * so its level is the take's level. Repeatable to a tenth of a dB — measuring
-   * it without seeking first put 1.8 dB of the take's own dynamics into the
-   * answer, because the two passes were covering different notes.
-   *
-   * npm run test:browser is what measures it: the check that the two sides are
-   * within 1.5 dB prints the offset either way, so a stale number here shows up
-   * as the amount to add rather than as a bare failure.
-   *
-   * Without this the A/B is a loudness test, and louder wins every loudness test
-   * regardless of what it sounds like.
-   *
-   * It is one number for one preset, so it drifts as the master or the preset
-   * moves — the alternative is matching the loudness continuously, which is a
-   * compressor nobody asked for sitting across the only honest comparison in
-   * the product.
+   * The whole simulation, on or off. Off silences every route to the output,
+   * tails included, and closes the live input: leaving it open would monitor
+   * whatever the machine is listening to, which on a laptop is a feedback path.
    */
-  static readonly DIRECT_MAKEUP_DB = 17.3;
-
-  /**
-   * The whole simulation, on or off.
-   *
-   * Off means off: the chain is muted **and the live input is closed**. Leaving
-   * the input open would monitor whatever the machine is listening to — on a
-   * laptop that is the built-in microphone, straight back out of the speakers,
-   * which is a feedback path rather than a comparison. What is left is the file,
-   * raw, which is the point: the same DI, once through Tonecraft and once not.
-   *
-   * The consequence is deliberate and worth stating: with the live input as the
-   * source there is nothing to hear while this is off. The interface says so
-   * rather than leaving the silence to be puzzled over.
-   *
-   * Crossfaded rather than switched: a hard cut clicks, and a click is the
-   * loudest thing in an A/B.
-   */
-  /** Power gates all output, including effect tails, without releasing the DI. */
   setPowered(powered: boolean): void {
     this.#powered = powered;
-    if (powered) void this.#context?.resume();
-    this.setDirect(this.#direct);
-    this.#apply('out_master');
+    if (powered) this.#host?.resume();
+    this.#host?.send('tc_set_powered', [powered ? 1 : 0]);
+    this.#syncLive();
   }
 
   /**
-   * Silences every route to the output while leaving the clean input tap alive.
-   * The power state is deliberately untouched, so closing the tuner restores
-   * exactly what the player had before opening it.
+   * Silences the output while keeping the clean input tap alive. Power is
+   * untouched, so closing the tuner restores exactly what the player had.
    */
   setTunerActive(active: boolean): void {
     this.#tuning = active;
-    if (active) void this.#context?.resume();
-    this.setDirect(this.#direct);
-    this.#apply('out_master');
+    const host = this.#host;
+    if (host === null) return;
+    if (active) host.resume();
+    host.send('tc_set_tuning', [active ? 1 : 0]);
+    host.setTunerTap(active);
+    this.#syncLive();
   }
 
   /** Copies the latest clean input window and returns its sample rate. */
   readTunerInput(target: Float32Array<ArrayBuffer>): number | null {
-    const nodes = this.#nodes;
-    const ctx = this.#context;
-    if (nodes === null || ctx === null || target.length !== nodes.tuner.fftSize) return null;
-    nodes.tuner.getFloatTimeDomainData(target);
-    return ctx.sampleRate;
+    return this.#host?.readTunerInput(target) ?? null;
   }
 
   get tunerBufferSize(): number {
-    return this.#nodes?.tuner.fftSize ?? 8192;
+    return this.#host?.tunerBufferSize ?? 8192;
   }
 
   setDirect(direct: boolean): void {
     this.#direct = direct;
-    const nodes = this.#nodes;
-    const ctx = this.#context;
-    if (nodes === null || ctx === null) return;
-    const now = ctx.currentTime;
-    nodes.chain.gain.setTargetAtTime(direct || !this.#powered || this.#tuning ? 0 : 1, now, 0.02);
-    nodes.direct.gain.setTargetAtTime(
-      direct && this.#powered && !this.#tuning ? dbToLinear(Engine.DIRECT_MAKEUP_DB) : 0, now, 0.02,
-    );
-    this.#setLiveOpen(this.#source === 'live' && (this.#tuning || (this.#powered && !direct)));
+    this.#host?.send('tc_set_direct', [direct ? 1 : 0]);
+    this.#syncLive();
   }
 
-  /**
-   * Opens or closes the live capture.
-   *
-   * `enabled = false` stops the browser delivering samples at the source, which
-   * is what makes this an input that is actually off rather than one that is
-   * merely turned down. The track is not stopped: stopping releases the device
-   * and reopening it costs a few hundred milliseconds, which is far too slow
-   * for a control meant to be flipped a dozen times in a row.
-   */
-  #setLiveOpen(open: boolean): void {
-    const nodes = this.#nodes;
-    if (nodes === null) return;
-    this.#stream?.getAudioTracks().forEach((track) => { track.enabled = open; });
-    const source = this.#liveSource;
-    if (source === null) return;
-    try {
-      if (open) source.connect(nodes.bus);
-      else source.disconnect(nodes.bus);
-    } catch {
-      // Disconnecting something that is not connected throws; nothing to fix.
-    }
+  /** The live input is open while it is heard, or while the tuner listens to it. */
+  #syncLive(): void {
+    const open = this.#source === 'live' && (this.#tuning || (this.#powered && !this.#direct));
+    const host = this.#host;
+    if (host === null) return;
+    host.send('tc_set_live_input', [open ? 1 : 0]);
+    host.setCaptureOpen(open);
   }
 
   /** True when the live input is muted because the simulation is off. */
@@ -792,450 +482,171 @@ export class Engine {
   /** Instant: the IR is synthesised in a few milliseconds, no file to fetch. */
   setCab(id: string): void {
     this.#cab = id;
-    const nodes = this.#nodes;
-    const ctx = this.#context;
-    if (nodes === null || ctx === null) return;
-    nodes.cab.buffer = makeCabIR(ctx, id);
+    const host = this.#host;
+    if (host !== null) host.send('tc_set_ir', [IR_SLOTS.cab], cabIR(host.sampleRate, id));
   }
 
-  /** Continuous values go through AudioParam so they interpolate (FR-19, AD-20). */
+  /** Engineering units (AD-9); the chain glides to it (AD-20). */
   setParam(id: string, value: number): void {
     this.#values.set(id, value);
-    this.#apply(id);
+    const wire = WIRE.get(id);
+    if (wire !== undefined) this.#host?.send('tc_set_param', [wire, value]);
   }
 
   value(id: string): number {
     return this.#values.get(id) ?? 0;
   }
 
-  #applyAll(): void {
-    for (const p of PARAMS) if (p.deprecated !== true) this.#apply(p.id);
-  }
-
-  #apply(id: string): void {
-    const nodes = this.#nodes;
-    const ctx = this.#context;
-    if (nodes === null || ctx === null) return;
-    const now = ctx.currentTime;
-    // 20 ms: fast enough to follow the hand, slow enough to never zipper.
-    const T = 0.02;
-    const v = (name: string): number => this.#values.get(name) ?? 0;
-    const on = (name: string): boolean => v(name) < 0.5;
-
-    switch (id) {
-      case 'in_trim':
-        nodes.frontend.parameters.get('inputGain')!
-          .setTargetAtTime(dbToLinear(v('in_trim')), now, T);
-        break;
-
-      case 'gate_threshold':
-      case 'gate_bypass':
-        // -100 is the worklet's "off": no threshold, no gating at all.
-        nodes.frontend.parameters.get('gate')!
-          .setTargetAtTime(on('gate_bypass') ? v('gate_threshold') : -100, now, T);
-        break;
-
-      case 'drive_gain':
-      case 'drive_tone':
-      case 'drive_bypass': {
-        const amount = on('drive_bypass') ? boostAmount(v('drive_gain')) : 0;
-        nodes.frontend.parameters.get('boost')!.setTargetAtTime(amount, now, T);
-        nodes.frontend.parameters.get('boostTone')!
-          .setTargetAtTime(boostTone(v('drive_tone')), now, T);
-        break;
-      }
-
-      case 'tone_bass':
-      case 'tone_mid':
-      case 'tone_treble':
-      case 'tone_presence':
-      case 'tone_bypass': {
-        const flat = !on('tone_bypass');
-        nodes.bass.gain.setTargetAtTime(flat ? 0 : v('tone_bass'), now, T);
-        nodes.mid.gain.setTargetAtTime(flat ? 0 : v('tone_mid'), now, T);
-        nodes.treble.gain.setTargetAtTime(flat ? 0 : v('tone_treble'), now, T);
-        nodes.presence.gain.setTargetAtTime(flat ? 0 : v('tone_presence'), now, T);
-        break;
-      }
-
-      case 'reverb_mix':
-      case 'reverb_bypass': {
-        const mix = on('reverb_bypass') ? v('reverb_mix') : 0;
-        this.#wireReverb(mix > 0);
-        // The dry side comes down as the wet goes up, so the total stays put.
-        nodes.wet.gain.setTargetAtTime(mix * 0.8, now, T);
-        nodes.dry.gain.setTargetAtTime(1 - mix * 0.35, now, T);
-        break;
-      }
-
-      case 'out_master':
-      case 'out_mute':
-        nodes.master.gain.setTargetAtTime(
-          this.#powered && !this.#tuning && on('out_mute') ? dbToLinear(v('out_master')) : 0, now, T,
-        );
-        break;
-
-      default:
-        break;
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Input
-
-  /** Labels are blank until permission has been granted at least once. */
-  async listInputs(): Promise<InputDevice[]> {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    return devices
-      .filter((d) => d.kind === 'audioinput')
-      .map((d) => ({ id: d.deviceId, label: d.label, kind: classifyDevice(d.label) }));
-  }
-
-  // -------------------------------------------------------------------------
-  // Output
-  //
-  // Where the sound comes out is chosen, not left to the browser's default.
-  // By default it follows the input: a guitarist with an interface has their
-  // headphones plugged into *it*, and the browser's default output is the
-  // laptop's speakers. Two things are gained beyond the obvious one:
-  //
-  //   - one clock. Input and output on different devices drift, and the
-  //     browser hides the drift by resampling through a FIFO that grows and
-  //     shrinks — which is jitter, the failure CLAUDE.md says matters more
-  //     than the absolute figure;
-  //   - an honest number. `outputLatency` describes the device the context is
-  //     on, so the round trip on screen is the one through the headphones.
-  //
-  // Firefox has no `setSinkId` on AudioContext (NFR-11): there the default
-  // output stands, and nothing is said about it.
-
-  /** True where the output can be chosen at all. */
-  static get canChooseOutput(): boolean {
-    return typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
-  }
-
-  #sinkId: string | undefined;
-  #sinkChosen = false;
-
-  /** Empty until permission has been granted, like the inputs. */
-  async listOutputs(): Promise<OutputDevice[]> {
-    if (!Engine.canChooseOutput) return [];
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    return devices
-      .filter((d) => d.kind === 'audiooutput')
-      .map((d) => ({ id: d.deviceId, label: d.label }));
-  }
-
   /**
-   * The same list, with what each device costs on the way out.
-   *
-   * This is the only latency left worth a decision. Measured on this machine:
-   * the chain adds 0.1 ms, `baseLatency` is one render quantum and cannot go
-   * below it, and everything else in a 35 ms round trip is the output device's
-   * own buffer — 32 of those 35. Which device the sound leaves by is therefore
-   * not a preference, it is the latency setting, and until now the selector
-   * offered it as a list of names with no way to tell them apart.
-   *
-   * Each candidate is opened as a silent context of its own, read, and closed.
-   * Nothing is connected to them and the live graph is not touched, so the
-   * sound does not move and the player hears nothing: measuring by calling
-   * `setSinkId` on the running context would rebuild its output stream, which
-   * is audible and changes what they are listening to.
-   *
-   * A device that will not open returns no number rather than a wrong one.
-   */
-  async probeOutputs(): Promise<OutputDevice[]> {
-    const outputs = await this.listOutputs();
-    if (outputs.length === 0) return outputs;
-
-    // The rate the live context runs at, so the figure is the one the player
-    // would actually get rather than one for a context they will never have.
-    const sampleRate = this.#context?.sampleRate;
-    const probed: OutputDevice[] = [];
-
-    for (const device of outputs) {
-      let ms: number | undefined;
-      let probe: AudioContext | null = null;
-      try {
-        probe = new AudioContext({
-          latencyHint: 0,
-          ...(sampleRate === undefined ? {} : { sampleRate }),
-          sinkId: device.id,
-        } as AudioContextOptions);
-        await probe.resume();
-        /* `outputLatency` is zero until the output stream is actually up. One
-           frame of the probe's own clock is enough and costs nothing audible,
-           because nothing is connected to it. */
-        await new Promise<void>((resolve) => { self.setTimeout(resolve, 120); });
-        if ('outputLatency' in probe && probe.outputLatency > 0) {
-          ms = probe.outputLatency * 1000;
-        }
-      } catch {
-        // A device that has gone away, or one the browser refuses to open on.
-      } finally {
-        try { await probe?.close(); } catch { /* already gone */ }
-      }
-      probed.push(ms === undefined ? device : { ...device, outputMs: ms });
-    }
-    return probed;
-  }
-
-  /** The output in use: a device id, or '' for the browser's default. */
-  get outputId(): string {
-    return this.#sinkId ?? '';
-  }
-
-  /**
-   * Chooses the output. An explicit choice sticks across device changes; ''
-   * means the default, and hands the decision back to the input-following
-   * rule on the next start.
-   */
-  async useOutput(id: string): Promise<void> {
-    this.#sinkChosen = id !== '';
-    this.#sinkId = id === '' ? undefined : id;
-    await this.#applyOutput(id);
-  }
-
-  async #applyOutput(id: string): Promise<void> {
-    const ctx = this.#context;
-    if (ctx === null || !Engine.canChooseOutput) return;
-    try {
-      await (ctx as AudioContext & { setSinkId(id: string): Promise<void> }).setSinkId(id);
-    } catch {
-      // A device that has gone away, or one the browser refuses: the sound
-      // keeps coming out where it was, which is better than not at all.
-    }
-  }
-
-  /** Re-runs the input-following rule after the input changed. */
-  async #followInput(): Promise<void> {
-    if (this.#sinkChosen) return;
-    const sink = await this.#pickOutput();
-    await this.#applyOutput(sink ?? '');
-  }
-
-  /**
-   * The output to build the context on. The player's explicit choice if there
-   * is one; otherwise the output that shares hardware with the open input.
-   * `groupId` is the browser's word for "the same physical device", and it is
-   * only meaningful once permission has been granted — which it has, by the
-   * time this runs on the live path.
-   */
-  async #pickOutput(): Promise<string | undefined> {
-    if (!Engine.canChooseOutput) return undefined;
-    let devices: MediaDeviceInfo[];
-    try {
-      devices = await navigator.mediaDevices.enumerateDevices();
-    } catch {
-      return this.#sinkChosen ? this.#sinkId : undefined;
-    }
-    const outputs = devices.filter((d) => d.kind === 'audiooutput');
-    if (this.#sinkChosen) {
-      // A remembered device that has since been unplugged must not take the
-      // whole context down with it: the choice lapses and the rule takes over.
-      if (outputs.some((d) => d.deviceId === this.#sinkId)) return this.#sinkId;
-      this.#sinkChosen = false;
-      this.#sinkId = undefined;
-    }
-    const track = this.#stream?.getAudioTracks()[0];
-    const group = track?.getSettings().groupId;
-    if (group === undefined || group === '') return undefined;
-    this.#sinkId = outputs.find((d) => d.groupId === group)?.deviceId;
-    return this.#sinkId;
-  }
-
-  /** Reopens the stream on another interface, keeping everything else. */
-  async useDevice(deviceId: string): Promise<void> {
-    this.#deviceId = deviceId;
-    if (this.#context === null || this.#source !== 'live') return;
-    this.#stream?.getTracks().forEach((t) => t.stop());
-    this.#liveSource?.disconnect();
-    this.#liveSource = null;
-    const stream = await openInput(navigator.mediaDevices, deviceId);
-    this.#stream = stream;
-    const track = stream.getAudioTracks()[0];
-    if (track !== undefined) this.#adopt(track);
-    this.#wireSource();
-    // A new interface means a new place for the headphones, unless the player
-    // chose an output by hand.
-    await this.#followInput();
-  }
-
-  /**
-   * Instant: the capture already carries every channel, so this only changes
-   * which one the worklet reads. Never part of the tone state — it describes
-   * the player's hardware, not their tone.
+   * Instant: the capture carries every channel, so this only changes which one
+   * the chain reads. Never tone state — it describes hardware, not a tone.
    */
   setInputChannel(channel: InputChannel): void {
     this.#channel = channel;
-    this.#nodes?.frontend.port.postMessage({
-      type: 'input-channel',
-      channel: CHANNEL_CODE[channel],
-    });
+    this.#host?.send('tc_set_input_channel', [CHANNEL_CODES[channel]]);
   }
 
-  #adopt(track: MediaStreamTrack): void {
-    this.#deviceLabel = track.label;
-    this.#deviceKind = classifyDevice(track.label);
-    this.#channels = track.getSettings().channelCount ?? 1;
+  // -------------------------------------------------------------------------
+  // The browser's devices. Tonecraft Engine lists its own (native-host.ts).
+
+  listInputs(): Promise<InputDevice[]> { return listInputs(); }
+  listOutputs(): Promise<OutputDevice[]> { return listOutputs(); }
+  static get canChooseOutput(): boolean { return canChooseOutput(); }
+
+  /** The outputs with what each costs on the way out, at the rate the chain runs at. */
+  probeOutputs(): Promise<OutputDevice[]> {
+    return probeOutputs(this.#web?.sampleRate);
   }
 
-  #wireSource(): void {
-    const ctx = this.#context;
-    const nodes = this.#nodes;
-    if (ctx === null || nodes === null) return;
-    if (this.#source === 'live' && this.#stream !== null) {
-      this.#liveSource = new MediaStreamAudioSourceNode(ctx, { mediaStream: this.#stream });
-      this.#liveSource.connect(nodes.bus);
-      // Changing device while the simulation is off must not reopen the input.
-      this.#setLiveOpen(this.#powered && !this.#direct);
-    }
+  /** The output in use: a device id, or '' for the default. */
+  get outputId(): string { return this.#web?.outputId ?? this.#sinkId ?? ''; }
+
+  async useOutput(id: string): Promise<void> {
+    this.#sinkId = id === '' ? undefined : id;
+    await this.#web?.useOutput(id);
   }
 
-  async #open(): Promise<MediaStream> {
-    try {
-      return await openInput(navigator.mediaDevices, this.#deviceId);
-    } catch (cause) {
-      if (cause instanceof InputError) {
-        throw new EngineError({ kind: cause.reason }, cause.message);
-      }
-      throw cause;
-    }
+  async useDevice(deviceId: string): Promise<void> {
+    this.#deviceId = deviceId;
+    if (this.#source === 'live') await this.#web?.useDevice(deviceId);
+  }
+
+  // -------------------------------------------------------------------------
+  // The metronome, when the chain has to play it (native-host.ts)
+
+  /**
+   * The chain's click generator, for the native host only. Under ASIO the
+   * driver owns the interface, and a click from the browser would come out of
+   * the laptop's speakers rather than the headphones.
+   */
+  get clickTransport(): ClickTransport | null {
+    const host = this.#native;
+    if (host === null) return null;
+    const remember = (click: ClickState): void => { this.#click = click; };
+    const current = (): ClickState => this.#click;
+    return {
+      play(bpm: number, gain: number, voices: readonly ClickVoice[]): void {
+        remember({ bpm, gain, voices });
+        voices.forEach((v, beat) => {
+          host.send('tc_click_voice', [beat, v.type === 'triangle' ? CLICK_WAVES.triangle : CLICK_WAVES.sine,
+            v.frequency, v.level, v.duration]);
+        });
+        host.send('tc_click_play', [bpm, gain]);
+      },
+      setGain(gain: number): void {
+        const click = current();
+        if (click !== null) remember({ ...click, gain });
+        host.send('tc_click_gain', [gain]);
+      },
+      stop(): void {
+        remember(null);
+        host.send('tc_click_stop');
+      },
+    };
   }
 
   // -------------------------------------------------------------------------
   // The file source
   //
-  // Playing a DI take through the same chain is how someone with no interface
-  // hears the product at all, and how anyone compares two captures on the same
-  // performance. It runs through the identical graph — there is no second path.
+  // A DI take played through the same chain is how someone with no interface
+  // hears the product at all, and how two captures are compared on the same
+  // performance. The chain plays it — there is no second path.
 
   /**
-   * The take that ships with the product, so someone with no interface and no
-   * guitar to hand can still hear what this does. Fetched on demand: it is 1.6
-   * MB, and the page must not pay for it before anyone asks.
+   * The take that ships with the product. Fetched on demand: it is 1.6 MB,
+   * and the page must not pay for it before anyone asks.
    */
   async loadDemoTake(): Promise<AudioBuffer> {
-    // The public file is not fingerprinted by Astro. Version the request so a
-    // cached 404 from GitHub Pages cannot survive a later deployment that
-    // contains the take.
+    // Versioned so a cached 404 from GitHub Pages cannot outlive a deployment.
     const response = await fetch(`${BASE}di/demo-di.wav?v=riff-a-1`);
     if (!response.ok) throw new Error('the demo take is not installed');
-    const bytes = await response.arrayBuffer();
-    // Whatever was playing was playing the buffer this replaces. Leaving it
-    // running means the waveform shows one take while you hear another.
-    this.#stopFile();
-    const ctx = this.#context ?? new AudioContext();
-    try {
-      this.#buffer = await ctx.decodeAudioData(bytes);
-      this.#fileCursor = 0;
-      return this.#buffer;
-    } finally {
-      if (this.#context === null) await ctx.close();
-    }
+    return this.#adoptFile(await response.arrayBuffer());
   }
 
   /** Decodes a file. Works before the engine is started. */
   async loadFile(file: File): Promise<AudioBuffer> {
-    // As above: the take being replaced is the one currently playing.
+    return this.#adoptFile(await file.arrayBuffer());
+  }
+
+  async #adoptFile(bytes: ArrayBuffer): Promise<AudioBuffer> {
+    // Whatever was playing was the take this replaces.
     this.#stopFile();
-    const ctx = this.#context ?? new AudioContext();
-    try {
-      this.#buffer = await ctx.decodeAudioData(await file.arrayBuffer());
-      this.#fileCursor = 0;
-      return this.#buffer;
-    } finally {
-      if (this.#context === null) await ctx.close();
+    const host = this.#host;
+    const buffer = await decodeAt(bytes, host?.sampleRate ?? 48_000);
+    this.#fileBytes = bytes;
+    this.#buffer = buffer;
+    this.#fileCursor = 0;
+    if (host !== null && this.#host === host) {
+      host.send('tc_file_load', [Math.min(2, buffer.numberOfChannels)], planar(buffer));
     }
+    return buffer;
   }
 
   async setSource(source: Source): Promise<void> {
     if (source === this.#source) return;
     this.#source = source;
-    if (this.#context === null) return;
-
-    if (source === 'file') {
-      this.#stream?.getTracks().forEach((t) => t.stop());
-      this.#liveSource?.disconnect();
-      this.#stream = null;
-      this.#liveSource = null;
-    } else {
-      this.#stopFile();
-      this.#stream = await this.#open();
-      const track = this.#stream.getAudioTracks()[0];
-      if (track !== undefined) this.#adopt(track);
-      this.#wireSource();
-      this.#setLiveOpen(this.#powered && !this.#direct);
-      await this.#followInput();
-    }
+    const host = this.#host;
+    if (host === null) return;
+    if (source === 'live') this.#stopFile();
+    // The browser releases the microphone for a file and opens it again for
+    // live; Tonecraft Engine's input simply stops being read.
+    await this.#web?.setLive(source === 'live');
+    host.send('tc_set_source', [source === 'file' ? 1 : 0]);
+    this.#syncLive();
   }
 
   setLoop(loop: boolean): void {
     this.#fileLoop = loop;
-    if (this.#fileNode === null) return;
-    // Re-anchor the clock: the position folded by the loop would be wrong.
-    this.#fileOffset = this.filePosition;
-    this.#fileStartedAt = this.#context?.currentTime ?? 0;
-    this.#fileNode.loop = loop;
+    this.#host?.send('tc_file_loop', [loop ? 1 : 0]);
   }
 
   playFile(from?: number): void {
-    const ctx = this.#context;
-    const nodes = this.#nodes;
+    const host = this.#host;
     const buffer = this.#buffer;
-    if (ctx === null || nodes === null || buffer === null) return;
-
-    // Loading the engine and the take can outlive the click that opened the
-    // tester flow. Resume again from the transport click for browsers that
-    // suspend an AudioContext once transient user activation has expired.
-    void ctx.resume();
-
+    if (host === null || buffer === null) return;
+    // Loading can outlive the click that asked for it; resume from this one.
+    host.resume();
     let at = clamp(from ?? this.#fileCursor, 0, buffer.duration);
     if (at >= buffer.duration - 1e-3) at = 0;   // restarting from the end starts over
-    this.#stopFile();
-
-    const node = new AudioBufferSourceNode(ctx, { buffer, loop: this.#fileLoop });
-    node.connect(nodes.bus);
-    node.onended = (): void => {
-      this.#filePlaying = false;
-      this.#fileCursor = buffer.duration;
-    };
-    this.#fileNode = node;
-    this.#fileOffset = at;
-    this.#fileCursor = at;
-    this.#fileStartedAt = ctx.currentTime;
-    node.start(0, at);
+    host.send('tc_file_loop', [this.#fileLoop ? 1 : 0]);
+    host.send('tc_file_play', [Math.round(at * buffer.sampleRate)]);
     this.#filePlaying = true;
+    this.#fileCursor = at;
+    this.#playAskedAt = performance.now();
   }
 
   stopFile(): void { this.#stopFile(); }
 
   #stopFile(): void {
-    const node = this.#fileNode;
-    if (node !== null) {
-      if (this.#filePlaying) this.#fileCursor = this.filePosition;
-      // Otherwise stopping by hand looks like reaching the end of the take.
-      node.onended = null;
-      try { node.stop(); } catch { /* already stopped */ }
-      node.disconnect();
-      this.#fileNode = null;
-    }
+    if (!this.#filePlaying) return;
+    this.#fileCursor = this.filePosition;
     this.#filePlaying = false;
+    this.#host?.send('tc_file_stop');
   }
 
-  /**
-   * Playback position, reconstructed. An AudioBufferSourceNode exposes none,
-   * and while looping it restarts without saying so, so the elapsed time is
-   * folded back over the duration.
-   */
+  /** Where the take is, as the chain last reported it. */
   get filePosition(): number {
-    const buffer = this.#buffer;
-    const ctx = this.#context;
-    if (buffer === null) return 0;
-    if (!this.#filePlaying || ctx === null) return clamp(this.#fileCursor, 0, buffer.duration);
-    let t = this.#fileOffset + (ctx.currentTime - this.#fileStartedAt);
-    if (this.#fileLoop && buffer.duration > 0) t %= buffer.duration;
-    return clamp(t, 0, buffer.duration);
+    return clamp(this.#fileCursor, 0, this.fileDuration);
   }
 
   seekFile(seconds: number): void {
@@ -1246,3 +657,4 @@ export class Engine {
     else this.#fileCursor = at;
   }
 }
+

@@ -1,0 +1,41 @@
+[package]
+name = "tonecraft-engine"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+description = "Tonecraft Engine: runs Tonecraft's chain on ASIO, CoreAudio or ALSA, controlled from the browser."
+repository = "https://github.com/Razigue/Tonecraft"
+publish = false
+
+[dependencies]
+cpal = "0.18.2"
+rtrb = "0.4.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tao = "0.37.0"
+tray-icon = "0.24.2"
+tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
+# The chain is one WebAssembly module, the same file the browser runs. Only
+# what running it needs: the compiler, and the GC support that the standard
+# exception-handling proposal is built on (a malformed capture is a refused
+# load, not a dead engine).
+wasmtime = { version = "48.0.2", default-features = false, features = [
+    "cranelift",
+    "runtime",
+    "std",
+    "gc",
+    "gc-drc",
+    "parallel-compilation",
+] }
+
+# ASIO is the reason this program exists on Windows. It needs LLVM (libclang,
+# for the SDK bindings) at build time; the SDK itself is fetched by asio-sys.
+[target.'cfg(windows)'.dependencies]
+cpal = { version = "0.18.2", features = ["asio"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

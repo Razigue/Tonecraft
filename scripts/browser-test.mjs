@@ -549,6 +549,29 @@ check('no stage offers a bypass that should not have one',
 check('nothing threw', errors.length === 0, errors[0]);
 
 /**
+ * The session outlives the tab (store/, IndexedDB). The tone and the tempo
+ * come back after a reload — and nothing plays on its own, because an
+ * AudioContext still needs a gesture and a page that makes noise by itself is
+ * the thing this product refuses to be.
+ */
+{
+  const bassBefore = await page.locator('input[type=range][aria-label="Bass"]').inputValue();
+  const cabBefore = await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue();
+  // Past the write debounce; pagehide would flush it anyway, this is belt and braces.
+  await page.waitForTimeout(500);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(500);
+  const bassAfter = await page.locator('input[type=range][aria-label="Bass"]').inputValue();
+  const cabAfter = await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue();
+  check('the tone survives a reload', bassAfter === bassBefore && cabAfter === cabBefore,
+    `bass ${bassBefore} then ${bassAfter}, cabinet ${cabBefore} then ${cabAfter}`);
+  const toggle = page.getByRole('button', { name: 'Start metronome' });
+  check('the tempo survives a reload, and waits to be started',
+    await toggle.isEnabled() && (await toggle.getAttribute('aria-pressed')) === 'false');
+  check('nothing starts by itself after a reload', (await page.locator('.latency').count()) === 0);
+}
+
+/**
  * The other way in, on its own page.
  *
  * Someone who arrived to find out what this is should not be met with a
@@ -601,6 +624,30 @@ const demoLevel = await demoPage.evaluate(async () => {
 check('and there is sound without anyone plugging anything in', demoLevel > 1,
   `output peak ${demoLevel.toFixed(0)} of 96`);
 check('nothing threw on the demo path', demoErrors.length === 0, demoErrors[0]);
+
+/**
+ * The way to ASIO. With Tonecraft Engine not running — the case on CI, and
+ * the case of everyone who has never heard of it — choosing it in the settings
+ * has to say where to get it, and has to offer the way back. On its own page,
+ * because the failed loopback connection is logged by Chromium as an error and
+ * would otherwise fail "nothing threw" above. A developer with the engine
+ * running locally will see this check fail: it is written for its absence.
+ */
+const nativePage = await browser.newPage();
+await nativePage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+await nativePage.getByRole('button', { name: 'Musicien' }).click();
+const engines = nativePage.getByRole('radiogroup', { name: 'Audio engine' }).getByRole('radio');
+await engines.nth(1).click();
+const download = nativePage.locator('.audio-settings a.download');
+let offered = '';
+try {
+  await download.waitFor({ timeout: 10_000 });
+  offered = (await download.getAttribute('href')) ?? '';
+} catch { /* reported below */ }
+check('choosing the native engine without it running offers the download',
+  offered.includes('/releases/'), offered || 'no download link');
+await nativePage.getByRole('button', { name: 'Keep playing in the browser' }).click();
+check('and the way back to the browser', (await engines.nth(0).getAttribute('aria-checked')) === 'true');
 
 await browser.close();
 server.close();

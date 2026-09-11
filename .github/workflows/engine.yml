@@ -1,0 +1,123 @@
+# Tonecraft Engine, the native companion in service/.
+#
+# Every change to it, or to the chain it runs, is tested on Linux. A tag
+# `engine-vX.Y.Z` builds it for the three platforms and publishes a release
+# whose asset names never change: the page links to
+# releases/latest/download/<asset>, so the newest engine is always one click
+# away without the page knowing its version.
+name: Engine
+
+on:
+  push:
+    branches: [main]
+    tags: ['engine-v*']
+    paths: ['service/**', 'public/dsp/chain.wasm', '.github/workflows/engine.yml']
+  pull_request:
+    paths: ['service/**', 'public/dsp/chain.wasm', '.github/workflows/engine.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test
+        working-directory: service
+        run: cargo test
+
+  build:
+    if: startsWith(github.ref, 'refs/tags/engine-v') || github.event_name == 'workflow_dispatch'
+    needs: test
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-latest
+            asset: tonecraft-engine-windows-x64.zip
+          - os: macos-latest
+            asset: tonecraft-engine-macos-universal.zip
+          # The oldest glibc a runner offers, so the binary runs on older
+          # distributions too.
+          - os: ubuntu-22.04
+            asset: tonecraft-engine-linux-x64.tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Build (Windows, with ASIO)
+        if: runner.os == 'Windows'
+        working-directory: service
+        # LLVM is preinstalled on the runner; bindgen needs its libclang for
+        # the ASIO SDK bindings. asio-sys downloads the SDK itself.
+        env:
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+        run: cargo build --release
+
+      - name: Build (macOS, universal)
+        if: runner.os == 'macOS'
+        working-directory: service
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          mkdir -p target/release
+          lipo -create -output target/release/tonecraft-engine \
+            target/aarch64-apple-darwin/release/tonecraft-engine \
+            target/x86_64-apple-darwin/release/tonecraft-engine
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        working-directory: service
+        run: |
+          sudo apt-get update && sudo apt-get install -y libasound2-dev libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+          cargo build --release
+
+      - name: Package
+        shell: bash
+        working-directory: service
+        run: |
+          mkdir -p dist/tonecraft-engine
+          cp LICENSE README.md dist/tonecraft-engine/
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp target/release/tonecraft-engine.exe dist/tonecraft-engine/
+            (cd dist && 7z a -tzip "../${{ matrix.asset }}" tonecraft-engine >/dev/null)
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            cp target/release/tonecraft-engine dist/tonecraft-engine/
+            (cd dist && zip -qr "../${{ matrix.asset }}" tonecraft-engine)
+          else
+            cp target/release/tonecraft-engine dist/tonecraft-engine/
+            tar -C dist -czf "${{ matrix.asset }}" tonecraft-engine
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: service/${{ matrix.asset }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/engine-v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Tonecraft Engine ${GITHUB_REF_NAME#engine-v}" \
+            --notes "Tonecraft Engine ${GITHUB_REF_NAME#engine-v}: runs Tonecraft on ASIO, CoreAudio or ALSA. Unzip, run, and choose Tonecraft Engine in Tonecraft's audio settings." \
+            --latest

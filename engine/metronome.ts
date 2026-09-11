@@ -32,9 +32,27 @@ export function bpmFromFourTaps(taps: readonly number[]): number | null {
   return bpm + epsilon >= MIN_BPM && bpm - epsilon <= MAX_BPM ? Math.round(bpm) : null;
 }
 
+/** The fader's law: squared for an even feel, with headroom under the guitar. */
+const clickGain = (volume: number): number => volume * volume * 0.48;
+
+/**
+ * Where the clicks are synthesised when it is not this tab: the chain, inside
+ * Tonecraft Engine, whose output is the interface itself. The voices still
+ * come from here, so both metronomes agree on what a beat sounds like.
+ */
+export interface ClickTransport {
+  play(bpm: number, gain: number, voices: readonly ClickVoice[]): void;
+  setGain(gain: number): void;
+  stop(): void;
+}
+
 /**
  * A look-ahead Web Audio clock. setInterval only decides what to schedule;
  * AudioContext time decides when each click actually sounds.
+ *
+ * It keeps its own AudioContext because it has to tick with the engine off.
+ * With Tonecraft Engine as the host it hands the clicks to the chain instead
+ * (`useChain`): under ASIO the browser's output is not where the headphones are.
  */
 export class Metronome {
   #context: AudioContext | null = null;
@@ -45,8 +63,26 @@ export class Metronome {
   #beat = 0;
   #nextBeatAt = 0;
   #running = false;
+  #chain: ClickTransport | null = null;
+
+  /** Routes the clicks through the chain, or back to this tab with null. A running beat follows. */
+  useChain(chain: ClickTransport | null): void {
+    if (chain === this.#chain) return;
+    const running = this.#running;
+    const bpm = this.#bpm;
+    this.#halt();
+    this.#chain = chain;
+    if (running) {
+      if (chain === null) {
+        void this.prepare().then(() => { this.play(bpm); });
+      } else {
+        this.play(bpm);
+      }
+    }
+  }
 
   async prepare(outputId = ''): Promise<void> {
+    if (this.#chain !== null) return;
     if (this.#context === null) {
       const options = {
         latencyHint: 'interactive',
@@ -73,9 +109,18 @@ export class Metronome {
   }
 
   play(bpm: number): void {
+    if (bpm < MIN_BPM || bpm > MAX_BPM) return;
+    const chain = this.#chain;
+    if (chain !== null) {
+      this.#halt();
+      this.#bpm = bpm;
+      this.#running = true;
+      chain.play(bpm, clickGain(this.#volume), [0, 1, 2, 3].map(voiceForBeat));
+      return;
+    }
     const context = this.#context;
     const master = this.#master;
-    if (context === null || master === null || bpm < MIN_BPM || bpm > MAX_BPM) return;
+    if (context === null || master === null) return;
     void context.resume();
     this.#halt();
     this.#bpm = bpm;
@@ -83,17 +128,21 @@ export class Metronome {
     this.#nextBeatAt = context.currentTime + 0.04;
     this.#running = true;
     master.gain.cancelScheduledValues(context.currentTime);
-    master.gain.setValueAtTime(this.#volume * this.#volume * 0.48, context.currentTime);
+    master.gain.setValueAtTime(clickGain(this.#volume), context.currentTime);
     this.#schedule();
     this.#timer = self.setInterval(() => this.#schedule(), 25);
   }
 
   setVolume(volume: number): void {
     this.#volume = Math.max(0, Math.min(1, volume));
+    if (this.#chain !== null) {
+      if (this.#running) this.#chain.setGain(clickGain(this.#volume));
+      return;
+    }
     const context = this.#context;
     const master = this.#master;
     if (context !== null && master !== null && this.#running) {
-      master.gain.setTargetAtTime(this.#volume * this.#volume * 0.48, context.currentTime, 0.015);
+      master.gain.setTargetAtTime(clickGain(this.#volume), context.currentTime, 0.015);
     }
   }
 
@@ -111,6 +160,7 @@ export class Metronome {
   #halt(): void {
     if (this.#timer !== null) self.clearInterval(this.#timer);
     this.#timer = null;
+    if (this.#running) this.#chain?.stop();
     this.#running = false;
     const context = this.#context;
     const master = this.#master;
