@@ -40,6 +40,8 @@ export interface Session {
 
   readonly metronomeBpm: number | null;
   readonly metronomeVolume: number;
+  /** How loud the loop sits under the playing. The loop itself is audio, and is not kept. */
+  readonly loopLevel: number;
 }
 
 const KEY = 'session';
@@ -108,6 +110,8 @@ export function sanitizeSession(raw: unknown): Partial<Session> {
   if ('metronomeBpm' in raw) out.metronomeBpm = numOrNull(raw['metronomeBpm']);
   const volume = numOrNull(raw['metronomeVolume']);
   if (volume !== null) out.metronomeVolume = Math.min(1, Math.max(0, volume));
+  const loop = numOrNull(raw['loopLevel']);
+  if (loop !== null) out.loopLevel = Math.min(1, Math.max(0, loop));
 
   return out;
 }

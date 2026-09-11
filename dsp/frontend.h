@@ -20,6 +20,8 @@
 
 namespace tc {
 
+class Pitch;
+
 /* A cascade of first-order all-pass sections, (a + z^-1) / (1 + a z^-1). */
 struct AllpassChain {
   static constexpr int MAX = 4;
@@ -63,15 +65,19 @@ class Frontend {
   void init(double sampleRate, int stages = 2, bool adaa = true);
 
   /* a, b: the captured channels (b null for a mono source); n <= BLOCK.
-     out: what goes to the amplifier. tuner: the selected channel, clean. */
+     out: what goes to the amplifier. tuner: the selected channel, clean.
+     pitch: the transposer, between the gate and the boost — the gate decides
+     on the clean guitar, and what the boost drives is the shifted note. */
   void process(const float* a, const float* b, int n,
                double inputGain, double gateDb, double boost, double tone,
-               float* out, float* tuner);
+               float* out, float* tuner, Pitch* pitch = nullptr);
 
   void setChannel(int code);
 
-  /* The pre-boost signal of the last block: input gain, DC blocker, gate. */
+  /* The gated signal of the last block: input gain, DC blocker, gate. */
   const double* gated() const { return pre_; }
+  /* The same, after the transposer — what the boost was actually given. */
+  const double* shifted() const { return post_; }
 
   /* Metering, accumulated since the last reset. */
   double peakIn = 0.0, peakOut = 0.0;
@@ -112,6 +118,8 @@ class Frontend {
 
   float mono_[BLOCK] = {};
   double pre_[BLOCK] = {};
+  double shifted_[BLOCK] = {};
+  const double* post_ = pre_;
   double outBuf_[BLOCK] = {};
   double up_[MAX_STAGES][BLOCK << MAX_STAGES] = {};
   double dn_[MAX_STAGES][BLOCK << MAX_STAGES] = {};

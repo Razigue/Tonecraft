@@ -16,7 +16,13 @@
 
   const logarithmic = $derived(param.taper === 'logarithmic' && param.min > 0);
   const position = $derived(logarithmic ? Math.log(value / param.min) / Math.log(param.max / param.min) : (value - param.min) / (param.max - param.min));
-  const shown = $derived(param.unit === 'ratio' ? `${Math.round(value * 100)}%` : param.unit === 'Hz' ? `${(value / 1000).toFixed(1)} kHz` : `${value.toFixed(1)}${param.unit === 'dB' ? ' dB' : ''}`);
+  /* Semitones read as an interval, with their sign: a transposition of -2 is
+     "two down", and "-2.0" would be a number about nothing. */
+  const shown = $derived(
+    param.unit === 'semitones' ? `${value > 0 ? '+' : ''}${Math.round(value)} st`
+    : param.unit === 'ratio' ? `${Math.round(value * 100)}%`
+    : param.unit === 'Hz' ? `${(value / 1000).toFixed(1)} kHz`
+    : `${value.toFixed(1)}${param.unit === 'dB' ? ' dB' : ''}`);
 
   let dragging = false;
   let originY = 0;
@@ -24,9 +30,12 @@
 
   function update(t: number) {
     const clamped = Math.min(1, Math.max(0, t));
-    onchange(logarithmic
+    const v = logarithmic
       ? param.min * Math.pow(param.max / param.min, clamped)
-      : param.min + clamped * (param.max - param.min));
+      : param.min + clamped * (param.max - param.min);
+    // A stepped control lands on whole units. The wire format still carries a
+    // number, and the chain still accepts anything between them (AD-9).
+    onchange(param.taper === 'stepped' ? Math.round(v) : v);
   }
 
   function beginDrag(event: PointerEvent): void {

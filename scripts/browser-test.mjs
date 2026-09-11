@@ -443,6 +443,52 @@ check('and plays when asked',
   (await page.locator('.transport button.start').innerText()) === 'Pause');
 
 /**
+ * The looper, end to end, through the real worklet.
+ *
+ * The take is playing, so there is material to record. What this proves is the
+ * thing the chain tests cannot: that a press in the interface reaches the
+ * chain, and that the loop is still playing when the source that fed it has
+ * stopped — which is the whole point of a looper.
+ */
+{
+  const status = page.locator('.loop-status');
+  const button = page.locator('button.loop-main');
+  check('the looper starts empty and offers to record',
+    (await status.innerText()).includes('Empty') && (await button.innerText()) === 'Record');
+
+  await button.click();
+  await page.waitForTimeout(1200);
+  check('recording is recording', (await status.innerText()).includes('Recording'));
+  await button.click();                       // close the loop, and play it
+  await page.waitForTimeout(400);
+  check('the loop closes and plays', (await status.innerText()).includes('Playing'));
+  const length = await page.locator('.loop-clock').innerText();
+  check('and is about as long as the recording was', /0:0[01]\.\d/.test(length.split(' / ')[1] ?? ''), length);
+
+  // The source stops; the loop must not.
+  await page.locator('.transport button.start').click();
+  await page.waitForTimeout(300);
+  const looped = await peakOver(1500);
+  check('the loop keeps playing after the take stops', looped > 1, `output peak ${looped.toFixed(0)} of 96`);
+
+  const moved = await page.evaluate(async () => {
+    const at = () => document.querySelector('.loop-clock')?.textContent ?? '';
+    const first = at();
+    await new Promise((r) => setTimeout(r, 400));
+    return first !== at();
+  });
+  check('and the loop clock goes round', moved);
+
+  await page.locator('button.loop-small', { hasText: 'Clear' }).click();
+  await page.waitForTimeout(400);
+  check('clearing empties it', (await status.innerText()).includes('Empty'));
+  const after = await peakOver(600);
+  check('and the loop is gone from the output', after < 2, `output peak ${after.toFixed(0)} of 96`);
+  await page.locator('.transport button.start').click();   // the take, playing again
+  await page.waitForTimeout(600);
+}
+
+/**
  * The A/B has to compare tone, not loudness: louder wins every loudness test
  * regardless of what it sounds like, so a direct path that is quietly 6 dB down
  * would make the amp sound better than it is, for free.

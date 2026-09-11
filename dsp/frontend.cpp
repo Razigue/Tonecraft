@@ -4,6 +4,8 @@
 
 #include <cmath>
 
+#include "pitch.h"
+
 namespace tc {
 
 namespace {
@@ -81,6 +83,9 @@ void HalfbandStage::down(const double* x, int n, double* out) {
 
 void Frontend::init(double sampleRate, int stages, bool adaa) {
   *this = Frontend{};
+  // The wholesale reset above copies a temporary, whose `post_` pointed into
+  // itself. It has to be pointed back at this object's own buffer.
+  post_ = pre_;
   sr_ = sampleRate;
   stages_ = stages < 0 ? 0 : stages > MAX_STAGES ? MAX_STAGES : stages;
   adaa_ = adaa;
@@ -181,7 +186,7 @@ void Frontend::pick(const float* a, const float* b, int n) {
 
 void Frontend::process(const float* a, const float* b, int n,
                        double gTarget, double gateDb, double boost, double tone,
-                       float* out, float* tuner) {
+                       float* out, float* tuner, Pitch* pitch) {
   pick(a, b, n);
   const float* inp = mono_;
   if (tuner != nullptr) for (int i = 0; i < n; i++) tuner[i] = inp[i];
@@ -230,19 +235,35 @@ void Frontend::process(const float* a, const float* b, int n,
     pre_[i] = x;
   }
 
+  /* --- the transposer ---
+     After the gate, so a closed gate is silence going in rather than grains of
+     hiss coming out, and before the boost, where a pitch pedal sits on a
+     board. It is a wire unless it is engaged (dsp/pitch.cpp). */
+  const double* src = pre_;
+  if (pitch != nullptr) {
+    pitch->process(pre_, shifted_, n);
+    src = shifted_;
+  }
+  post_ = src;
+
   /* --- boost, oversampled ---
      Controls arrive once per block. Smoothing them at the block rate would be a
      375 Hz staircase modulating the non-linearity — sidebands measured at
      -78 dBc — so the smoothing runs per sample, in the oversampled domain. */
   if (boost > 0.001 || sBoost_ > 0.001) {
-    const double* cur = pre_;
+    const double* cur = src;
     int cn = n;
     for (int k = 0; k < stages_; k++) {
       os_[k].up(cur, cn, up_[k]);
       cur = up_[k];
       cn *= 2;
     }
-    double* buf = stages_ > 0 ? up_[stages_ - 1] : pre_;
+    if (stages_ == 0 && src != shifted_) {
+      // No oversampling (measurement only): the boost writes in place, so it
+      // needs a buffer of its own rather than the gate's.
+      for (int i = 0; i < n; i++) shifted_[i] = src[i];
+    }
+    double* buf = stages_ > 0 ? up_[stages_ - 1] : shifted_;
     const int on = cn;
     const double cB = smoothC_;
 
@@ -278,7 +299,7 @@ void Frontend::process(const float* a, const float* b, int n,
     }
     for (int i = 0; i < n; i++) out[i] = static_cast<float>(outBuf_[i]);
   } else {
-    for (int i = 0; i < n; i++) out[i] = static_cast<float>(pre_[i]);
+    for (int i = 0; i < n; i++) out[i] = static_cast<float>(src[i]);
   }
 
   double pkOut = 0.0;

@@ -49,6 +49,17 @@ export const METERS = [
   /** Where the file source is, in seconds, and whether it is still playing. */
   'file_seconds',
   'file_playing',
+  /** What the looper is doing (`LOOP_STATES`), where it is, and how long it is — seconds. */
+  'loop_state',
+  'loop_seconds',
+  'loop_length',
+  /**
+   * What the pitch shifter is adding to the round trip, in ms. Zero while it
+   * is bypassed, and while it is set to no shift at all. It is on screen for
+   * the same reason the round trip is (FR-35): a delay nobody mentions is a
+   * delay the player blames on the product.
+   */
+  'pitch_delay_ms',
 ] as const;
 
 export type MeterField = (typeof METERS)[number];
@@ -69,3 +80,21 @@ export const CHANNEL_CODES = { left: 0, right: 1, sum: -1, follow: -2 } as const
 
 /** Waveforms `tc_click_voice` accepts. */
 export const CLICK_WAVES = { sine: 0, triangle: 1 } as const;
+
+/**
+ * What the looper reports in `loop_state`. One button cycles through them
+ * (`tc_loop_press`), which is how every looper pedal works and the only shape
+ * that can be operated without looking at it.
+ */
+export const LOOP_STATES = {
+  empty: 0,
+  recording: 1,
+  playing: 2,
+  overdubbing: 3,
+  stopped: 4,
+} as const;
+
+export type LoopState = keyof typeof LOOP_STATES;
+
+/** Longest loop the chain will record, in seconds. It is memory, allocated at init. */
+export const LOOP_MAX_SECONDS = 60;

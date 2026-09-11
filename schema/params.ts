@@ -21,14 +21,22 @@
  *   any other stage means.
  */
 
-/** Physical unit of a parameter's value. There is no unitless number. */
-export type Unit = 'dB' | 'Hz' | 'ratio' | 'ms' | 'bool';
+/**
+ * Physical unit of a parameter's value. There is no unitless number.
+ *
+ * `semitones` is one: a twelfth of a doubling in frequency is a physical
+ * quantity, not a fader position, and it is the unit a musician states a
+ * transposition in. A ratio would have been the other honest choice and is the
+ * wrong one here — nobody asks for 1.0595.
+ */
+export type Unit = 'dB' | 'Hz' | 'ratio' | 'ms' | 'bool' | 'semitones';
 
 /**
  * How `app/` maps fader travel to value. Presentation only — never serialised,
- * never seen by `dsp/`.
+ * never seen by `dsp/`. `stepped` moves in whole units: the wire format still
+ * carries a number, and the chain still accepts any value between them.
  */
-export type Taper = 'linear' | 'logarithmic' | 'switch';
+export type Taper = 'linear' | 'logarithmic' | 'switch' | 'stepped';
 
 export interface Param {
   /** Stable forever. Never renamed, never reused (AD-8). */
@@ -49,6 +57,7 @@ export interface Param {
 export type StageId =
   | 'input'
   | 'gate'
+  | 'pitch'
   | 'drive'
   | 'amp'
   | 'cab'
@@ -80,6 +89,11 @@ export interface Stage {
 export const STAGES: readonly Stage[] = [
   { id: 'input',  label: 'In',     meterSlot: 0, bypassParam: null,            oversampled: false },
   { id: 'gate',   label: 'Gate',   meterSlot: 1, bypassParam: 'gate_bypass',   oversampled: false },
+  // After the gate and before the boost, where a pitch pedal goes on a board:
+  // the gate decides on the clean guitar, and the shift is what gets driven.
+  // It is the one stage that delays the signal, and only while it is engaged —
+  // see dsp/pitch.cpp for the figures and CLAUDE.md section 3 for the trade.
+  { id: 'pitch',  label: 'Pitch',  meterSlot: 8, bypassParam: 'pitch_bypass',  oversampled: false },
   { id: 'drive',  label: 'Boost',  meterSlot: 2, bypassParam: 'drive_bypass',  oversampled: true  },
   // No bypass, for the reason the cabinet has none. Bypassing a capture does
   // not give you "the amp off", it gives you a raw DI still carrying the amp's
@@ -238,4 +252,27 @@ export const PARAMS: readonly Param[] = [
     min: -10, max: 10, default: 1.0, taper: 'linear' },
   { id: 'tone_bypass', stage: 'tone', label: 'Bypass', unit: 'bool',
     min: 0, max: 1, default: 0, taper: 'switch' },
+
+  // --- Pitch -------------------------------------------------------------
+  // A transposer in front of the amp: a tuning a semitone or two down without
+  // retuning, or an octave for a line the guitar does not reach.
+  //
+  // An octave either way, and no further. Past a twelfth every time-domain
+  // shifter turns the guitar into something else — the artefacts stop being a
+  // texture and become the sound — so the range stops where the effect is
+  // still an instrument.
+  //
+  // Whole semitones on the control, any value on the wire (AD-9): the taper is
+  // presentation, and a link written by hand with 7.5 still plays.
+  { id: 'pitch_shift', stage: 'pitch', label: 'Shift', unit: 'semitones',
+    min: -12, max: 12, default: 12, taper: 'stepped' },
+  // Full wet by default: this is a transposer before it is a harmoniser, and
+  // the dry guitar underneath is the choice, not the starting point.
+  { id: 'pitch_mix', stage: 'pitch', label: 'Mix', unit: 'ratio',
+    min: 0, max: 1, default: 1, taper: 'linear' },
+  // The one stage that ships bypassed. It costs latency while it runs (see
+  // dsp/pitch.cpp), and a rig that adds milliseconds to everyone's round trip
+  // for an effect they did not ask for is not a default.
+  { id: 'pitch_bypass', stage: 'pitch', label: 'Bypass', unit: 'bool',
+    min: 0, max: 1, default: 1, taper: 'switch' },
 ] as const;

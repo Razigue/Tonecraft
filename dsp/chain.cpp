@@ -17,13 +17,14 @@
    The chain, in order:
 
        input      live capture or the file source, one or two channels
-       frontend   channel choice, trim, noise gate, TS boost (4x, ADAA)
+       frontend   channel choice, trim, noise gate, pitch, TS boost (4x, ADAA)
        amp        the NAM capture
        trim       the capture's measured level offset
        cab        synthesised minimum-phase IR, zero-latency convolution
        tone       four-band correction: the Web Audio biquads, exactly
        reverb     in parallel, computed only while audible
        master
+       looper     records what leaves the rig, plays it back under the playing
        limiter    always on, no control anywhere (FR-18)
        click      the native metronome, after the meters, before the ceiling
 
@@ -55,6 +56,8 @@
 #include "convolver.h"
 #include "frontend.h"
 #include "limiter.h"
+#include "looper.h"
+#include "pitch.h"
 #include "player.h"
 #include "smooth.h"
 
@@ -107,6 +110,7 @@ struct Chain {
   long reverbTail = 0;
 
   tc::Frontend frontend;
+  tc::Pitch pitch;
   std::unique_ptr<nam::DSP> model;
   tc::Convolver cab;
   tc::Convolver reverb;
@@ -115,6 +119,7 @@ struct Chain {
   tc::Limiter limiter;
   tc::Player player;
   tc::Click click;
+  tc::Looper looper;
 
   // Read once per block, as the worklet's k-rate AudioParams were.
   tc::Smoother inGain, gate, boost, tone;
@@ -150,6 +155,14 @@ void apply(Chain& c) {
   c.eq[1].set(flat ? 0.0 : p[TC_P_TONE_MID]);
   c.eq[2].set(flat ? 0.0 : p[TC_P_TONE_TREBLE]);
   c.eq[3].set(flat ? 0.0 : p[TC_P_TONE_PRESENCE]);
+
+  /* The transposer. A bypassed stage and a shift of nothing are the same
+     thing to it: a wet level of zero, which fades out and then costs neither
+     CPU nor a millisecond of delay. */
+  const double semitones = p[TC_P_PITCH_SHIFT];
+  c.pitch.setShift(semitones);
+  const bool shifting = on(TC_P_PITCH_BYPASS) && (semitones > 0.005 || semitones < -0.005);
+  c.pitch.setWet(shifting ? p[TC_P_PITCH_MIX] : 0.0);
 
   const double mix = on(TC_P_REVERB_BYPASS) ? p[TC_P_REVERB_MIX] : 0.0;
   c.reverbWanted = mix > 0.0;
@@ -191,6 +204,10 @@ void meterFrame(Chain& c) {
   m[TC_M_OUTPUT_RMS] = static_cast<float>(std::sqrt(c.outSum / frames));
   m[TC_M_FILE_SECONDS] = static_cast<float>(static_cast<double>(c.player.position()) / c.sr);
   m[TC_M_FILE_PLAYING] = c.player.playing() ? 1.0f : 0.0f;
+  m[TC_M_LOOP_STATE] = static_cast<float>(c.looper.state());
+  m[TC_M_LOOP_SECONDS] = static_cast<float>(c.looper.positionSeconds());
+  m[TC_M_LOOP_LENGTH] = static_cast<float>(c.looper.lengthSeconds());
+  m[TC_M_PITCH_DELAY_MS] = static_cast<float>(c.pitch.delayFrames() * 1000.0 / c.sr);
   for (int s = 0; s < TC_SLOT_COUNT; s++) {
     m[TC_M_STAGE_RMS + s] = static_cast<float>(std::sqrt(c.stageSum[s] / frames));
     c.stageSum[s] = 0.0;
@@ -224,7 +241,7 @@ int processBlock(Chain& c, int off, int n, int inChannels) {
 
   float* tunerTap = c.tuner.data() + off;
   c.frontend.process(a, b, n, c.inGain.block(n), c.gate.block(n), c.boost.block(n), c.tone.block(n),
-                     c.fe, tunerTap);
+                     c.fe, tunerTap, &c.pitch);
 
   if (c.model) {
     float* ip = c.fe;
@@ -275,7 +292,12 @@ int processBlock(Chain& c, int off, int n, int inChannels) {
        trim, the gate and the boost — because the question it answers is "what
        does this do to my guitar". It rejoins at the master so the volume and
        the limiter still apply. */
-    const float mixed = (c.chained[i] * d + c.wetted[i] * w + tunerTap[i] * dg) * mg;
+    /* What the rig produces, before the master: this is what the looper
+       records, and what it plays back joins it here — so the output fader and
+       the limiter apply to both, and the metronome, added after the limiter,
+       is never printed into a loop. */
+    const float rig = c.chained[i] * d + c.wetted[i] * w + tunerTap[i] * dg;
+    const float mixed = (rig + c.looper.tick(rig)) * mg;
     const float y = c.limiter.tick(mixed);
 
     const double ay = y < 0 ? -y : y;
@@ -296,6 +318,12 @@ int processBlock(Chain& c, int off, int n, int inChannels) {
     double s = 0.0;
     for (int i = 0; i < n; i++) s += gated[i] * gated[i];
     c.stageSum[TC_SLOT_GATE] += s;
+  }
+  {
+    const double* shifted = c.frontend.shifted();
+    double s = 0.0;
+    for (int i = 0; i < n; i++) s += shifted[i] * shifted[i];
+    c.stageSum[TC_SLOT_PITCH] += s;
   }
   c.stageSum[TC_SLOT_DRIVE] += sumSquares(c.fe, n);
   c.stageSum[TC_SLOT_AMP] += sumSquares(c.amp, n);
@@ -340,7 +368,9 @@ TC_EXPORT int tc_init(float sampleRate, int maxFrames) {
   c.tuner.assign(static_cast<size_t>(c.maxFrames), 0.0f);
 
   c.frontend.init(c.sr);
+  c.pitch.init(c.sr);
   c.click.init(c.sr);
+  c.looper.init(c.sr);
   // Post-cabinet correction: the classic four-band layout, fixed frequencies,
   // only the gains move.
   c.bass.setup(tc::Biquad::LowShelf, 110.0, 1.0);
@@ -412,6 +442,9 @@ TC_EXPORT void tc_set_param(int index, float value) {
     case TC_P_TONE_TREBLE:
     case TC_P_TONE_PRESENCE:
     case TC_P_TONE_BYPASS:
+    case TC_P_PITCH_SHIFT:
+    case TC_P_PITCH_MIX:
+    case TC_P_PITCH_BYPASS:
       g->param[index] = static_cast<float>(clampd(value, TC_PARAM_MIN[index], TC_PARAM_MAX[index]));
       apply(*g);
       break;
@@ -495,6 +528,17 @@ TC_EXPORT void tc_click_voice(int beat, int wave, float frequency, float level, 
 TC_EXPORT void tc_click_play(float bpm, float gain) { if (g) g->click.play(bpm, gain); }
 TC_EXPORT void tc_click_gain(float gain) { if (g) g->click.setGain(gain); }
 TC_EXPORT void tc_click_stop() { if (g) g->click.stop(); }
+
+/* ------------------------------- looper -------------------------------- */
+
+/* One button, as a looper pedal has: empty -> recording -> playing ->
+   overdubbing -> playing. The interface names what the next press will do; the
+   chain owns what it means. */
+TC_EXPORT void tc_loop_press() { if (g) g->looper.press(); }
+TC_EXPORT void tc_loop_stop() { if (g) g->looper.stop(); }
+TC_EXPORT void tc_loop_clear() { if (g) g->looper.clear(); }
+/* How loud the loop sits under the playing, 0..1. Session, never tone. */
+TC_EXPORT void tc_loop_level(float level) { if (g) g->looper.setLevel(level); }
 
 /* ----------------------------- measurement ----------------------------- */
 

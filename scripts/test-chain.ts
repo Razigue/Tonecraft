@@ -204,5 +204,159 @@ console.log('\nThe chain — from Node, through chain-core.js\n');
   check('power off is silence, tails included', off.every((v) => v === 0));
 }
 
+{
+  /* The transposer. Not a listening test either: what breaks silently here is
+     the interval — a shifter that is a few percent out sounds like a shifter
+     until you play it against anything. Each shift is measured back with a
+     Goertzel at the note it is supposed to have produced, against its
+     neighbours a semitone either side. */
+  const tone = (hz: number, n: number, level = 0.2): Float32Array<ArrayBuffer> => {
+    const x = new Float32Array(n);
+    for (let i = 0; i < n; i++) x[i] = level * Math.sin(2 * Math.PI * hz * (i / SR));
+    return x;
+  };
+  /** Energy at one frequency, over the part of the signal that is settled. */
+  const at = (y: Float32Array, hz: number, from: number): number => {
+    const w = 2 * Math.PI * hz / SR;
+    const c = 2 * Math.cos(w);
+    let s1 = 0, s2 = 0;
+    for (let i = from; i < y.length; i++) { const s = y[i]! + c * s1 - s2; s2 = s1; s1 = s; }
+    return Math.sqrt(s1 * s1 + s2 * s2 - c * s1 * s2);
+  };
+
+  const x = tone(220, SR * 2);
+  for (const [semitones, name] of [[12, 'an octave up'], [-12, 'an octave down'], [-2, 'a whole tone down'], [7, 'a fifth up']] as const) {
+    const core = await fresh();
+    neutral(core, { pitch_bypass: 0, pitch_shift: semitones, pitch_mix: 1 });
+    const y = run(core, x, [128, 256, 64]);
+    const want = 220 * Math.pow(2, semitones / 12);
+    const got = at(y, want, SR / 2);
+    const below = at(y, want * Math.pow(2, -1 / 12), SR / 2);
+    const above = at(y, want * Math.pow(2, 1 / 12), SR / 2);
+    const dry = at(y, 220, SR / 2);
+    check(`${name} lands on the note, and not beside it`,
+      got > below * 4 && got > above * 4 && got > dry * 4,
+      `${want.toFixed(1)} Hz is ${(20 * Math.log10(got / Math.max(below, above, dry))).toFixed(1)} dB over its neighbours`);
+  }
+
+  {
+    // The level has to survive the crossfade: two heads under complementary
+    // windows must add to one signal, not to a tremolo.
+    const core = await fresh();
+    neutral(core, { pitch_bypass: 0, pitch_shift: -12, pitch_mix: 1 });
+    const y = run(core, x, [128]);
+    let peak = 0, trough = 1e9;
+    for (let at0 = SR; at0 + 2400 < y.length; at0 += 2400) {
+      let e = 0;
+      for (let i = at0; i < at0 + 2400; i++) e += y[i]! * y[i]!;
+      const rms = Math.sqrt(e / 2400);
+      peak = Math.max(peak, rms);
+      trough = Math.min(trough, rms);
+    }
+    const ripple = 20 * Math.log10(peak / trough);
+    check('a shifted note holds its level between splices', ripple < 3, `${ripple.toFixed(2)} dB of ripple`);
+  }
+
+  {
+    // Engaged but asked for nothing: a wire, with no delay to pay for.
+    const core = await fresh();
+    neutral(core, { pitch_bypass: 0, pitch_shift: 0, pitch_mix: 1 });
+    const impulse = new Float32Array(4096);
+    impulse[1000] = 0.25;
+    const y = run(core, impulse, [128]);
+    let peak = 0;
+    for (let i = 0; i < y.length; i++) if (Math.abs(y[i]!) > Math.abs(y[peak]!)) peak = i;
+    check('no shift is no delay, even engaged', peak === 1000 && y[meterIndex('pitch_delay_ms')] !== undefined,
+      `peak at ${peak}`);
+  }
+
+  {
+    // What it delays by is reported, because the interface adds it to the
+    // round trip it shows (FR-35).
+    const core = await fresh();
+    neutral(core, { pitch_bypass: 0, pitch_shift: 12, pitch_mix: 1 });
+    run(core, tone(220, SR), [128]);
+    const ms = core.meters![meterIndex('pitch_delay_ms')]!;
+    check('the shifter reports what it delays by', ms > 5 && ms < 25, `${ms.toFixed(1)} ms at an octave up`);
+
+    const off = await fresh();
+    neutral(off);
+    run(off, tone(220, SR / 2), [128]);
+    check('and reports nothing when it is bypassed', off.meters![meterIndex('pitch_delay_ms')] === 0);
+  }
+}
+
+{
+  /* The looper. It records what leaves the rig, so the material to check it
+     against is not the input but the chain's own output — the same chain, fed
+     the same thing, with nobody pressing anything. Every check below is the
+     difference between the two: what the looper added. */
+  const x = noise(SR, 0.2, 4242);
+  const silence = new Float32Array(SR / 2);
+  const half = SR / 2;
+
+  const core = await fresh(128);
+  const ref = await fresh(128);
+  neutral(core);
+  neutral(ref);
+  check('the looper starts empty', core.meters![meterIndex('loop_state')] === 0);
+
+  // The reference plays the same passages in the same order, untouched.
+  const refRec = run(ref, x.subarray(0, half), [128]);
+  const refFirst = run(ref, silence, [128]);
+  const refSecond = run(ref, silence, [128]);
+  const refDub = run(ref, x.subarray(0, half), [128]);
+  const refAfter = run(ref, silence, [128]);
+
+  /** The worst sample of `got` minus `want`, past the seam and the ramps. */
+  const off = (got: Float32Array, want: (i: number) => number): number => {
+    let worst = 0;
+    for (let i = 2000; i < half - 10; i++) worst = Math.max(worst, Math.abs(got[i]! - want(i)));
+    return worst;
+  };
+
+  core.call('tc_loop_press');                       // record
+  const recorded = run(core, x.subarray(0, half), [128]);
+  check('recording does not touch what is playing', recorded.every((v, i) => v === refRec[i]));
+  check('and says it is recording', core.meters![meterIndex('loop_state')] === 1);
+  core.call('tc_loop_press');                       // close, and play
+
+  const back = run(core, silence, [128]);
+  check('what comes back is what was played', off(back, (i) => refFirst[i]! + recorded[i]!) < 2e-3,
+    `worst sample off by ${off(back, (i) => refFirst[i]! + recorded[i]!).toExponential(1)}`);
+  check('and it says it is playing', core.meters![meterIndex('loop_state')] === 2);
+  const length = core.meters![meterIndex('loop_length')]!;
+  check('the loop is as long as the recording', Math.abs(length - half / SR) < 0.01, `${length.toFixed(3)} s`);
+
+  const second = run(core, silence, [128]);
+  check('and it goes round', off(second, (i) => refSecond[i]! + recorded[i]!) < 2e-3);
+
+  // Overdub: the live signal is heard once, and joins the loop for next time.
+  core.call('tc_loop_press');
+  const dubbed = run(core, x.subarray(0, half), [128]);
+  check('an overdub is not heard twice while it is played',
+    off(dubbed, (i) => refDub[i]! + recorded[i]!) < 2e-3);
+  core.call('tc_loop_press');                       // back to playing
+  const after = run(core, silence, [128]);
+  check('and is in the loop on the next pass',
+    off(after, (i) => refAfter[i]! + recorded[i]! + refDub[i]!) < 2e-3);
+
+  core.call('tc_loop_stop');
+  const stopped = run(core, silence, [128]);
+  check('stop is silence', stopped.subarray(SR / 10).every((v) => Math.abs(v) < 1e-6));
+  check('and the loop is still there', core.meters![meterIndex('loop_length')]! > 0.4);
+
+  core.call('tc_loop_clear');
+  run(core, silence, [128]);
+  check('clear empties it', core.meters![meterIndex('loop_state')] === 0 && core.meters![meterIndex('loop_length')] === 0);
+
+  // A press too quick to be a bar is a mistake, not a quarter-second stutter.
+  core.call('tc_loop_press');
+  run(core, x.subarray(0, 1280), [128]);
+  core.call('tc_loop_press');
+  run(core, silence, [128]);
+  check('a loop too short to be one is dropped', core.meters![meterIndex('loop_state')] === 0);
+}
+
 console.log(failures === 0 ? '\nAll checks passed.\n' : `\n${failures} check(s) failed.\n`);
 process.exit(failures === 0 ? 0 : 1);

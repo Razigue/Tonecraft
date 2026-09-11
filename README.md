@@ -93,12 +93,15 @@ All of it is one WebAssembly module, `public/dsp/chain.wasm`, built from
 
 ```
 source (live DI or an audio file, played by the chain itself)
-  -> frontend             channel choice, trim, noise gate, TS boost (4x + ADAA)
+  -> frontend             channel choice, trim, noise gate
+  -> pitch                a transposer, an octave either way; off by default
+  -> boost                TS style, 4x + ADAA
   -> amp                  the NAM capture, NeuralAmpModelerCore
   -> capture trim         measured offline, so captures match each other
   -> cabinet              synthesised minimum-phase IR, zero-latency convolution
   -> four-band correction the Web Audio biquad formulas, exactly
   -> reverb, in parallel  computed only while audible
+  -> looper               records what leaves the rig, plays it back under it
   -> master
   -> limiter              always on, no control anywhere; then the meter frame
 ```
@@ -110,6 +113,20 @@ delay is exactly the head's length — and 4.6 frames (0.1 ms) inside the boost'
 oversampler. What is left is the host's buffer: the browser's render quantum
 and output device, which the figure at the top right reports and hover
 explains — or, under Tonecraft Engine, the ASIO buffer.
+
+**Except the transposer, which is the one stage that delays anything, and only
+while it is switched on.** Shifting a note means waiting for its waveform to
+come round again: measured, 8.6 ms an octave down, 14.1 ms an octave up, and
+nothing at all at no shift. It ships bypassed, it costs no CPU while it is, and
+what it adds goes into the figure on screen rather than into the player's
+suspicion that the amp is slow.
+
+**The looper is at the end of it**, so a part is recorded with the amplifier,
+the cabinet and the reverb already on it, and stays as it was played while the
+capture, the preset and the boost move on underneath. One button does record,
+play and overdub — the **L** key too, because both hands are usually on the
+guitar — and the metronome, added after the limiter, is never printed into a
+loop.
 
 **One chain, two hosts.** The browser's worklet and Tonecraft Engine run the
 same `chain.wasm`, and neither contains a line of DSP: they move samples and

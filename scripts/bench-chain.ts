@@ -47,14 +47,20 @@ function testSignal(): Float32Array {
   return x;
 }
 
-async function chain(reverb: boolean): Promise<ChainCore> {
+const wire = (id: string): number => PARAMS.findIndex((p) => p.id === id);
+
+async function chain(reverb: boolean, shift = 0): Promise<ChainCore> {
   const core = await instantiateChain(wasm);
   core.init(SR, 128);
   if (core.call('tc_load_model', [], model) !== 1) throw new Error(`the capture did not load: ${core.lastError()}`);
   core.call('tc_set_capture_trim', [capture!.trimDb]);
   core.call('tc_set_ir', [IR_SLOTS.cab], cabIR(SR, DEFAULT_CAB));
   core.call('tc_set_ir', [IR_SLOTS.reverb], reverbIR(SR, 1.3));
-  if (!reverb) core.call('tc_set_param', [PARAMS.findIndex((p) => p.id === 'reverb_bypass'), 1]);
+  if (!reverb) core.call('tc_set_param', [wire('reverb_bypass'), 1]);
+  if (shift !== 0) {
+    core.call('tc_set_param', [wire('pitch_bypass'), 0]);
+    core.call('tc_set_param', [wire('pitch_shift'), shift]);
+  }
   return core;
 }
 
@@ -71,13 +77,21 @@ function run(core: ChainCore, input: Float32Array): Float64Array {
 
 const input = testSignal();
 console.log(`\nThe chain, ${capture.name}, 128-frame blocks at 48 kHz (budget ${QUANTUM_US.toFixed(0)} us)\n`);
-for (const reverb of [true, false]) {
-  const times = run(await chain(reverb), input);
+/* The transposer is the one stage a player switches on for a song rather than
+   for a tone, so what it costs is quoted on top of the preset, not instead of
+   it. The looper is not in the table: it is a copy and a multiply-add. */
+const cases = [
+  { label: 'default preset, reverb on', reverb: true, shift: 0 },
+  { label: 'reverb off', reverb: false, shift: 0 },
+  { label: 'default preset, transposer an octave down', reverb: true, shift: -12 },
+] as const;
+for (const { label, reverb, shift } of cases) {
+  const times = run(await chain(reverb, shift), input);
   const steady = Array.from(times.subarray(1000)).sort((a, b) => a - b);
   const med = steady[steady.length >> 1]!;
   const p99 = steady[Math.floor(steady.length * 0.99)]!;
   const first = Array.from(times.subarray(0, 10)).map((t) => t.toFixed(0)).join(' ');
-  console.log(`  ${reverb ? 'default preset, reverb on' : 'reverb off'}`);
+  console.log(`  ${label}`);
   console.log(`    median ${med.toFixed(0).padStart(5)} us   p99 ${p99.toFixed(0).padStart(5)} us` +
     `   ${(100 * med / QUANTUM_US).toFixed(1)}% of a core at the median`);
   console.log(`    first ten blocks: ${first} us`);

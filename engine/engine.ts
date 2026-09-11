@@ -27,7 +27,7 @@
  */
 
 import { PARAMS } from '../schema/params.ts';
-import { IR_SLOTS, CHANNEL_CODES, CLICK_WAVES, meterIndex } from '../schema/chain.ts';
+import { IR_SLOTS, CHANNEL_CODES, CLICK_WAVES, LOOP_STATES, meterIndex, type LoopState } from '../schema/chain.ts';
 import { cabIR, reverbIR, DEFAULT_CAB } from './ir.ts';
 import { loadCatalog, EMPTY_CATALOG, type Catalog, type Capture } from './catalog.ts';
 import { classifyDevice } from './input.ts';
@@ -46,6 +46,14 @@ import type { ClickTransport, ClickVoice } from './metronome.ts';
 export { EngineError, type EngineFailure, type LatencyParts } from './chain-host.ts';
 export type { InputDevice, OutputDevice } from './web-host.ts';
 
+/** What the looper is doing, for the one button that drives it. */
+export interface LoopMeters {
+  readonly state: LoopState;
+  /** Where the loop is and how long it is, in seconds. Both 0 while empty. */
+  readonly position: number;
+  readonly length: number;
+}
+
 export interface Meters {
   /** Peak at the input, before our own gain. */
   readonly input: number;
@@ -59,6 +67,9 @@ export interface Meters {
   /** Peak on each captured channel, before one is chosen. */
   readonly channelPeaks: readonly number[];
   readonly channels: number;
+  /** What the transposer is adding to the round trip, in ms. 0 unless engaged. */
+  readonly pitchDelayMs: number;
+  readonly loop: LoopMeters;
 }
 
 /** Everything the product knows about how well it is running (FR-35 to FR-38). */
@@ -108,6 +119,14 @@ const M_OUT_PEAK = meterIndex('output_peak');
 const M_OUT_RMS = meterIndex('output_rms');
 const M_FILE_SECONDS = meterIndex('file_seconds');
 const M_FILE_PLAYING = meterIndex('file_playing');
+const M_LOOP_STATE = meterIndex('loop_state');
+const M_LOOP_SECONDS = meterIndex('loop_seconds');
+const M_LOOP_LENGTH = meterIndex('loop_length');
+const M_PITCH_DELAY = meterIndex('pitch_delay_ms');
+
+const LOOP_BY_CODE = Object.fromEntries(
+  Object.entries(LOOP_STATES).map(([name, code]) => [code, name as LoopState]),
+) as Record<number, LoopState>;
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 
@@ -136,6 +155,8 @@ export class Engine {
   #backend: Backend = 'browser';
   /** The metronome as last started through the chain, replayed into a fresh one. */
   #click: ClickState = null;
+  /** The looper's playback level. It outlives a host; the loop itself does not. */
+  #loopLevel = 0.8;
 
   // Browser preferences: they outlive a host, which is rebuilt on every start.
   #deviceId: string | undefined;
@@ -312,6 +333,7 @@ export class Engine {
     host.send('tc_set_tuning', [this.#tuning ? 1 : 0]);
     host.send('tc_set_source', [this.#source === 'file' ? 1 : 0]);
     host.send('tc_file_loop', [this.#fileLoop ? 1 : 0]);
+    host.send('tc_loop_level', [this.#loopLevel]);
     this.#syncLive();
     host.send('tc_set_ir', [IR_SLOTS.cab], cabIR(host.sampleRate, this.#cab));
     host.send('tc_set_ir', [IR_SLOTS.reverb], reverbIR(host.sampleRate, 1.3));
@@ -376,6 +398,12 @@ export class Engine {
       gate: frame[M_GATE]!,
       channelPeaks: [frame[M_CH0]!, frame[M_CH1]!].slice(0, Math.max(1, channels)),
       channels,
+      pitchDelayMs: frame[M_PITCH_DELAY]!,
+      loop: {
+        state: LOOP_BY_CODE[Math.round(frame[M_LOOP_STATE]!)] ?? 'empty',
+        position: frame[M_LOOP_SECONDS]!,
+        length: frame[M_LOOP_LENGTH]!,
+      },
     });
   }
 
@@ -564,6 +592,32 @@ export class Engine {
       },
     };
   }
+
+  // -------------------------------------------------------------------------
+  // The looper
+  //
+  // It lives in the chain, at the end of it, and it records what leaves the
+  // rig (dsp/looper.h). What is here is only the button: the chain owns what a
+  // press means, so the browser and Tonecraft Engine cannot disagree about it.
+  // A loop is audio, not state — starting the engine builds a new chain, and
+  // an empty one.
+
+  /** The one button: record, then play, then overdub, then play. */
+  loopPress(): void {
+    this.#host?.resume();
+    this.#host?.send('tc_loop_press');
+  }
+
+  loopStop(): void { this.#host?.send('tc_loop_stop'); }
+  loopClear(): void { this.#host?.send('tc_loop_clear'); }
+
+  /** How loud the loop sits under the playing, 0..1. Session, never tone. */
+  setLoopLevel(level: number): void {
+    this.#loopLevel = clamp(level, 0, 1);
+    this.#host?.send('tc_loop_level', [this.#loopLevel]);
+  }
+
+  get loopLevel(): number { return this.#loopLevel; }
 
   // -------------------------------------------------------------------------
   // The file source

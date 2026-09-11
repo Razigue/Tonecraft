@@ -9,8 +9,12 @@
  *   1. the whole chain, at its neutral settings, with an impulse: where the
  *      peak comes out. The cabinet and reverb convolvers, the correction
  *      biquads and the limiter are all in there, and all at zero.
- *   2. the boost's oversampler alone, with a burst, by cross-correlation. It
- *      is the one stage with a group delay of its own: a few samples at 4x.
+ *   2. the boost's oversampler alone, with a burst, by cross-correlation: a few
+ *      samples at 4x.
+ *   3. the transposer, which is the one stage that delays the signal by
+ *      anything a player would feel — and only while it is engaged. It reports
+ *      what it is doing in the meter frame, and the figure on screen includes
+ *      it; this is where that figure is checked.
  *
  * There used to be a third part, through Chromium's own nodes: a WaveShaperNode
  * at 4x delayed by 192 frames, which is how the limiter came to live in the
@@ -26,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 
 import { instantiateChain } from '../public/dsp/chain-core.js';
 import { PARAMS } from '../schema/params.ts';
-import { IR_SLOTS } from '../schema/chain.ts';
+import { IR_SLOTS, meterIndex } from '../schema/chain.ts';
 import { cabIR, DEFAULT_CAB } from '../engine/ir.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -93,6 +97,28 @@ async function boostLatency(amount: number): Promise<number> {
   return lag + (Number.isFinite(frac) ? frac : 0);
 }
 
+/** What the shifter reports after it has settled at a given interval. */
+async function pitchDelayMs(semitones: number): Promise<number> {
+  const core = await instantiateChain(wasm);
+  core.init(SR, 128);
+  for (const [id, v] of Object.entries({
+    in_trim: 0, gate_bypass: 1, drive_bypass: 1, tone_bypass: 1, reverb_bypass: 1, out_master: -20,
+    pitch_bypass: 0, pitch_shift: semitones, pitch_mix: 1,
+  })) core.call('tc_set_param', [wire(id), v]);
+  core.call('tc_set_ir', [IR_SLOTS.cab], new Float32Array([1]));
+  // A note, not silence: where a splice lands is decided by the waveform.
+  const x = new Float32Array(128);
+  let worst = 0;
+  for (let at = 0; at < SR * 2; at += 128) {
+    for (let i = 0; i < 128; i++) x[i] = 0.2 * Math.sin(2 * Math.PI * 110 * (at + i) / SR);
+    core.inputs[0]!.set(x);
+    if (core.process(128, 1) && at > SR) {
+      worst = Math.max(worst, core.meters![meterIndex('pitch_delay_ms')]!);
+    }
+  }
+  return worst;
+}
+
 const ms = (frames: number): string =>
   `${frames.toFixed(1).padStart(6)} frames = ${((frames / SR) * 1000).toFixed(2).padStart(5)} ms at 48 kHz`;
 
@@ -102,4 +128,10 @@ console.log(`  ${'the shipped cabinet (minimum phase: peak at once)'.padEnd(52)}
 console.log('\nThe boost path (the 4x oversampler):\n');
 console.log(`  ${'boost off (bypassed)'.padEnd(52)} ${ms(await boostLatency(0))}`);
 console.log(`  ${'boost at 5% (linear, the oversampler alone)'.padEnd(52)} ${ms(await boostLatency(0.05))}`);
+console.log('\nThe transposer (dsp/pitch.cpp), engaged, as it reports itself:\n');
+for (const semitones of [0, -1, -2, -5, -12, 5, 12]) {
+  const label = semitones === 0 ? 'no shift (a wire)' : `${semitones > 0 ? '+' : ''}${semitones} semitones`;
+  const delay = await pitchDelayMs(semitones);
+  console.log(`  ${label.padEnd(52)} ${(delay * SR / 1000).toFixed(1).padStart(6)} frames = ${delay.toFixed(2).padStart(5)} ms at 48 kHz`);
+}
 console.log();

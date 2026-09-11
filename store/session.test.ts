@@ -25,6 +25,10 @@ check('unknown parameter ids are dropped', s.values !== undefined && !('nope' in
 check('non-finite values are dropped', s.values !== undefined && !('other' in s.values));
 check('an unknown channel falls back to follow', s.channel === 'follow');
 check('a known backend is kept', s.backend === 'native');
+check('the loop level is clamped to 0..1',
+  sanitizeSession({ loopLevel: 4 }).loopLevel === 1 && sanitizeSession({ loopLevel: -1 }).loopLevel === 0);
+check('a loop level that is not a number is left out',
+  !('loopLevel' in sanitizeSession({ loopLevel: 'loud' })));
 check('the metronome volume is clamped to 0..1', s.metronomeVolume === 1);
 check('a non-numeric tempo means no tempo', s.metronomeBpm === null);
 check('a mistyped boolean is omitted rather than coerced', !('cabTouched' in s));

@@ -30,33 +30,37 @@ enum TcParam {
   TC_P_TONE_TREBLE = 21,
   TC_P_TONE_PRESENCE = 22,
   TC_P_TONE_BYPASS = 23,
-  TC_PARAM_COUNT = 24
+  TC_P_PITCH_SHIFT = 24,
+  TC_P_PITCH_MIX = 25,
+  TC_P_PITCH_BYPASS = 26,
+  TC_PARAM_COUNT = 27
 };
 
 static const float TC_PARAM_DEFAULT[TC_PARAM_COUNT] = {
-  11.4f, -60.0f, 0.0f, 25.0f, 6011.0f, 0.0f, 0.0f, 27.0f, 0.0f, 1.0f, 0.0f, -7.0f, 0.0f, 1.0f, 0.0f, 0.3f, 0.0f, -12.4f, 0.0f, -1.7f, 3.4f, 1.7f, 1.0f, 0.0f
+  11.4f, -60.0f, 0.0f, 25.0f, 6011.0f, 0.0f, 0.0f, 27.0f, 0.0f, 1.0f, 0.0f, -7.0f, 0.0f, 1.0f, 0.0f, 0.3f, 0.0f, -12.4f, 0.0f, -1.7f, 3.4f, 1.7f, 1.0f, 0.0f, 12.0f, 1.0f, 1.0f
 };
 static const float TC_PARAM_MIN[TC_PARAM_COUNT] = {
-  -6.0f, -95.0f, 0.0f, 0.0f, 1820.0f, -24.0f, 0.0f, 0.0f, -12.0f, -12.0f, -12.0f, -24.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -40.0f, 0.0f, -14.0f, -14.0f, -14.0f, -10.0f, 0.0f
+  -6.0f, -95.0f, 0.0f, 0.0f, 1820.0f, -24.0f, 0.0f, 0.0f, -12.0f, -12.0f, -12.0f, -24.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -40.0f, 0.0f, -14.0f, -14.0f, -14.0f, -10.0f, 0.0f, -12.0f, 0.0f, 0.0f
 };
 static const float TC_PARAM_MAX[TC_PARAM_COUNT] = {
-  24.0f, -30.0f, 1.0f, 28.0f, 7150.0f, 12.0f, 1.0f, 40.0f, 12.0f, 12.0f, 12.0f, 12.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 6.0f, 1.0f, 14.0f, 14.0f, 14.0f, 10.0f, 1.0f
+  24.0f, -30.0f, 1.0f, 28.0f, 7150.0f, 12.0f, 1.0f, 40.0f, 12.0f, 12.0f, 12.0f, 12.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 6.0f, 1.0f, 14.0f, 14.0f, 14.0f, 10.0f, 1.0f, 12.0f, 1.0f, 1.0f
 };
 static const unsigned char TC_PARAM_DEPRECATED[TC_PARAM_COUNT] = {
-  0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+  0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
 /* Meter slots, one per stage, by stable id (AD-21). */
 enum TcSlot {
   TC_SLOT_INPUT = 0,
   TC_SLOT_GATE = 1,
+  TC_SLOT_PITCH = 8,
   TC_SLOT_DRIVE = 2,
   TC_SLOT_AMP = 3,
   TC_SLOT_CAB = 4,
   TC_SLOT_TONE = 7,
   TC_SLOT_REVERB = 5,
   TC_SLOT_OUTPUT = 6,
-  TC_SLOT_COUNT = 8
+  TC_SLOT_COUNT = 9
 };
 
 /* The meter frame, in order (AD-12). */
@@ -72,10 +76,16 @@ enum TcMeter {
   TC_M_OUTPUT_RMS = 8,
   TC_M_FILE_SECONDS = 9,
   TC_M_FILE_PLAYING = 10,
-  TC_M_STAGE_RMS = 11,
-  TC_METER_COUNT = 19
+  TC_M_LOOP_STATE = 11,
+  TC_M_LOOP_SECONDS = 12,
+  TC_M_LOOP_LENGTH = 13,
+  TC_M_PITCH_DELAY_MS = 14,
+  TC_M_STAGE_RMS = 15,
+  TC_METER_COUNT = 24
 };
 
 enum TcIrSlot { TC_IR_CAB = 0, TC_IR_REVERB = 1 };
 enum TcChannel { TC_CH_LEFT = 0, TC_CH_RIGHT = 1, TC_CH_SUM = -1, TC_CH_FOLLOW = -2 };
 enum TcWave { TC_WAVE_SINE = 0, TC_WAVE_TRIANGLE = 1 };
+enum TcLoop { TC_LOOP_EMPTY = 0, TC_LOOP_RECORDING = 1, TC_LOOP_PLAYING = 2, TC_LOOP_OVERDUBBING = 3, TC_LOOP_STOPPED = 4 };
+#define TC_LOOP_MAX_SECONDS 60.0f

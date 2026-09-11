@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { PARAMS, STAGES } from './params.ts';
 import {
   CHAIN_ABI_VERSION, METERS, STAGE_RMS_OFFSET, STAGE_SLOTS, METER_COUNT,
-  IR_SLOTS, CHANNEL_CODES, CLICK_WAVES,
+  IR_SLOTS, CHANNEL_CODES, CLICK_WAVES, LOOP_STATES, LOOP_MAX_SECONDS,
 } from './chain.ts';
 
 export const GENERATED_HEADER = join(dirname(fileURLToPath(import.meta.url)), '..', 'dsp', 'chain.generated.h');
@@ -67,6 +67,8 @@ export function generateHeader(): string {
   out(`enum TcIrSlot { ${Object.entries(IR_SLOTS).map(([k, v]) => `TC_IR_${upper(k)} = ${v}`).join(', ')} };`);
   out(`enum TcChannel { ${Object.entries(CHANNEL_CODES).map(([k, v]) => `TC_CH_${upper(k)} = ${v}`).join(', ')} };`);
   out(`enum TcWave { ${Object.entries(CLICK_WAVES).map(([k, v]) => `TC_WAVE_${upper(k)} = ${v}`).join(', ')} };`);
+  out(`enum TcLoop { ${Object.entries(LOOP_STATES).map(([k, v]) => `TC_LOOP_${upper(k)} = ${v}`).join(', ')} };`);
+  out(`#define TC_LOOP_MAX_SECONDS ${f32(LOOP_MAX_SECONDS)}`);
   out();
   return lines.join('\n');
 }

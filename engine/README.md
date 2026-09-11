@@ -7,12 +7,15 @@ from `dsp/` by `npm run build:dsp`:
 
 ```
 source (live DI or an audio file, played by the chain itself)
-  -> frontend      channel choice, trim, gate, TS boost (4x + ADAA)
+  -> frontend      channel choice, trim, gate
+  -> pitch         a transposer, an octave either way; bypassed by default
+  -> boost         TS style, 4x + ADAA
   -> amp           the NAM capture — NeuralAmpModelerCore
   -> capture trim  measured offline, so captures match each other
   -> cabinet       IR synthesised in ir.ts, zero-latency convolution
   -> four-band correction, the Web Audio biquad formulas exactly
   -> reverb, in parallel, computed only while audible
+  -> looper        records what leaves the rig; the click is added after it
   -> master
   -> limiter       always on, no control anywhere; then peak, RMS, meter frame
 ```
@@ -38,6 +41,16 @@ sample by sample. `npm run test:chain` asserts it and `npm run measure:latency`
 prints it: 0 frames for the chain, 4.6 frames (0.1 ms) inside the boost's
 oversampler. What is left is the host's buffer — the browser's render quantum
 and output device, or the ASIO buffer the player chose.
+
+The transposer is the exception, and only while it is engaged: aligning a
+shifted waveform means waiting for it to come round again, which measures 8.6 ms
+an octave down and 14.1 ms an octave up. It reports that in the meter frame
+(`pitch_delay_ms`), and `app/` adds it to the round trip it shows.
+
+The looper is not a second source of truth either: `engine.ts` sends presses,
+the chain owns what they mean, and what the interface draws is the state the
+chain reports. A loop is audio, so it dies with the chain — stopping the engine
+empties it.
 
 Parameters cross as raw engineering units (AD-9) and the chain glides to them
 itself (`dsp/smooth.h`, AD-20): the native host has no AudioParam, and one
