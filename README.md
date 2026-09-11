@@ -41,7 +41,7 @@ on macOS (CoreAudio) and Linux (ALSA).
 ## Download
 
 To play through an ASIO interface, download **Tonecraft Engine**:
-[Tonecraft Engine 0.1.0](https://github.com/Razigue/Tonecraft/releases/tag/engine-v0.1.0).
+[Tonecraft Engine 0.1.1](https://github.com/Razigue/Tonecraft/releases/tag/engine-v0.1.1).
 
 ---
 
