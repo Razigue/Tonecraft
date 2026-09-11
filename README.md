@@ -38,6 +38,11 @@ Choose ASIO in the audio settings; if the program is not running, the settings
 say where to download it and connect by themselves once it starts. It also runs
 on macOS (CoreAudio) and Linux (ALSA).
 
+## Download
+
+To play through an ASIO interface, download **Tonecraft Engine**:
+[Tonecraft Engine 0.1.0](https://github.com/Razigue/Tonecraft/releases/tag/engine-v0.1.0).
+
 ---
 
 ## Requirements
