@@ -212,10 +212,18 @@ export class NativeLink {
         if (typeof event.data === 'string') {
           const message = JSON.parse(event.data) as Incoming;
           if (message.type === 'hello' && !settled) {
+            // An engine speaking another ABI is refused outright: adopting the
+            // socket first would leave it `connected`, and the next connect()
+            // would hand the stale engine back as if it had passed.
+            if (message.abi !== ABI) {
+              ws.close();
+              done(null);
+              return;
+            }
             this.#ws = ws;
             this.#info = { version: message.version, abi: message.abi, platform: message.platform, hosts: message.hosts };
             if (message.config !== undefined) this.#setConfig(message.config);
-            done(message.abi === ABI ? this.#info : null);
+            done(this.#info);
             return;
           }
           this.#dispatch(message);
