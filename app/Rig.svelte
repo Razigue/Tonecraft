@@ -957,6 +957,26 @@
       poweredOff = false;
       engine.setPowered(true);
     } catch (error) {
+      /* Tonecraft Engine is optional, and a rig that will not start without it
+         would make it required. It is a native program the player may have
+         quit, uninstalled, or never had — and the last session remembered the
+         choice, so this is what a normal reload looks like once it is gone.
+         The browser path is complete on its own, so that is where this goes,
+         once, saying why. */
+      if (error instanceof EngineError && backend === 'native'
+          && (error.failure.kind === 'native-unreachable' || error.failure.kind === 'native-failed')) {
+        backend = 'browser';
+        persist();
+        engine = null;
+        state = 'idle';
+        await start(intent);
+        // The selector shows what is running, not what was wished for.
+        if (state === 'running') {
+          notice = 'Tonecraft Engine is not running, so this is playing in the browser. ' +
+            'Start it and choose ASIO again in the audio settings to go back.';
+        }
+        return;
+      }
       // Cause in one sentence, fix in one sentence, no apology. Nothing is
       // blocked: the control stays available (FR-12).
       if (error instanceof EngineError) {

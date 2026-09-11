@@ -18,7 +18,10 @@ chain and forwards calls it does not interpret (`PROTOCOL.md`). A feature added
 to Tonecraft is therefore in the engine the moment the page ships it, with
 nothing to update here.
 
-Without the engine, Tonecraft works exactly as before, in the browser.
+Without the engine, Tonecraft works exactly as before, in the browser — and
+that includes a page that remembers you chose ASIO: if the engine is not
+running when it starts, the sound comes out of the browser and the page says
+so. Quitting the engine never costs you the amp.
 
 ## Install
 

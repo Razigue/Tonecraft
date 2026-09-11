@@ -695,6 +695,52 @@ check('choosing the native engine without it running offers the download',
 await nativePage.getByRole('button', { name: 'Keep playing in the browser' }).click();
 check('and the way back to the browser', (await engines.nth(0).getAttribute('aria-checked')) === 'true');
 
+/**
+ * And the case that made the engine feel compulsory: a session that remembers
+ * ASIO, on a machine where Tonecraft Engine is no longer running — which is
+ * every reload after the player quits it. The rig has to come up in the
+ * browser and say why, not refuse to start.
+ */
+await nativePage.evaluate(async () => {
+  await new Promise((resolve, reject) => {
+    const open = indexedDB.open('tonecraft', 1);
+    open.onupgradeneeded = () => {
+      open.result.createObjectStore('state');
+      open.result.createObjectStore('media', { keyPath: 'id' });
+    };
+    open.onsuccess = () => {
+      const tx = open.result.transaction('state', 'readwrite');
+      tx.objectStore('state').put({ version: 1, session: { backend: 'native', source: 'live' } }, 'session');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    };
+    open.onerror = () => reject(open.error);
+  });
+});
+await nativePage.reload({ waitUntil: 'networkidle' });
+await nativePage.getByRole('button', { name: 'Musicien' }).click();
+await nativePage.getByRole('button', { name: 'Done', exact: true }).click();
+let fellBack = false;
+try {
+  await nativePage.locator('.latency').waitFor({ timeout: 20_000 });
+  fellBack = true;
+} catch { /* reported below */ }
+check('a remembered ASIO choice does not stop the rig starting without the engine', fellBack,
+  fellBack ? '' : (await nativePage.locator('.welcome .failure').innerText().catch(() => 'it refused to start')));
+// The take is loaded before the fallback can say anything, so this waits for
+// the sentence rather than reading the line the instant the rig comes up.
+let said = false;
+try {
+  await nativePage.locator('.notice', { hasText: 'playing in the browser' }).waitFor({ timeout: 15_000 });
+  said = true;
+} catch { /* reported below */ }
+check('and it says where the sound went', said,
+  said ? '' : await nativePage.locator('.notice').innerText());
+// The sheet was dismissed by Done; the selector is read where it lives.
+await nativePage.getByRole('button', { name: 'Audio settings' }).first().click();
+check('and the engine choice shows what is actually running',
+  (await engines.nth(0).getAttribute('aria-checked')) === 'true');
+
 await browser.close();
 server.close();
 

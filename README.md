@@ -38,6 +38,11 @@ Choose ASIO in the audio settings; if the program is not running, the settings
 say where to download it and connect by themselves once it starts. It also runs
 on macOS (CoreAudio) and Linux (ALSA).
 
+**It is never required.** A session that remembers ASIO on a machine where the
+engine is not running — which is every reload after quitting it — starts in the
+browser and says so, rather than refusing to start. Nothing in the product
+depends on the engine being there.
+
 ## Download
 
 To play through an ASIO interface, download **Tonecraft Engine**:
