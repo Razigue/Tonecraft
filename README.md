@@ -163,10 +163,18 @@ would be 25 dB down. Without one the result is not an amp sound.
 **Drop a Guitar Pro file on the page and it plays.** GP3, GP4, GP5, GPX, GP
 (Guitar Pro 7 and 8), MusicXML plain and zipped, Capella and alphaTex — the
 accepted list is exactly the list alphaTab's own loader tries, so nothing is
-offered that then refuses to open. Track by track with solo and mute, speed
+offered that then refuses to open. Track by track with solo and mute, a position slider, speed
 down to a quarter, a loop over the whole song or over a passage dragged out
 with the mouse, tab alone or score above tab, and a focus view that gives the
-score the whole window. Nothing is uploaded: the file is read in the tab, and
+score the whole window.
+
+**Selecting a track changes what is shown, not what is heard.** The band keeps
+playing, which is right — and reads as a bug the moment the chosen track is one
+that enters late. On a real transcription a third solo guitar can own five bars
+out of 293, at 5:30 into a nine-minute song: selected, it shows a page of rests
+and nothing of it is heard, because at that point it has nothing to play. So
+every row carries the number of bars that track plays in, the sidebar names the
+range, and one button goes there. Nothing is uploaded: the file is read in the tab, and
 the last one opened comes back on the next visit.
 
 **It costs nothing until it is used.** alphaTab, the Bravura notation font and

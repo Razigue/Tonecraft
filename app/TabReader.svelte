@@ -13,6 +13,7 @@
   let picker: HTMLInputElement;
   let api: AlphaTabApi | null = null;
   let loading: Promise<typeof import('@coderline/alphatab')> | null = null;
+  let scrollPending = false;
   let disposed = false;
   let score = $state.raw<model.Score | null>(null);
   let filename = $state('');
@@ -35,6 +36,74 @@
   let duration = $state(0);
   let volume = $state(60);
   const time = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+
+  /**
+   * Where each track actually plays. A score is not a band playing throughout:
+   * on a real transcription a third solo guitar can own five bars out of 293,
+   * and selecting it then sounds broken — the whole band is heard and that
+   * track is not, because at that moment it has nothing to play. Nothing on
+   * screen said so, so the count is shown per track and the passage is one
+   * click away. Counted over every beat of every bar, once per score: 7.7 ms
+   * the first time and 1.3 ms after on a 293-bar, 10-track transcription,
+   * next to the 700 ms the importer itself has just spent parsing it.
+   */
+  const activity = $derived.by(() => {
+    const master = score?.masterBars ?? [];
+    return (score?.tracks ?? []).map(t => {
+      let bars = 0, first = -1, last = -1, start = 0;
+      for (let index = 0; index < master.length; index++) {
+        let sounds = false;
+        for (const stave of t.staves) {
+          for (const voice of stave.bars[index]?.voices ?? []) {
+            for (const beat of voice.beats) if (beat.notes.length > 0) { sounds = true; break; }
+            if (sounds) break;
+          }
+          if (sounds) break;
+        }
+        if (!sounds) continue;
+        if (first < 0) { first = index; start = master[index]!.start; }
+        last = index;
+        bars++;
+      }
+      return { bars, first, last, start };
+    });
+  });
+  const selected = $derived(activity[track] ?? { bars: 0, first: -1, last: -1, start: 0 });
+
+  /**
+   * Moving the cursor only scrolls the score while the player is running, so a
+   * jump made while stopped would leave bar 1 on screen — the one thing the
+   * jump exists to avoid. The scroll is computed from the layout alphaTab
+   * already has, not from where the cursor element currently sits: the cursor
+   * is placed a few frames after the position is reported, so measuring it
+   * scrolls to where the playhead was, not where it is going. It moves the
+   * score viewport and nothing else — `scrollIntoView` takes the page with it.
+   */
+  function showBar(index: number) {
+    const bounds = api?.boundsLookup?.findMasterBarByIndex(index);
+    if (bounds && viewport) viewport.scrollTo({ top: Math.max(0, bounds.realBounds.y - 28) });
+  }
+  function barAt(tick: number) {
+    const bars = score?.masterBars ?? [];
+    let low = 0, high = bars.length - 1, found = 0;
+    while (low <= high) {
+      const middle = (low + high) >> 1;
+      if (bars[middle]!.start <= tick) { found = middle; low = middle + 1; } else high = middle - 1;
+    }
+    return found;
+  }
+  function goToTrack() {
+    if (!api || selected.first < 0) return;
+    scrollPending = true;
+    api.tickPosition = selected.start;
+    showBar(selected.first);
+  }
+  function seek(ms: number) {
+    if (!api) return;
+    position = ms;
+    scrollPending = true;
+    api.timePosition = ms;
+  }
 
   /** The engine, the notation fonts and the soundfont: fetched at the first file opened, never before. */
   function library() {
@@ -74,7 +143,10 @@
     api.masterVolume = volume / 100;
     api.playerReady.on(() => { ready = true; });
     api.playerStateChanged.on(e => { playing = e.state === 1; });
-    api.playerPositionChanged.on(e => { position = e.currentTime; duration = e.endTime; });
+    api.playerPositionChanged.on(e => {
+      position = e.currentTime; duration = e.endTime;
+      if (scrollPending) { scrollPending = false; showBar(barAt(e.currentTick)); }
+    });
     api.playbackRangeChanged.on(e => { selection = e.playbackRange !== null; });
     api.error.on(e => { error = e.message || 'Unable to display this score.'; busy = false; });
     return api;
@@ -159,6 +231,8 @@
           <button aria-label="Stop tablature" onclick={() => api?.stop()}>■</button>
           <span class="clock">{time(position)} <span>/ {time(duration)}</span></span>
         </div>
+        <input class="scrub" type="range" aria-label="Playback position" min="0" max={Math.max(1, duration)} step="100"
+          value={position} disabled={duration === 0} oninput={e => seek(Number(e.currentTarget.value))} />
         <label>Speed<select aria-label="Playback speed" bind:value={speed} onchange={() => { if (api) api.playbackSpeed = speed / 100; }}>{#each [25, 50, 60, 70, 80, 90, 100, 110, 125, 150] as n}<option value={n}>{n}%</option>{/each}</select></label>
         <button class:active={looping} aria-pressed={looping} onclick={() => { looping = !looping; if (api) api.isLooping = looping; }}>↻ {selection ? 'Loop selection' : 'Loop song'}</button>
         {#if selection}<button onclick={() => { if (api) api.playbackRange = null; }}>Clear selection</button>{/if}
@@ -172,14 +246,20 @@
         <aside aria-label="Score tracks">
           <span class="eyebrow">{score.tracks.length} TRACKS</span>
           <div class="tracks">{#each score.tracks as t, i}
-            <button class:selected={track === i} aria-pressed={track === i} onclick={() => chooseTrack(i)}><span class="track-number">{String(i + 1).padStart(2, '0')}</span><span>{t.name || `Track ${i + 1}`}</span></button>
+            <button class:selected={track === i} aria-pressed={track === i} onclick={() => chooseTrack(i)}><span class="track-number">{String(i + 1).padStart(2, '0')}</span><span>{t.name || `Track ${i + 1}`}</span><span class="track-bars" title="{activity[i]?.bars ?? 0} of {score.masterBars.length} bars have notes">{activity[i]?.bars ?? 0}</span></button>
           {/each}</div>
           <div class="track-tools">
             <button aria-pressed={solo} class:active={solo} onclick={() => { solo = !solo; api?.changeTrackSolo([score!.tracks[track]!], solo); }}>Solo</button>
             <button aria-pressed={muted} class:active={muted} onclick={() => { muted = !muted; api?.changeTrackMute([score!.tracks[track]!], muted); }}>Mute</button>
           </div>
+          <p class="plays">
+            {#if selected.first < 0}This track has no notes: it stays silent wherever you are in the song.
+            {:else}Plays bars <b>{selected.first + 1}–{selected.last + 1}</b>, {selected.bars} of {score.masterBars.length}.
+              <button class="jump" onclick={goToTrack}>Go to its first bar</button>
+            {/if}
+          </p>
           <p>{Math.round(score.tempo * speed / 100)} BPM <span>· {score.masterBars.length} bars</span></p>
-          <p class="hint">Click a note to seek. Drag across notes to select a passage, then enable the loop.</p>
+          <p class="hint">Selecting a track changes what is shown, not what is heard — the whole band keeps playing. Solo it to hear it alone. Click a note to seek, drag across notes to select a passage, then enable the loop.</p>
         </aside>
       {/if}
       <div class="score-viewport" class:has-score={!!score} bind:this={viewport}>
@@ -203,10 +283,10 @@
   .reader{margin:32px 0 24px;border:1px solid #3c3c3c;border-radius:8px;background:#1b1b1b;overflow:hidden;min-width:0}
   .reader-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 24px}.eyebrow{font:9px var(--mono);letter-spacing:1.6px;color:#a4a4a4}h2{font:500 20px var(--body);margin:5px 0 0}.heading-actions{display:flex;gap:10px}
   button,select{font:12px var(--body);color:#ddd;background:#303030;border:1px solid #4b4b4b;border-radius:4px;min-height:34px;padding:6px 12px;cursor:pointer}button:hover{background:#414141}button:disabled{opacity:.45;cursor:wait}.primary{background:#dedbd5;color:#222;border-color:#dedbd5}.primary:hover{background:#fff}.reader-heading>input{display:none}.error,.storage-note{padding:0 24px 15px;margin:0;font-size:13px}.error{color:var(--ember)}.storage-note{color:#bbb}
-  .drop-surface{border-top:1px solid #393939}.dragging{outline:2px dashed #dedbd5;outline-offset:-5px}.transport{display:flex;align-items:center;gap:12px;padding:12px 18px;flex-wrap:wrap;background:#242424;border-bottom:1px solid #404040}.playback{display:flex;align-items:center;gap:6px}.play{width:38px}.clock{font:11px var(--mono);margin:0 8px;white-space:nowrap}.clock span{color:#999}.transport label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa}.transport select{padding:5px}.volume input{width:65px;accent-color:#ddd}.view-select{margin-left:auto}.active{background:#dedbd5;color:#222}
-  .reader-body{display:grid;grid-template-columns:185px minmax(0,1fr)}.reader-body.empty{display:block}aside{padding:22px 12px;background:#202020;min-width:0;border-right:1px solid #414141}.tracks{display:grid;gap:5px;margin-top:15px;max-height:300px;overflow:auto}.tracks button{display:flex;align-items:baseline;gap:10px;text-align:left;border-color:transparent;background:none;padding:10px 8px;overflow-wrap:anywhere;line-height:1.5}.tracks .selected{background:#363636;border-color:#555}.track-number{font:10px var(--mono);color:#9e9e9e}.track-tools{display:flex;gap:6px;margin:16px 8px}.track-tools button{flex:1}aside p{font:11px var(--mono);line-height:1.7;padding:0 8px;color:#ccc}aside p span{color:#999}aside .hint{font:11px/1.7 var(--body);color:#aaa;margin-top:22px}
+  .drop-surface{border-top:1px solid #393939}.dragging{outline:2px dashed #dedbd5;outline-offset:-5px}.transport{display:flex;align-items:center;gap:12px;padding:12px 18px;flex-wrap:wrap;background:#242424;border-bottom:1px solid #404040}.playback{display:flex;align-items:center;gap:6px}.play{width:38px}.clock{font:11px var(--mono);margin:0 8px;white-space:nowrap}.clock span{color:#999}.transport label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa}.transport select{padding:5px}.volume input{width:65px;accent-color:#ddd}.scrub{flex:1 1 160px;min-width:110px;accent-color:#ddd;min-height:34px}.scrub:disabled{opacity:.4}.view-select{margin-left:auto}.active{background:#dedbd5;color:#222}
+  .reader-body{display:grid;grid-template-columns:185px minmax(0,1fr)}.reader-body.empty{display:block}aside{padding:22px 12px;background:#202020;min-width:0;border-right:1px solid #414141}.tracks{display:grid;gap:5px;margin-top:15px;max-height:300px;overflow:auto}.tracks button{display:flex;align-items:baseline;gap:10px;text-align:left;border-color:transparent;background:none;padding:10px 8px;overflow-wrap:anywhere;line-height:1.5}.tracks .selected{background:#363636;border-color:#555}.track-number{font:10px var(--mono);color:#9e9e9e}.track-bars{margin-left:auto;font:10px var(--mono);color:#8b8b8b}.tracks .selected .track-bars{color:#c8c8c8}.track-tools{display:flex;gap:6px;margin:16px 8px}.track-tools button{flex:1}aside p{font:11px var(--mono);line-height:1.7;padding:0 8px;color:#ccc}aside p span{color:#999}.plays{font:11px/1.7 var(--body)!important;color:#b6b6b6;margin:16px 0 0}.plays b{color:#e4e4e4;font-weight:500}.jump{display:block;margin-top:9px;padding:5px 9px;font-size:11px;min-height:30px}aside .hint{font:11px/1.7 var(--body);color:#aaa;margin-top:22px}
   .score-viewport{overflow:auto;min-width:0;max-height:640px;position:relative;scrollbar-color:#777 #dedbd5}.has-score{background:#faf8f3;color:#222}.score-paper{min-height:320px;background:#faf8f3;color:#171717}.hidden{display:none}.empty-state{padding:48px 24px;text-align:center;background:radial-gradient(ellipse at top,#303030,#1c1c1c 75%)}h3{font:500 21px var(--body);margin:22px 0 10px}.empty-state p{font-size:13px;color:#b2b2b2;margin-bottom:20px}.formats{font:10px var(--mono);letter-spacing:1px;color:#c5c1ba}.empty-state small{display:block;margin-top:16px;font-size:11px;color:#999}.tab-mark{width:124px;position:relative;margin:auto;padding:4px 0}.tab-mark i{display:block;height:1px;background:#696762;margin:7px 0}.tab-mark span{position:absolute;inset:0;display:grid;place-items:center;font:600 17px var(--mono);letter-spacing:3px;color:#dedbd5;text-shadow:0 0 6px #222;background:linear-gradient(90deg,transparent,#282828 32%,#282828 68%,transparent)}
   .reader-footer{display:flex;justify-content:space-between;gap:16px;padding:12px 18px;border-top:1px solid #404040;font:10px var(--mono);color:#aaa}.reader-footer>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.focused{position:fixed;inset:16px;z-index:50;margin:0;display:flex;flex-direction:column;box-shadow:0 0 0 30px #080808e8}.focused .drop-surface{flex:1;min-height:0;display:flex;flex-direction:column}.focused .reader-body{flex:1;min-height:0}.focused .score-viewport{max-height:none}.focused aside{overflow:auto}
   :global(.at-cursor-bar){background:#bda77230}:global(.at-cursor-beat){background:#866329;width:3px}:global(.at-selection div){background:#bda77244}:global(.at-highlight *){fill:#a37320!important;stroke:#a37320!important}
-  @media(max-width:760px){.reader-heading{padding:18px 14px}.heading-actions{gap:6px}.heading-actions button{padding:5px 8px}.reader-body{grid-template-columns:minmax(0,1fr)}aside{padding:12px;border-right:0;border-bottom:1px solid #444}aside>.eyebrow,aside p{display:none}.tracks{display:flex;margin:0;overflow:auto;max-height:90px}.tracks button{flex-shrink:0;max-width:180px}.track-tools{margin:10px 0 0;max-width:160px}.transport{padding:12px;gap:8px}.volume{display:none!important}.view-select{margin-left:0}.score-viewport{max-height:520px}.focused{inset:6px}.focused .reader-body{display:flex;flex-direction:column}.focused .score-viewport{flex:1}.reader-footer>span:last-child{display:none}.empty-state{padding:32px 18px}}
+  @media(max-width:760px){.reader-heading{padding:18px 14px}.heading-actions{gap:6px}.heading-actions button{padding:5px 8px}.reader-body{grid-template-columns:minmax(0,1fr)}aside{padding:12px;border-right:0;border-bottom:1px solid #444}aside>.eyebrow,aside p:not(.plays){display:none}.plays{margin-top:10px}.jump{display:inline-block;margin:0 0 0 8px}.tracks{display:flex;margin:0;overflow:auto;max-height:90px}.tracks button{flex-shrink:0;max-width:180px}.track-tools{margin:10px 0 0;max-width:160px}.transport{padding:12px;gap:8px}.volume{display:none!important}.view-select{margin-left:0}.score-viewport{max-height:520px}.focused{inset:6px}.focused .reader-body{display:flex;flex-direction:column}.focused .score-viewport{flex:1}.reader-footer>span:last-child{display:none}.empty-state{padding:32px 18px}}
 </style>

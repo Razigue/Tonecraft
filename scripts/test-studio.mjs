@@ -55,18 +55,20 @@ try {
   console.log('ok live recording, persistent DI, dry and processed WAV downloads');
 
   const importer = new alpha.importer.AlphaTexImporter();
-  importer.initFromString('\\title "Practice riff" \\tempo 120 . \\track "Guitar" :4 0.6 2.6 3.6 5.6 | 7.6 5.6 3.6 2.6 \\track "Bass" \\tuning E2 A2 D3 G3 :4 0.4 2.4 3.4 5.4 | 7.4 5.4 3.4 2.4');
+  // The third track enters only in the last bar: that is the case a reader
+  // makes look broken, because selecting it plays the band and not it.
+  importer.initFromString('\\title "Practice riff" \\tempo 120 . \\track "Guitar" :4 0.6 2.6 3.6 5.6 | 7.6 5.6 3.6 2.6 \\track "Bass" \\tuning E2 A2 D3 G3 :4 0.4 2.4 3.4 5.4 | 7.4 5.4 3.4 2.4 \\track "Late Solo" :4 r r r r | 12.1 10.1 8.1 7.1');
   const score = importer.readScore();
   const gp = Buffer.from(new alpha.exporter.Gp7Exporter().export(score));
   const picker = page.getByLabel('Import tablature', { exact: true });
   await page.locator('.reader').scrollIntoViewIfNeeded();
   await picker.setInputFiles({ name: 'practice.gp', mimeType: 'application/octet-stream', buffer: gp });
   await page.locator('.score-paper svg').first().waitFor({ timeout: 30000 });
-  await page.getByRole('button', { name: '02 Bass', exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: '02 Bass', exact: true }).getAttribute('aria-pressed'), 'true');
+  await page.getByRole('button', { name: /^02 Bass/ }).click();
+  assert.equal(await page.getByRole('button', { name: /^02 Bass/ }).getAttribute('aria-pressed'), 'true');
   await page.getByRole('button', { name: 'Solo', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Solo', exact: true }).getAttribute('aria-pressed'), 'true');
-  await page.getByRole('button', { name: '01 Guitar', exact: true }).click();
+  await page.getByRole('button', { name: /^01 Guitar/ }).click();
   assert.equal(await page.getByRole('button', { name: 'Solo', exact: true }).getAttribute('aria-pressed'), 'false');
   await page.getByRole('button', { name: 'Play tablature', exact: true }).click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor();
@@ -80,6 +82,20 @@ try {
   await page.screenshot({ path: path.join(artifacts, 'tab-reader-desktop.png') });
   await page.getByRole('button', { name: 'Exit focus', exact: true }).click();
   console.log('ok Guitar Pro import, tracks, solo, notation, playback, speed, loop and focus view');
+
+  // Where a track plays, and getting there. A track that enters late is not a
+  // broken track, but nothing said so until the count and the jump existed.
+  const late = page.getByRole('button', { name: /^03 Late Solo/ });
+  assert.equal((await late.innerText()).trim().split(/\s+/).pop(), '1', 'the track list counts the bars a track plays in');
+  await late.click();
+  await page.getByText('Plays bars 2\u20132, 1 of 2.').waitFor();
+  await page.getByRole('button', { name: 'Stop tablature', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
+  await page.getByRole('button', { name: 'Go to its first bar', exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
+  await page.getByLabel('Playback position').fill('0');
+  await page.waitForFunction(() => document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
+  console.log('ok per-track bar counts, the jump to a track\u2019s first bar and the position slider');
 
   // The accepted extensions must be the ones the loader actually reads.
   // alphaTex is the entry furthest from Guitar Pro on that list.
