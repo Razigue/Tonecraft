@@ -136,6 +136,10 @@ Everything else in the interface stays quiet so this can be the loud thing.
 
 **Tuner.** Full-screen sheet over `--chalk`. Note name in Anybody at 120px, cents deviation in Plex Mono at 44px, and a single horizontal hairline that shifts left and right of centre. In tune is `--celadon` and holds for 400ms so it registers. No strobe animation, no needle.
 
+**Tab reader.** One line of bars, laid out horizontally, sliding under a playhead fixed at the centre of the window. Nothing scrolls vertically: the next bar is always the one to the right. The score sits on paper, `#faf8f3`, the only light surface in the product other than a sheet — it is a sheet of music, and pretending otherwise would make it harder to read, not more coherent.
+
+**The neck.** Under the tab, on the same paper: a flat fretboard for the track being read — its own string count, taken from the tuning, and always twenty-four frets so a position learnt on one score is in the same place on the next. Frets are **evenly spaced**, not spaced the way a real neck is. This is a reading aid, not a photograph: at true spacing the 24th fret is three millimetres wide. Thin `--graphite` lines, inlay dots barely above the paper, and the note being played lit in the same amber as the playhead — one light at a time per string, gone when the next note arrives. No wood, no fretwire, no shadow: the rule against skeuomorphism applies here most of all, because this is the one component that has a physical object behind it.
+
 **Meters.** Two segments only, one for input and one for output, each 4px wide vertical bars in `--celadon` with an `--ember` cap on clip that holds for 1.5 s. No peak-hold lines, no numeric dB scale printed alongside.
 
 ---

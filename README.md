@@ -176,6 +176,14 @@ over the same duration alphaTab gives its beat cursor, so the music slides
 continuously rather than jumping bar to bar — measured at one pixel a frame,
 with the playhead within a pixel of the centre.
 
+**Under the tab, the neck.** The same track's neck: seven strings for a
+seven-string transcription, four for a bass, twenty-four frets whatever it is,
+and the note being played lit where the hand goes. It is fed by what the player
+is actually sounding, so the light leaves as the next note arrives. The frets
+are evenly spaced rather than spaced the way a real neck is — at true spacing
+the 24th fret is three millimetres wide, and this is for reading a position,
+not for looking at a picture of a guitar.
+
 **Selecting a track changes what is shown, not what is heard.** The band keeps
 playing, which is right — and reads as a bug the moment the chosen track is one
 that enters late. On a real transcription a third solo guitar can own five bars

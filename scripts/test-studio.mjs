@@ -141,6 +141,24 @@ try {
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
   console.log('ok the score slides horizontally under a centred playhead');
 
+  // The neck under the tab is the track's own: a four-string bass draws four.
+  assert.equal(await page.locator('.neck .fret').count(), 24);
+  assert.equal(await page.locator('.neck .string').count(), 6);
+  await page.getByRole('button', { name: /^02 Bass/ }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.neck .string').length === 4, { timeout: 10000 });
+  await page.getByRole('button', { name: /^01 Guitar/ }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.neck .string').length === 6, { timeout: 10000 });
+  // It lights where the note is, and the light leaves for the next one.
+  await page.getByRole('button', { name: 'Play tablature', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.neck .core').length > 0, { timeout: 15000 });
+  const first = await page.locator('.neck .core').first().getAttribute('cx');
+  await page.waitForFunction(was => {
+    const dot = document.querySelector('.neck .core');
+    return dot !== null && dot.getAttribute('cx') !== was;
+  }, first, { timeout: 15000 });
+  await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
+  console.log('ok the neck matches the track and lights the note being played');
+
   // The accepted extensions must be the ones the loader actually reads.
   // alphaTex is the entry furthest from Guitar Pro on that list.
   await picker.setInputFiles({ name: 'riff.atex', mimeType: 'text/plain',

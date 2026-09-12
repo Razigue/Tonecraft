@@ -2,6 +2,7 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import type { AlphaTabApi, model } from '@coderline/alphatab';
   import { loadMedia, saveMedia } from '../store/media.ts';
+  import Fretboard from './Fretboard.svelte';
 
   // Every format alphaTab's own ScoreLoader tries, in its order: Guitar Pro
   // 3-5, 6 (gpx), 7-8 (gp), MusicXML plain and zipped, Capella, alphaTex.
@@ -38,6 +39,8 @@
   let duration = $state(0);
   let volume = $state(60);
   let tail = $state(0);
+  /** What the hand is holding right now, on the track being read. */
+  let lit = $state.raw<{ string: number; fret: number }[]>([]);
   const time = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 
   /**
@@ -72,6 +75,9 @@
     });
   });
   const selected = $derived(activity[track] ?? { bars: 0, first: -1, last: -1, start: 0 });
+  // A neck only makes sense for a staff that has strings: a keyboard or a drum
+  // track has none, and gets none.
+  const stave = $derived(score?.tracks[track]?.staves.find(s => s.tuning.length > 0) ?? null);
 
   /**
    * One line, running right to left under a playhead that stays in the middle
@@ -188,7 +194,17 @@
       // event's own flag rather than on a pending one we set before seeking:
       // a stray position update from the pause that preceded it consumed the
       // flag, and the seek that followed then scrolled nowhere.
-      if (e.isSeek) showBar(barAt(e.currentTick));
+      if (e.isSeek) { lit = []; showBar(barAt(e.currentTick)); }
+    });
+    // What is sounding, replaced whole on every beat: the previous position
+    // goes out as the next comes in, which is the whole point of the neck.
+    api.activeBeatsChanged.on(e => {
+      const held: { string: number; fret: number }[] = [];
+      for (const beat of e.activeBeats) {
+        if (beat.voice.bar.staff.track.index !== track) continue;
+        for (const note of beat.notes) if (note.string > 0) held.push({ string: note.string, fret: note.fret });
+      }
+      lit = held;
     });
     api.playbackRangeChanged.on(e => { selection = e.playbackRange !== null; });
     api.error.on(e => { error = e.message || 'Unable to display this score.'; busy = false; });
@@ -210,7 +226,7 @@
       if (disposed) return;
       score = parsed; filename = file.name;
       track = Math.max(0, parsed.tracks.findIndex(t => t.staves.some(s => s.tuning.length > 0)));
-      muted = false; solo = false; looping = false; selection = false; position = 0; duration = 0;
+      muted = false; solo = false; looping = false; selection = false; position = 0; duration = 0; lit = [];
       const fresh = await reader(alpha);
       fresh.renderScore(parsed, [track]);
       fresh.playbackSpeed = speed / 100;
@@ -228,7 +244,7 @@
     if (!score || !api) return;
     api.changeTrackSolo(score.tracks, false);
     api.changeTrackMute(score.tracks, false);
-    track = index; solo = false; muted = false;
+    track = index; solo = false; muted = false; lit = [];
     api.renderTracks([score.tracks[index]!]);
   }
   function updateDisplay() {
@@ -317,6 +333,7 @@
           <p class="hint">Selecting a track changes what is shown, not what is heard — the whole band keeps playing. Solo it to hear it alone. Click a note to seek, drag across notes to select a passage, then enable the loop.</p>
         </aside>
       {/if}
+      <div class="stage">
       <div class="score-viewport" class:has-score={!!score} bind:this={viewport}>
         {#if !score}
           <div class="empty-state">
@@ -330,6 +347,8 @@
         <div class="score-paper" class:hidden={!score} bind:this={surface}></div>
         {#if tail > 0}<div class="score-tail" style:width={`${tail}px`}></div>{/if}
       </div>
+      {#if score && stave}<Fretboard strings={stave.tuning} {lit} capo={stave.capo} />{/if}
+      </div>
     </div>
     {#if score}<div class="reader-footer"><span>{score.title || filename}{score.artist ? ` · ${score.artist}` : ''}</span><span>{ready ? 'Click the score · Space plays' : 'Preparing playback…'}</span></div>{/if}
   </div>
@@ -340,9 +359,9 @@
   .reader-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 24px}.eyebrow{font:9px var(--mono);letter-spacing:1.6px;color:#a4a4a4}h2{font:500 20px var(--body);margin:5px 0 0}.heading-actions{display:flex;gap:10px}
   button,select{font:12px var(--body);color:#ddd;background:#303030;border:1px solid #4b4b4b;border-radius:4px;min-height:34px;padding:6px 12px;cursor:pointer}button:hover{background:#414141}button:disabled{opacity:.45;cursor:wait}.primary{background:#dedbd5;color:#222;border-color:#dedbd5}.primary:hover{background:#fff}.reader-heading>input{display:none}.error,.storage-note{padding:0 24px 15px;margin:0;font-size:13px}.error{color:var(--ember)}.storage-note{color:#bbb}
   .drop-surface{border-top:1px solid #393939}.dragging{outline:2px dashed #dedbd5;outline-offset:-5px}.transport{display:flex;align-items:center;gap:12px;padding:12px 18px;flex-wrap:wrap;background:#242424;border-bottom:1px solid #404040}.playback{display:flex;align-items:center;gap:6px}.play{width:38px}.clock{font:11px var(--mono);margin:0 8px;white-space:nowrap}.clock span{color:#999}.transport label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa}.transport select{padding:5px}.volume input{width:65px;accent-color:#ddd}.scrub{flex:1 1 160px;min-width:110px;accent-color:#ddd;min-height:34px}.scrub:disabled{opacity:.4}.view-select{margin-left:auto}.active{background:#dedbd5;color:#222}
-  .reader-body{display:grid;grid-template-columns:185px minmax(0,1fr)}.reader-body.empty{display:block}aside{padding:22px 12px;background:#202020;min-width:0;border-right:1px solid #414141}.tracks{display:grid;gap:5px;margin-top:15px;max-height:300px;overflow:auto}.tracks button{display:flex;align-items:baseline;gap:10px;text-align:left;border-color:transparent;background:none;padding:10px 8px;overflow-wrap:anywhere;line-height:1.5}.tracks .selected{background:#363636;border-color:#555}.track-number{font:10px var(--mono);color:#9e9e9e}.track-bars{margin-left:auto;font:10px var(--mono);color:#8b8b8b}.tracks .selected .track-bars{color:#c8c8c8}.track-tools{display:flex;gap:6px;margin:16px 8px}.track-tools button{flex:1}aside p{font:11px var(--mono);line-height:1.7;padding:0 8px;color:#ccc}aside p span{color:#999}.plays{font:11px/1.7 var(--body)!important;color:#b6b6b6;margin:16px 0 0}.plays b{color:#e4e4e4;font-weight:500}.jump{display:block;margin-top:9px;padding:5px 9px;font-size:11px;min-height:30px}aside .hint{font:11px/1.7 var(--body);color:#aaa;margin-top:22px}
-  .score-viewport{overflow-x:auto;overflow-y:hidden;min-width:0;position:relative;scrollbar-color:#777 #dedbd5}.has-score{display:flex;align-items:stretch}.score-tail{flex:0 0 auto}.has-score{background:#faf8f3;color:#222}.score-paper{flex:0 0 auto;min-width:100%;min-height:320px;background:#faf8f3;color:#171717}.hidden{display:none}.empty-state{padding:48px 24px;text-align:center;background:radial-gradient(ellipse at top,#303030,#1c1c1c 75%)}h3{font:500 21px var(--body);margin:22px 0 10px}.empty-state p{font-size:13px;color:#b2b2b2;margin-bottom:20px}.formats{font:10px var(--mono);letter-spacing:1px;color:#c5c1ba}.empty-state small{display:block;margin-top:16px;font-size:11px;color:#999}.tab-mark{width:124px;position:relative;margin:auto;padding:4px 0}.tab-mark i{display:block;height:1px;background:#696762;margin:7px 0}.tab-mark span{position:absolute;inset:0;display:grid;place-items:center;font:600 17px var(--mono);letter-spacing:3px;color:#dedbd5;text-shadow:0 0 6px #222;background:linear-gradient(90deg,transparent,#282828 32%,#282828 68%,transparent)}
-  .reader-footer{display:flex;justify-content:space-between;gap:16px;padding:12px 18px;border-top:1px solid #404040;font:10px var(--mono);color:#aaa}.reader-footer>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.focused{position:fixed;inset:16px;z-index:50;margin:0;display:flex;flex-direction:column;box-shadow:0 0 0 30px #080808e8}.focused .drop-surface{flex:1;min-height:0;display:flex;flex-direction:column}.focused .reader-body{flex:1;min-height:0}.focused .score-viewport{align-self:center}.focused aside{overflow:auto}
+  .reader-body{display:grid;grid-template-columns:185px minmax(0,1fr)}.stage{display:flex;flex-direction:column;min-width:0;min-height:0}.reader-body.empty{display:block}aside{padding:22px 12px;background:#202020;min-width:0;border-right:1px solid #414141}.tracks{display:grid;gap:5px;margin-top:15px;max-height:300px;overflow:auto}.tracks button{display:flex;align-items:baseline;gap:10px;text-align:left;border-color:transparent;background:none;padding:10px 8px;overflow-wrap:anywhere;line-height:1.5}.tracks .selected{background:#363636;border-color:#555}.track-number{font:10px var(--mono);color:#9e9e9e}.track-bars{margin-left:auto;font:10px var(--mono);color:#8b8b8b}.tracks .selected .track-bars{color:#c8c8c8}.track-tools{display:flex;gap:6px;margin:16px 8px}.track-tools button{flex:1}aside p{font:11px var(--mono);line-height:1.7;padding:0 8px;color:#ccc}aside p span{color:#999}.plays{font:11px/1.7 var(--body)!important;color:#b6b6b6;margin:16px 0 0}.plays b{color:#e4e4e4;font-weight:500}.jump{display:block;margin-top:9px;padding:5px 9px;font-size:11px;min-height:30px}aside .hint{font:11px/1.7 var(--body);color:#aaa;margin-top:22px}
+  .score-viewport{overflow-x:auto;overflow-y:hidden;min-width:0;position:relative;scrollbar-color:#777 #dedbd5}.has-score{display:flex;align-items:stretch}.score-tail{flex:0 0 auto}.has-score{background:#faf8f3;color:#222}.score-paper{flex:0 0 auto;min-width:100%;min-height:120px;background:#faf8f3;color:#171717}.hidden{display:none}.empty-state{padding:48px 24px;text-align:center;background:radial-gradient(ellipse at top,#303030,#1c1c1c 75%)}h3{font:500 21px var(--body);margin:22px 0 10px}.empty-state p{font-size:13px;color:#b2b2b2;margin-bottom:20px}.formats{font:10px var(--mono);letter-spacing:1px;color:#c5c1ba}.empty-state small{display:block;margin-top:16px;font-size:11px;color:#999}.tab-mark{width:124px;position:relative;margin:auto;padding:4px 0}.tab-mark i{display:block;height:1px;background:#696762;margin:7px 0}.tab-mark span{position:absolute;inset:0;display:grid;place-items:center;font:600 17px var(--mono);letter-spacing:3px;color:#dedbd5;text-shadow:0 0 6px #222;background:linear-gradient(90deg,transparent,#282828 32%,#282828 68%,transparent)}
+  .reader-footer{display:flex;justify-content:space-between;gap:16px;padding:12px 18px;border-top:1px solid #404040;font:10px var(--mono);color:#aaa}.reader-footer>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.focused{position:fixed;inset:16px;z-index:50;margin:0;display:flex;flex-direction:column;box-shadow:0 0 0 30px #080808e8}.focused .drop-surface{flex:1;min-height:0;display:flex;flex-direction:column}.focused .reader-body{flex:1;min-height:0}.focused .stage{justify-content:center}.focused aside{overflow:auto}
   :global(.at-cursor-bar){background:#bda77230}:global(.at-cursor-beat){background:#866329;width:3px}:global(.at-selection div){background:#bda77244}:global(.at-highlight *){fill:#a37320!important;stroke:#a37320!important}
-  @media(max-width:760px){.reader-heading{padding:18px 14px}.heading-actions{gap:6px}.heading-actions button{padding:5px 8px}.reader-body{grid-template-columns:minmax(0,1fr)}aside{padding:12px;border-right:0;border-bottom:1px solid #444}aside>.eyebrow,aside p:not(.plays){display:none}.plays{margin-top:10px}.jump{display:inline-block;margin:0 0 0 8px}.tracks{display:flex;margin:0;overflow:auto;max-height:90px}.tracks button{flex-shrink:0;max-width:180px}.track-tools{margin:10px 0 0;max-width:160px}.transport{padding:12px;gap:8px}.volume{display:none!important}.view-select{margin-left:0}.focused{inset:6px}.focused .reader-body{display:flex;flex-direction:column}.focused .score-viewport{flex:1}.reader-footer>span:last-child{display:none}.empty-state{padding:32px 18px}}
+  @media(max-width:760px){.reader-heading{padding:18px 14px}.heading-actions{gap:6px}.heading-actions button{padding:5px 8px}.reader-body{grid-template-columns:minmax(0,1fr)}aside{padding:12px;border-right:0;border-bottom:1px solid #444}aside>.eyebrow,aside p:not(.plays){display:none}.plays{margin-top:10px}.jump{display:inline-block;margin:0 0 0 8px}.tracks{display:flex;margin:0;overflow:auto;max-height:90px}.tracks button{flex-shrink:0;max-width:180px}.track-tools{margin:10px 0 0;max-width:160px}.transport{padding:12px;gap:8px}.volume{display:none!important}.view-select{margin-left:0}.focused{inset:6px}.focused .reader-body{display:flex;flex-direction:column}.focused .stage{flex:1}.reader-footer>span:last-child{display:none}.empty-state{padding:32px 18px}}
 </style>
