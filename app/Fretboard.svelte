@@ -36,7 +36,10 @@
   const GAP = 20;
   const width = (END - NUT) / FRETS;
   const height = $derived(TOP * 2 + Math.max(1, strings.length - 1) * GAP);
-  const y = (string: number) => TOP + (string - 1) * GAP;
+  // alphaTab numbers strings from the lowest (1) while its tuning lists them
+  // from the highest: a note's row is counted back from the bottom.
+  const row = (index: number) => TOP + index * GAP;
+  const y = (string: number) => row(strings.length - string);
   const x = (fret: number) => (fret === 0 ? NUT - 12 : NUT + (fret - 0.5) * width);
   const middle = $derived(TOP + ((strings.length - 1) * GAP) / 2);
 </script>
@@ -55,8 +58,8 @@
     <line class="nut" x1={NUT} x2={NUT} y1={TOP - 7} y2={height - TOP + 7} />
     {#if capo > 0 && capo <= FRETS}<line class="capo" x1={NUT + capo * width} x2={NUT + capo * width} y1={TOP - 7} y2={height - TOP + 7} />{/if}
     {#each strings as note, i}
-      <line class="string" x1={NUT} x2={END} y1={y(i + 1)} y2={y(i + 1)} style:stroke-width={0.7 + i * 0.2} />
-      <text class="open" x={NUT - 22} y={y(i + 1) + 4}>{NAMES[((note % 12) + 12) % 12]}</text>
+      <line class="string" x1={NUT} x2={END} y1={row(i)} y2={row(i)} style:stroke-width={0.7 + i * 0.2} />
+      <text class="open" x={NUT - 22} y={row(i) + 4}>{NAMES[((note % 12) + 12) % 12]}</text>
     {/each}
     {#each [...INLAYS, ...DOUBLE] as fret}
       <text class="number" x={NUT + (fret - 0.5) * width} y={height - 6}>{fret}</text>
