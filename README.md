@@ -168,6 +168,14 @@ down to a quarter, a loop over the whole song or over a passage dragged out
 with the mouse, tab alone or score above tab, and a focus view that gives the
 score the whole window.
 
+**One line, sliding under a fixed playhead.** The score is laid out
+horizontally and nothing scrolls vertically: the bar being played stays in the
+middle of the window, the next bar is always the one to the right, and the
+reader never has to know where the eye is about to jump. The scroll is animated
+over the same duration alphaTab gives its beat cursor, so the music slides
+continuously rather than jumping bar to bar — measured at one pixel a frame,
+with the playhead within a pixel of the centre.
+
 **Selecting a track changes what is shown, not what is heard.** The band keeps
 playing, which is right — and reads as a bug the moment the chosen track is one
 that enters late. On a real transcription a third solo guitar can own five bars

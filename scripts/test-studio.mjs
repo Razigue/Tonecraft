@@ -104,7 +104,9 @@ try {
 
   // Clicking the score seeks, it focuses nothing, and space used to scroll the
   // page instead of playing. The reader takes the keys on any click of its own.
-  await page.locator('.score-paper').click({ position: { x: 8, y: 8 } });
+  // On the notation itself, which is SVG: a guard for HTMLElement let every
+  // click on a score through without ever taking the focus.
+  await page.locator('.score-paper svg').first().click({ position: { x: 30, y: 30 } });
   const scrollBefore = await page.evaluate(() => window.scrollY);
   await page.keyboard.press('Space');
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor({ timeout: 10000 });
@@ -113,27 +115,42 @@ try {
   assert.equal(await page.evaluate(() => window.scrollY), scrollBefore, 'space must not scroll the page');
   console.log('ok space plays and pauses once the reader has been clicked');
 
-  // The line being read sits in the middle of the window, not at its top:
-  // alphaTab's own handler scrolls to the top, ours has to replace it.
+  // One line, sliding under a playhead that stays in the middle of the window.
+  // alphaTab's own handler for this layout parks the cursor on the left edge.
   await page.getByLabel('Playback position').fill('40000');
-  await page.keyboard.press('Space');
+  // The button, not the space bar: fill() leaves the focus on the slider.
+  await page.getByRole('button', { name: 'Play tablature', exact: true }).click();
+  await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor({ timeout: 10000 });
   await page.waitForTimeout(2500);
-  const centred = await page.evaluate(() => {
-    const view = document.querySelector('.score-viewport').getBoundingClientRect();
-    const cursor = document.querySelector('.at-cursor-bar')?.getBoundingClientRect();
-    return cursor ? { off: Math.round(cursor.top + cursor.height / 2 - view.top - view.height / 2), scrolled: document.querySelector('.score-viewport').scrollTop } : null;
+  const read = () => page.evaluate(() => {
+    const el = document.querySelector('.score-viewport');
+    const view = el.getBoundingClientRect();
+    const cursor = document.querySelector('.at-cursor-beat')?.getBoundingClientRect();
+    return { off: cursor ? Math.round(cursor.left + cursor.width / 2 - view.left - view.width / 2) : null, scrolled: Math.round(el.scrollLeft), down: Math.round(el.scrollTop), height: el.scrollHeight - el.clientHeight };
   });
-  assert(centred?.scrolled > 0, 'the score has scrolled to the played line');
-  assert(Math.abs(centred.off) < 90, `the played line is centred, not at the top (off by ${centred?.off}px)`);
-  await page.keyboard.press('Space');
-  console.log('ok the line being played is centred in the window');
+  const centred = await read();
+  assert(centred.scrolled > 0, 'the score has slid under the playhead');
+  assert(Math.abs(centred.off) < 40, `the playhead stays in the middle of the window (off by ${centred.off}px)`);
+  assert.equal(centred.height, 0, 'one line: there is nothing to scroll vertically');
+  // Smoothly: the scroll is animated over the cursor's own transition, so it
+  // moves between beats rather than jumping from one bar to the next.
+  await page.waitForTimeout(400);
+  const later = await read();
+  assert(later.scrolled > centred.scrolled, 'the score keeps sliding');
+  assert(Math.abs(later.off) < 40, `and the playhead stays put (off by ${later.off}px)`);
+  await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
+  console.log('ok the score slides horizontally under a centred playhead');
 
   // The accepted extensions must be the ones the loader actually reads.
   // alphaTex is the entry furthest from Guitar Pro on that list.
   await picker.setInputFiles({ name: 'riff.atex', mimeType: 'text/plain',
     buffer: Buffer.from('\\title "Alpha riff" \\tempo 100 . :4 0.6 2.6 3.6 5.6') });
-  // The rendered score, not the caption: the caption changes before the layout.
-  await page.waitForFunction(() => document.querySelector('.score-paper')?.textContent?.includes('Alpha riff'), { timeout: 30000 });
+  // The laid-out score, not the caption: the caption changes before the layout,
+  // and the horizontal layout does not draw the title at all. One bar is a
+  // fraction of the width the forty-bar score left behind.
+  await page.waitForFunction(() => document.querySelectorAll('.tracks button').length === 1
+    && document.querySelectorAll('.score-paper svg').length > 0
+    && document.querySelector('.score-paper').scrollWidth < 2000, { timeout: 30000 });
   console.log('ok alphaTex import');
   if (process.env.GPX_FIXTURE) {
     await picker.setInputFiles(process.env.GPX_FIXTURE);

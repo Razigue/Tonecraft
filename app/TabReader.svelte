@@ -14,7 +14,8 @@
   let picker: HTMLInputElement;
   let api: AlphaTabApi | null = null;
   let loading: Promise<typeof import('@coderline/alphatab')> | null = null;
-  let centred = -1;
+  let sliding = 0;
+  let slid = -1;
   let disposed = false;
   let score = $state.raw<model.Score | null>(null);
   let filename = $state('');
@@ -36,6 +37,7 @@
   let position = $state(0);
   let duration = $state(0);
   let volume = $state(60);
+  let tail = $state(0);
   const time = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 
   /**
@@ -72,29 +74,34 @@
   const selected = $derived(activity[track] ?? { bars: 0, first: -1, last: -1, start: 0 });
 
   /**
-   * The line being played sits in the middle of the window, not at its top.
-   * That gives away half a screen of paper and it is the point: what is being
-   * read is easier to follow with room on both sides of it than with eight
-   * more bars crammed underneath. The first and last lines cannot be centred
-   * by scrolling alone — the paper carries a bottom margin for the last one,
-   * and the first simply starts at the top.
+   * One line, running right to left under a playhead that stays in the middle
+   * of the window. A page of music asks the reader to know where the eye is
+   * about to jump; a single line asks nothing — the next bar is always the one
+   * to the right, and the bar being played is always in the same place.
    *
-   * It moves the score viewport and nothing else: `scrollIntoView` would take
-   * the page with it. The target comes from the layout alphaTab already holds
-   * rather than from the cursor element, which is placed a few frames after
-   * the position is reported — measuring it scrolls to where the playhead was.
+   * The scroll is animated over the same duration alphaTab gives its beat
+   * cursor, linearly, which is what keeps the two locked together: the cursor
+   * transitions from `from` to `to` in that time, so the music slides under it
+   * instead of jumping bar by bar. Cancelled and restarted on each beat, never
+   * queued — a stale animation would fight the next one.
    */
-  function centre(bounds: { y: number; h: number }, force = true) {
-    // A beat cursor moves several times per line. Scrolling only when the line
-    // itself changes leaves a score the reader has nudged by hand where it is
-    // until the music moves on, instead of snapping it back on every beat.
-    if (!viewport || (!force && bounds.y === centred)) return;
-    centred = bounds.y;
-    viewport.scrollTo({ top: Math.max(0, bounds.y + bounds.h / 2 - viewport.clientHeight / 2) });
+  function follow(x: number, ms: number) {
+    if (!viewport) return;
+    cancelAnimationFrame(sliding);
+    const from = viewport.scrollLeft;
+    const to = Math.max(0, x - viewport.clientWidth / 2);
+    if (ms <= 0) { viewport.scrollLeft = to; return; }
+    const begin = performance.now();
+    const step = (now: number) => {
+      const done = Math.min(1, (now - begin) / ms);
+      viewport.scrollLeft = from + (to - from) * done;
+      if (done < 1) sliding = requestAnimationFrame(step);
+    };
+    sliding = requestAnimationFrame(step);
   }
   function showBar(index: number) {
     const bounds = api?.boundsLookup?.findMasterBarByIndex(index);
-    if (bounds) centre(bounds.realBounds);
+    if (bounds) { slid = -1; follow(bounds.realBounds.x, 0); }
   }
   function barAt(tick: number) {
     const bars = score?.masterBars ?? [];
@@ -137,14 +144,15 @@
     api?.destroy();
     api = null;
     ready = false;
-    centred = -1;
+    slid = -1;
+    tail = 0;
     await tick();
     if (disposed) throw new Error('Reader closed.');
     api = new alpha.AlphaTabApi(surface, {
       // SVG, spelled out rather than relied on: canvas is forbidden here
       // (CLAUDE.md section 4) and alphaTab renders either way.
       core: { fontDirectory: `${BASE}font/`, engine: 'svg' },
-      display: { scale: zoom / 100, padding: [24, 28, 24, 28],
+      display: { scale: zoom / 100, padding: [24, 28, 24, 28], layoutMode: alpha.LayoutMode.Horizontal,
         staveProfile: notation === 'tab' ? alpha.StaveProfile.Tab : alpha.StaveProfile.ScoreTab },
       player: {
         playerMode: alpha.PlayerMode.EnabledSynthesizer,
@@ -153,18 +161,24 @@
       },
     });
     api.masterVolume = volume / 100;
-    // alphaTab's own handler puts the played system at the top of the window.
+    // alphaTab's own handler for this layout parks the cursor on the left edge.
     api.customScrollHandler = {
       [Symbol.dispose]() {},
-      forceScrollTo: beat => centre(beat.barBounds.masterBarBounds.realBounds),
-      onBeatCursorUpdating: beat => centre(beat.barBounds.masterBarBounds.realBounds, false),
+      forceScrollTo: beat => { slid = -1; follow(beat.onNotesX, 0); },
+      onBeatCursorUpdating: (_start, _end, _mode, fromX, toX, ms) => {
+        if (toX === slid && ms > 0) return;
+        slid = ms > 0 ? toX : -1;
+        follow(fromX, 0);
+        if (ms > 0) follow(toX, ms);
+      },
     };
-    // The margin that lets the last line reach the middle, and only then: on a
-    // score that already fits, it would be empty paper to scroll through.
+    // The room the last bar needs to reach the middle, and only when the line
+    // is longer than the window: on a short one it would be paper to nowhere.
     api.postRenderFinished.on(() => {
       if (!viewport || !surface) return;
-      surface.style.paddingBottom = '0px';
-      if (surface.offsetHeight > viewport.clientHeight) surface.style.paddingBottom = `${Math.round(viewport.clientHeight / 2)}px`;
+      tail = 0;
+      const width = surface.scrollWidth;
+      if (width > viewport.clientWidth) tail = Math.round(viewport.clientWidth / 2);
     });
     api.playerReady.on(() => { ready = true; });
     api.playerStateChanged.on(e => { playing = e.state === 1; });
@@ -234,12 +248,14 @@
    * Controls keep their own focus — space on a select or a button is theirs.
    */
   function grabKeys(e: PointerEvent) {
-    if (!(e.target instanceof HTMLElement) || e.target.closest('input,select,button,a,textarea')) return;
+    // Element, not HTMLElement: a click on the score lands on alphaTab's SVG,
+    // which is an SVGElement and was falling straight through this guard.
+    if (!(e.target instanceof Element) || e.target.closest('input,select,button,a,textarea')) return;
     section?.focus({ preventScroll: true });
   }
   function keydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && focused) { focused = false; e.stopPropagation(); }
-    if (e.code === 'Space' && e.target instanceof HTMLElement && !e.target.closest('input,select,button')) {
+    if (e.code === 'Space' && e.target instanceof Element && !e.target.closest('input,select,button')) {
       e.preventDefault(); e.stopPropagation(); togglePlay();
     }
   }
@@ -312,6 +328,7 @@
           </div>
         {/if}
         <div class="score-paper" class:hidden={!score} bind:this={surface}></div>
+        {#if tail > 0}<div class="score-tail" style:width={`${tail}px`}></div>{/if}
       </div>
     </div>
     {#if score}<div class="reader-footer"><span>{score.title || filename}{score.artist ? ` · ${score.artist}` : ''}</span><span>{ready ? 'Click the score · Space plays' : 'Preparing playback…'}</span></div>{/if}
@@ -324,8 +341,8 @@
   button,select{font:12px var(--body);color:#ddd;background:#303030;border:1px solid #4b4b4b;border-radius:4px;min-height:34px;padding:6px 12px;cursor:pointer}button:hover{background:#414141}button:disabled{opacity:.45;cursor:wait}.primary{background:#dedbd5;color:#222;border-color:#dedbd5}.primary:hover{background:#fff}.reader-heading>input{display:none}.error,.storage-note{padding:0 24px 15px;margin:0;font-size:13px}.error{color:var(--ember)}.storage-note{color:#bbb}
   .drop-surface{border-top:1px solid #393939}.dragging{outline:2px dashed #dedbd5;outline-offset:-5px}.transport{display:flex;align-items:center;gap:12px;padding:12px 18px;flex-wrap:wrap;background:#242424;border-bottom:1px solid #404040}.playback{display:flex;align-items:center;gap:6px}.play{width:38px}.clock{font:11px var(--mono);margin:0 8px;white-space:nowrap}.clock span{color:#999}.transport label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa}.transport select{padding:5px}.volume input{width:65px;accent-color:#ddd}.scrub{flex:1 1 160px;min-width:110px;accent-color:#ddd;min-height:34px}.scrub:disabled{opacity:.4}.view-select{margin-left:auto}.active{background:#dedbd5;color:#222}
   .reader-body{display:grid;grid-template-columns:185px minmax(0,1fr)}.reader-body.empty{display:block}aside{padding:22px 12px;background:#202020;min-width:0;border-right:1px solid #414141}.tracks{display:grid;gap:5px;margin-top:15px;max-height:300px;overflow:auto}.tracks button{display:flex;align-items:baseline;gap:10px;text-align:left;border-color:transparent;background:none;padding:10px 8px;overflow-wrap:anywhere;line-height:1.5}.tracks .selected{background:#363636;border-color:#555}.track-number{font:10px var(--mono);color:#9e9e9e}.track-bars{margin-left:auto;font:10px var(--mono);color:#8b8b8b}.tracks .selected .track-bars{color:#c8c8c8}.track-tools{display:flex;gap:6px;margin:16px 8px}.track-tools button{flex:1}aside p{font:11px var(--mono);line-height:1.7;padding:0 8px;color:#ccc}aside p span{color:#999}.plays{font:11px/1.7 var(--body)!important;color:#b6b6b6;margin:16px 0 0}.plays b{color:#e4e4e4;font-weight:500}.jump{display:block;margin-top:9px;padding:5px 9px;font-size:11px;min-height:30px}aside .hint{font:11px/1.7 var(--body);color:#aaa;margin-top:22px}
-  .score-viewport{overflow:auto;min-width:0;max-height:640px;position:relative;scrollbar-color:#777 #dedbd5}.has-score{background:#faf8f3;color:#222}.score-paper{min-height:320px;background:#faf8f3;color:#171717}.hidden{display:none}.empty-state{padding:48px 24px;text-align:center;background:radial-gradient(ellipse at top,#303030,#1c1c1c 75%)}h3{font:500 21px var(--body);margin:22px 0 10px}.empty-state p{font-size:13px;color:#b2b2b2;margin-bottom:20px}.formats{font:10px var(--mono);letter-spacing:1px;color:#c5c1ba}.empty-state small{display:block;margin-top:16px;font-size:11px;color:#999}.tab-mark{width:124px;position:relative;margin:auto;padding:4px 0}.tab-mark i{display:block;height:1px;background:#696762;margin:7px 0}.tab-mark span{position:absolute;inset:0;display:grid;place-items:center;font:600 17px var(--mono);letter-spacing:3px;color:#dedbd5;text-shadow:0 0 6px #222;background:linear-gradient(90deg,transparent,#282828 32%,#282828 68%,transparent)}
-  .reader-footer{display:flex;justify-content:space-between;gap:16px;padding:12px 18px;border-top:1px solid #404040;font:10px var(--mono);color:#aaa}.reader-footer>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.focused{position:fixed;inset:16px;z-index:50;margin:0;display:flex;flex-direction:column;box-shadow:0 0 0 30px #080808e8}.focused .drop-surface{flex:1;min-height:0;display:flex;flex-direction:column}.focused .reader-body{flex:1;min-height:0}.focused .score-viewport{max-height:none}.focused aside{overflow:auto}
+  .score-viewport{overflow-x:auto;overflow-y:hidden;min-width:0;position:relative;scrollbar-color:#777 #dedbd5}.has-score{display:flex;align-items:stretch}.score-tail{flex:0 0 auto}.has-score{background:#faf8f3;color:#222}.score-paper{flex:0 0 auto;min-width:100%;min-height:320px;background:#faf8f3;color:#171717}.hidden{display:none}.empty-state{padding:48px 24px;text-align:center;background:radial-gradient(ellipse at top,#303030,#1c1c1c 75%)}h3{font:500 21px var(--body);margin:22px 0 10px}.empty-state p{font-size:13px;color:#b2b2b2;margin-bottom:20px}.formats{font:10px var(--mono);letter-spacing:1px;color:#c5c1ba}.empty-state small{display:block;margin-top:16px;font-size:11px;color:#999}.tab-mark{width:124px;position:relative;margin:auto;padding:4px 0}.tab-mark i{display:block;height:1px;background:#696762;margin:7px 0}.tab-mark span{position:absolute;inset:0;display:grid;place-items:center;font:600 17px var(--mono);letter-spacing:3px;color:#dedbd5;text-shadow:0 0 6px #222;background:linear-gradient(90deg,transparent,#282828 32%,#282828 68%,transparent)}
+  .reader-footer{display:flex;justify-content:space-between;gap:16px;padding:12px 18px;border-top:1px solid #404040;font:10px var(--mono);color:#aaa}.reader-footer>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.focused{position:fixed;inset:16px;z-index:50;margin:0;display:flex;flex-direction:column;box-shadow:0 0 0 30px #080808e8}.focused .drop-surface{flex:1;min-height:0;display:flex;flex-direction:column}.focused .reader-body{flex:1;min-height:0}.focused .score-viewport{align-self:center}.focused aside{overflow:auto}
   :global(.at-cursor-bar){background:#bda77230}:global(.at-cursor-beat){background:#866329;width:3px}:global(.at-selection div){background:#bda77244}:global(.at-highlight *){fill:#a37320!important;stroke:#a37320!important}
-  @media(max-width:760px){.reader-heading{padding:18px 14px}.heading-actions{gap:6px}.heading-actions button{padding:5px 8px}.reader-body{grid-template-columns:minmax(0,1fr)}aside{padding:12px;border-right:0;border-bottom:1px solid #444}aside>.eyebrow,aside p:not(.plays){display:none}.plays{margin-top:10px}.jump{display:inline-block;margin:0 0 0 8px}.tracks{display:flex;margin:0;overflow:auto;max-height:90px}.tracks button{flex-shrink:0;max-width:180px}.track-tools{margin:10px 0 0;max-width:160px}.transport{padding:12px;gap:8px}.volume{display:none!important}.view-select{margin-left:0}.score-viewport{max-height:520px}.focused{inset:6px}.focused .reader-body{display:flex;flex-direction:column}.focused .score-viewport{flex:1}.reader-footer>span:last-child{display:none}.empty-state{padding:32px 18px}}
+  @media(max-width:760px){.reader-heading{padding:18px 14px}.heading-actions{gap:6px}.heading-actions button{padding:5px 8px}.reader-body{grid-template-columns:minmax(0,1fr)}aside{padding:12px;border-right:0;border-bottom:1px solid #444}aside>.eyebrow,aside p:not(.plays){display:none}.plays{margin-top:10px}.jump{display:inline-block;margin:0 0 0 8px}.tracks{display:flex;margin:0;overflow:auto;max-height:90px}.tracks button{flex-shrink:0;max-width:180px}.track-tools{margin:10px 0 0;max-width:160px}.transport{padding:12px;gap:8px}.volume{display:none!important}.view-select{margin-left:0}.focused{inset:6px}.focused .reader-body{display:flex;flex-direction:column}.focused .score-viewport{flex:1}.reader-footer>span:last-child{display:none}.empty-state{padding:32px 18px}}
 </style>
