@@ -241,6 +241,48 @@
     }
   }
 
+  /**
+   * A score carries its tempo, so opening one sets the metronome to it. Nothing
+   * on screen would say so, and a player who never opens the metronome would
+   * never find out: the number itself travels from the tab to the metronome,
+   * and the button lights where it lands. Cause, path and destination, without
+   * a sentence. Transform and opacity only.
+   *
+   * It never starts the click: a tab being opened is not a request for sound.
+   * A click already running follows the new tempo.
+   */
+  let metronomeLaunch = $state<HTMLButtonElement | null>(null);
+  let tempoFlight = $state<{ bpm: number; x: number; y: number; id: number } | null>(null);
+  let metronomeGlow = $state(0);
+
+  function takeScoreTempo(bpm: number, from: DOMRect): void {
+    if (!Number.isFinite(bpm) || bpm < MIN_BPM || bpm > MAX_BPM) return;
+    if (tapResetTimer !== null) clearTimeout(tapResetTimer);
+    tapResetTimer = null;
+    tapTimes = [];
+    tapCount = 0;
+    metronomeBpm = bpm;
+    metronomeValue = String(bpm);
+    if (metronomePlaying) metronome.play(bpm);
+    persist();
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { metronomeGlow++; return; }
+    tempoFlight = { bpm, x: from.left + from.width / 2, y: from.top + from.height / 2, id: (tempoFlight?.id ?? 0) + 1 };
+  }
+
+  function fly(node: HTMLElement, flight: { x: number; y: number }): void {
+    const target = metronomeLaunch?.getBoundingClientRect();
+    if (!target) { tempoFlight = null; metronomeGlow++; return; }
+    const dx = target.left + target.width / 2 - flight.x;
+    const dy = target.top + target.height / 2 - flight.y;
+    const animation = node.animate([
+      { transform: 'translate(-50%, -50%) scale(.6)', opacity: 0 },
+      { transform: 'translate(-50%, -50%) scale(1.15)', opacity: 1, offset: 0.18 },
+      { transform: 'translate(-50%, -50%) scale(1)', opacity: 1, offset: 0.35 },
+      { transform: `translate(calc(${dx}px - 50%), calc(${dy}px - 50%)) scale(.35)`, opacity: 0.2 },
+    ], { duration: 1100, easing: 'cubic-bezier(.45, 0, .2, 1)', fill: 'forwards' });
+    animation.onfinish = () => { tempoFlight = null; metronomeGlow++; };
+  }
+
   function onMetronomeClosed(): void {
     tapTimes = [];
     tapCount = 0;
@@ -1124,7 +1166,7 @@
 
     <Recorder engine={engineState === 'running' ? engine : null} powered={engineState === 'running' && !poweredOff}
       tone={{ values, capture: captures.find(c => c.file === captureFile) ?? null, cab }} />
-    <TabReader />
+    <TabReader ontempo={takeScoreTempo} />
   </main>
 
   {#if mode === 'musician'}
@@ -1160,11 +1202,18 @@
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5 13 8l-9 5.5z"/></svg>
     {/if}
   </button>
+  {#if tempoFlight}
+    {#key tempoFlight.id}
+      <span class="tempo-flight" aria-hidden="true" style:left="{tempoFlight.x}px" style:top="{tempoFlight.y}px"
+        use:fly={tempoFlight}>♩ {tempoFlight.bpm}</span>
+    {/key}
+  {/if}
   <button
+    bind:this={metronomeLaunch}
     class="metronome-launch"
     type="button"
     aria-label="Open metronome"
-    title="Metronome"
+    title={metronomeBpm === null ? 'Metronome' : `Metronome · ${metronomeBpm} BPM`}
     aria-busy={metronomeOpening}
     disabled={metronomeOpening}
     onclick={() => void openMetronome()}
@@ -1172,6 +1221,7 @@
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M8 20h8M9 20l2-16h2l2 16M12 7l4 5M16 12l1.5-1.5" />
     </svg>
+    {#key metronomeGlow}{#if metronomeGlow > 0}<span class="metronome-glow" aria-hidden="true"></span>{/if}{/key}
   </button>
   <MetronomePanel
     bind:element={metronomeDialog}
@@ -1359,6 +1409,42 @@
   .tuner-launch:hover, .metronome-launch:hover, .metronome-toggle:hover { color: #d4c9d7; border-color: #655b68; }
   .tuner-launch:disabled, .metronome-launch:disabled, .metronome-toggle:disabled { opacity: .32; cursor: default; }
   .tuner-launch:focus-visible, .metronome-launch:focus-visible, .metronome-toggle:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; }
+  /* Above the focused reader (z-index 50), which is where a tab is often opened. */
+  .tempo-flight {
+    position: fixed;
+    z-index: 60;
+    padding: 5px 10px;
+    border: 1px solid #876f8c;
+    border-radius: 999px;
+    background: #1b171d;
+    color: #e2cce6;
+    font: 12px var(--mono);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    will-change: transform, opacity;
+  }
+  /* Two rings rather than an animated box-shadow: opacity and scale only. */
+  .metronome-glow, .metronome-glow::after {
+    position: absolute;
+    inset: -1px;
+    border: 1px solid #d9bfdd;
+    border-radius: 50%;
+    background: #d9bfdd22;
+    pointer-events: none;
+    opacity: 0;
+    animation: metronome-glow 1.6s cubic-bezier(.2, 0, 0, 1);
+  }
+  .metronome-glow::after { content: ''; inset: -1px; background: none; animation-delay: .25s; }
+  @keyframes metronome-glow {
+    0% { opacity: 0; transform: scale(1); }
+    15% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1.9); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .metronome-glow, .metronome-glow::after { animation-name: metronome-glow-still; }
+    @keyframes metronome-glow-still { 0%, 100% { opacity: 0; } 20%, 60% { opacity: 1; } }
+  }
 
   /* One target, hit as often as you like. The dot carries the state — the same
      idiom as a module's bypass — and the label says what you are hearing. */

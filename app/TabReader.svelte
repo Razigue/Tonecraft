@@ -4,6 +4,9 @@
   import { loadMedia, saveMedia } from '../store/media.ts';
   import Fretboard from './Fretboard.svelte';
 
+  /** The score's opening tempo, and where on screen the score came in from. */
+  let { ontempo }: { ontempo?: (bpm: number, from: DOMRect) => void } = $props();
+
   // Every format alphaTab's own ScoreLoader tries, in its order: Guitar Pro
   // 3-5, 6 (gpx), 7-8 (gp), MusicXML plain and zipped, Capella, alphaTex.
   // Naming one it cannot read would be a promise the importer breaks.
@@ -13,6 +16,7 @@
   let surface: HTMLDivElement;
   let viewport: HTMLDivElement;
   let picker: HTMLInputElement;
+  let openButton = $state<HTMLButtonElement | null>(null);
   let api: AlphaTabApi | null = null;
   let loading: Promise<typeof import('@coderline/alphatab')> | null = null;
   let sliding = 0;
@@ -232,6 +236,9 @@
       fresh.playbackSpeed = speed / 100;
       ready = fresh.isReadyForPlayback;
       if (remember) {
+        // Only a file the player just opened: the one restored at start-up
+        // would overwrite a tempo they may have changed since.
+        ontempo?.(Math.round(parsed.tempo), (openButton ?? section).getBoundingClientRect());
         const saved = await saveMedia(file, 'score', 'last-score');
         if (saved === null) storageNote = 'Opened for this session. Browser storage is unavailable.';
       }
@@ -285,7 +292,7 @@
     <div><span class="eyebrow">PRACTICE</span><h2>Tab reader</h2></div>
     <div class="heading-actions">
       {#if score}<button aria-pressed={focused} onclick={() => { focused = !focused; }}> {focused ? 'Exit focus' : 'Focus view'} </button>{/if}
-      <button class="primary" disabled={busy} onclick={() => picker.click()}>{busy ? 'Opening…' : score ? 'Open another tab' : 'Import tab'}</button>
+      <button class="primary" bind:this={openButton} disabled={busy} onclick={() => picker.click()}>{busy ? 'Opening…' : score ? 'Open another tab' : 'Import tab'}</button>
     </div>
     <input bind:this={picker} type="file" accept={ACCEPT} aria-label="Import tablature" onchange={e => { const f = e.currentTarget.files?.[0]; if (f) void open(f); e.currentTarget.value = ''; }} />
   </div>

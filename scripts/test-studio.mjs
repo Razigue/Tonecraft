@@ -169,7 +169,10 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.tracks button').length === 1
     && document.querySelectorAll('.score-paper svg').length > 0
     && document.querySelector('.score-paper').scrollWidth < 2000, { timeout: 30000 });
-  console.log('ok alphaTex import');
+  // Opening a score sets the metronome to its tempo, and shows it doing so.
+  await page.waitForFunction(() => document.querySelector('.metronome input[type=number]')?.value === '100', { timeout: 10000 });
+  await page.locator('.metronome-launch .metronome-glow').waitFor({ state: 'attached', timeout: 5000 });
+  console.log('ok alphaTex import sets the metronome to the score tempo');
   if (process.env.GPX_FIXTURE) {
     await picker.setInputFiles(process.env.GPX_FIXTURE);
     await page.waitForFunction(() => !document.querySelector('.reader-heading .primary').disabled);
