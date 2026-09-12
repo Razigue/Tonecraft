@@ -8,12 +8,13 @@
   // Naming one it cannot read would be a promise the importer breaks.
   const ACCEPT = '.gpx,.gp,.gp3,.gp4,.gp5,.musicxml,.xml,.mxl,.cap,.capx,.alphatex,.atex';
   const BASE = import.meta.env.BASE_URL;
+  let section: HTMLElement;
   let surface: HTMLDivElement;
   let viewport: HTMLDivElement;
   let picker: HTMLInputElement;
   let api: AlphaTabApi | null = null;
   let loading: Promise<typeof import('@coderline/alphatab')> | null = null;
-  let scrollPending = false;
+  let centred = -1;
   let disposed = false;
   let score = $state.raw<model.Score | null>(null);
   let filename = $state('');
@@ -71,17 +72,29 @@
   const selected = $derived(activity[track] ?? { bars: 0, first: -1, last: -1, start: 0 });
 
   /**
-   * Moving the cursor only scrolls the score while the player is running, so a
-   * jump made while stopped would leave bar 1 on screen — the one thing the
-   * jump exists to avoid. The scroll is computed from the layout alphaTab
-   * already has, not from where the cursor element currently sits: the cursor
-   * is placed a few frames after the position is reported, so measuring it
-   * scrolls to where the playhead was, not where it is going. It moves the
-   * score viewport and nothing else — `scrollIntoView` takes the page with it.
+   * The line being played sits in the middle of the window, not at its top.
+   * That gives away half a screen of paper and it is the point: what is being
+   * read is easier to follow with room on both sides of it than with eight
+   * more bars crammed underneath. The first and last lines cannot be centred
+   * by scrolling alone — the paper carries a bottom margin for the last one,
+   * and the first simply starts at the top.
+   *
+   * It moves the score viewport and nothing else: `scrollIntoView` would take
+   * the page with it. The target comes from the layout alphaTab already holds
+   * rather than from the cursor element, which is placed a few frames after
+   * the position is reported — measuring it scrolls to where the playhead was.
    */
+  function centre(bounds: { y: number; h: number }, force = true) {
+    // A beat cursor moves several times per line. Scrolling only when the line
+    // itself changes leaves a score the reader has nudged by hand where it is
+    // until the music moves on, instead of snapping it back on every beat.
+    if (!viewport || (!force && bounds.y === centred)) return;
+    centred = bounds.y;
+    viewport.scrollTo({ top: Math.max(0, bounds.y + bounds.h / 2 - viewport.clientHeight / 2) });
+  }
   function showBar(index: number) {
     const bounds = api?.boundsLookup?.findMasterBarByIndex(index);
-    if (bounds && viewport) viewport.scrollTo({ top: Math.max(0, bounds.realBounds.y - 28) });
+    if (bounds) centre(bounds.realBounds);
   }
   function barAt(tick: number) {
     const bars = score?.masterBars ?? [];
@@ -94,14 +107,12 @@
   }
   function goToTrack() {
     if (!api || selected.first < 0) return;
-    scrollPending = true;
     api.tickPosition = selected.start;
     showBar(selected.first);
   }
   function seek(ms: number) {
     if (!api) return;
     position = ms;
-    scrollPending = true;
     api.timePosition = ms;
   }
 
@@ -126,6 +137,7 @@
     api?.destroy();
     api = null;
     ready = false;
+    centred = -1;
     await tick();
     if (disposed) throw new Error('Reader closed.');
     api = new alpha.AlphaTabApi(surface, {
@@ -141,11 +153,28 @@
       },
     });
     api.masterVolume = volume / 100;
+    // alphaTab's own handler puts the played system at the top of the window.
+    api.customScrollHandler = {
+      [Symbol.dispose]() {},
+      forceScrollTo: beat => centre(beat.barBounds.masterBarBounds.realBounds),
+      onBeatCursorUpdating: beat => centre(beat.barBounds.masterBarBounds.realBounds, false),
+    };
+    // The margin that lets the last line reach the middle, and only then: on a
+    // score that already fits, it would be empty paper to scroll through.
+    api.postRenderFinished.on(() => {
+      if (!viewport || !surface) return;
+      surface.style.paddingBottom = '0px';
+      if (surface.offsetHeight > viewport.clientHeight) surface.style.paddingBottom = `${Math.round(viewport.clientHeight / 2)}px`;
+    });
     api.playerReady.on(() => { ready = true; });
     api.playerStateChanged.on(e => { playing = e.state === 1; });
     api.playerPositionChanged.on(e => {
       position = e.currentTime; duration = e.endTime;
-      if (scrollPending) { scrollPending = false; showBar(barAt(e.currentTick)); }
+      // Every jump, ours or a click on a note, lands centred. Keyed on the
+      // event's own flag rather than on a pending one we set before seeking:
+      // a stray position update from the pause that preceded it consumed the
+      // flag, and the seek that followed then scrolled nowhere.
+      if (e.isSeek) showBar(barAt(e.currentTick));
     });
     api.playbackRangeChanged.on(e => { selection = e.playbackRange !== null; });
     api.error.on(e => { error = e.message || 'Unable to display this score.'; busy = false; });
@@ -199,6 +228,15 @@
     });
   }
   function togglePlay() { if (ready && !busy) api?.playPause(); }
+  /**
+   * The section holds the key handler, so it has to hold the focus: clicking a
+   * score seeks, it does not focus anything, and space then went to the page.
+   * Controls keep their own focus — space on a select or a button is theirs.
+   */
+  function grabKeys(e: PointerEvent) {
+    if (!(e.target instanceof HTMLElement) || e.target.closest('input,select,button,a,textarea')) return;
+    section?.focus({ preventScroll: true });
+  }
   function keydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && focused) { focused = false; e.stopPropagation(); }
     if (e.code === 'Space' && e.target instanceof HTMLElement && !e.target.closest('input,select,button')) {
@@ -209,7 +247,8 @@
   onDestroy(() => { disposed = true; api?.destroy(); });
 </script>
 
-<section class="reader" class:focused role="application" aria-label="Tab reader" onkeydown={keydown}>
+<section class="reader" class:focused role="application" aria-label="Tab reader" tabindex="-1"
+  bind:this={section} onkeydown={keydown} onpointerdown={grabKeys}>
   <div class="reader-heading">
     <div><span class="eyebrow">PRACTICE</span><h2>Tab reader</h2></div>
     <div class="heading-actions">
@@ -275,12 +314,12 @@
         <div class="score-paper" class:hidden={!score} bind:this={surface}></div>
       </div>
     </div>
-    {#if score}<div class="reader-footer"><span>{score.title || filename}{score.artist ? ` · ${score.artist}` : ''}</span><span>{ready ? 'Click the score · Space to play' : 'Preparing playback…'}</span></div>{/if}
+    {#if score}<div class="reader-footer"><span>{score.title || filename}{score.artist ? ` · ${score.artist}` : ''}</span><span>{ready ? 'Click the score · Space plays' : 'Preparing playback…'}</span></div>{/if}
   </div>
 </section>
 
 <style>
-  .reader{margin:32px 0 24px;border:1px solid #3c3c3c;border-radius:8px;background:#1b1b1b;overflow:hidden;min-width:0}
+  .reader{margin:32px 0 24px;border:1px solid #3c3c3c;border-radius:8px;background:#1b1b1b;overflow:hidden;min-width:0}.reader:focus{outline:none}.reader:focus-within .reader-footer>span:last-child{color:#dedbd5}
   .reader-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 24px}.eyebrow{font:9px var(--mono);letter-spacing:1.6px;color:#a4a4a4}h2{font:500 20px var(--body);margin:5px 0 0}.heading-actions{display:flex;gap:10px}
   button,select{font:12px var(--body);color:#ddd;background:#303030;border:1px solid #4b4b4b;border-radius:4px;min-height:34px;padding:6px 12px;cursor:pointer}button:hover{background:#414141}button:disabled{opacity:.45;cursor:wait}.primary{background:#dedbd5;color:#222;border-color:#dedbd5}.primary:hover{background:#fff}.reader-heading>input{display:none}.error,.storage-note{padding:0 24px 15px;margin:0;font-size:13px}.error{color:var(--ember)}.storage-note{color:#bbb}
   .drop-surface{border-top:1px solid #393939}.dragging{outline:2px dashed #dedbd5;outline-offset:-5px}.transport{display:flex;align-items:center;gap:12px;padding:12px 18px;flex-wrap:wrap;background:#242424;border-bottom:1px solid #404040}.playback{display:flex;align-items:center;gap:6px}.play{width:38px}.clock{font:11px var(--mono);margin:0 8px;white-space:nowrap}.clock span{color:#999}.transport label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa}.transport select{padding:5px}.volume input{width:65px;accent-color:#ddd}.scrub{flex:1 1 160px;min-width:110px;accent-color:#ddd;min-height:34px}.scrub:disabled{opacity:.4}.view-select{margin-left:auto}.active{background:#dedbd5;color:#222}
