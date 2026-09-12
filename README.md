@@ -70,6 +70,8 @@ npm run build     # check, then static build into dist/
 npm test          # schema consistency, the chain, input constraints, diagnosis verdicts
 npm run check     # the invariants that span files, on their own
 npm run test:chain   # the chain from Node: ABI, convolution, zero latency, a capture
+npm run test:recording # the DI tap, the WAV round trip and the offline export render
+npm run test:studio  # reader and recorder in a real browser (after npm run build)
 npm run test:parity  # browser and Tonecraft Engine, bit for bit (needs service/ built)
 npm run measure   # the boost's aliasing, as a table
 npm run vendor    # re-fetch the captures (network)
@@ -156,6 +158,48 @@ why the capture and the cabinet, not any fader, are the two real tone choices.
 measured, they are still +5 dB at 7 kHz, where a capture including a cabinet
 would be 25 dB down. Without one the result is not an amp sound.
 
+## The tab reader
+
+**Drop a Guitar Pro file on the page and it plays.** GP3, GP4, GP5, GPX, GP
+(Guitar Pro 7 and 8), MusicXML plain and zipped, Capella and alphaTex — the
+accepted list is exactly the list alphaTab's own loader tries, so nothing is
+offered that then refuses to open. Track by track with solo and mute, speed
+down to a quarter, a loop over the whole song or over a passage dragged out
+with the mouse, tab alone or score above tab, and a focus view that gives the
+score the whole window. Nothing is uploaded: the file is read in the tab, and
+the last one opened comes back on the next visit.
+
+**It costs nothing until it is used.** alphaTab, the Bravura notation font and
+the soundfont are 7 MB between them, far past the 15 kB this project allows a
+dependency — so they are fetched by a dynamic `import()` at the first file
+opened, and neither the listening path nor the playing path downloads a byte of
+them. Its playback has its own `AudioContext` and never meets the chain, which
+is why no loop, no take and no export can contain it.
+
+## Takes
+
+**The recorder keeps the DI, not the amp** — the exact opposite of the looper,
+for the reason turned around. A loop is meant to come back as it was played; a
+take is meant to be heard again **with another sound**, possibly tomorrow. So
+up to five minutes of the clean input is kept as it arrived, before trim, gate
+and transposer, whether the amplifier is powered or not.
+
+**The Power switch decides what the WAV contains, at the moment of the click.**
+Off, the file is that DI untouched — 32-bit float, no normalisation, no
+clipping, the take a real interface would have written. On, the take is played
+back through the tone on screen offline, reverb and pitch tails included, and
+that is what lands in the file. The render runs in a worker on the same
+`chain.wasm` and the same settings as live playback, so what is exported is
+what was heard, and the audio thread carries none of it.
+
+The five-minute buffer is 57 MB and the first `tc_record_start` allocates it on
+the audio thread: 35 ms, one dropout at the first press of Record, before the
+take begins. It is kept afterwards, so every later take starts in 0.00 ms —
+holding those 57 MB for every visitor who never records would be the worse
+trade. `npm run test:recording` checks the DI is bit-exact at 44.1, 48 and
+96 kHz; `npm run test:studio` records, exports both ways and imports a score in
+a real browser.
+
 ## Layout
 
 ```
@@ -219,6 +263,11 @@ pushed, with asset names that never change, so the settings sheet links to
   `service/LICENSE`.
 - **The amp captures** — [`pelennor2170/NAM_models`](https://github.com/pelennor2170/NAM_models),
   **GNU GPL v3**. See `public/models/COPYING`.
+- **The tab reader** — [alphaTab](https://alphatab.net), MPL-2.0, © Daniel
+  Kuschny and contributors. Its **Bravura** notation font (SIL OFL 1.1,
+  Steinberg) and the **SONiVOX EAS** soundfont (Apache-2.0, © Sonic Network
+  Inc.) are copied into `public/font/` and `public/soundfont/` at build time,
+  each with its own licence file, and served from there.
 
 ⚠️ The captures are GPL v3. Distributing Tonecraft with `public/models/` included
 brings the obligations of the GPL v3 with it. For personal use there is no

@@ -59,6 +59,7 @@
 #include "looper.h"
 #include "pitch.h"
 #include "player.h"
+#include "recorder.h"
 #include "smooth.h"
 
 #define TC_EXPORT extern "C" EMSCRIPTEN_KEEPALIVE
@@ -118,6 +119,7 @@ struct Chain {
   double designed[4] = {NAN, NAN, NAN, NAN};
   tc::Limiter limiter;
   tc::Player player;
+  tc::Recorder recorder;
   tc::Click click;
   tc::Looper looper;
 
@@ -242,6 +244,7 @@ int processBlock(Chain& c, int off, int n, int inChannels) {
   float* tunerTap = c.tuner.data() + off;
   c.frontend.process(a, b, n, c.inGain.block(n), c.gate.block(n), c.boost.block(n), c.tone.block(n),
                      c.fe, tunerTap, &c.pitch);
+  c.recorder.process(tunerTap, n);
 
   if (c.model) {
     float* ip = c.fe;
@@ -539,6 +542,20 @@ TC_EXPORT void tc_loop_stop() { if (g) g->looper.stop(); }
 TC_EXPORT void tc_loop_clear() { if (g) g->looper.clear(); }
 /* How loud the loop sits under the playing, 0..1. Session, never tone. */
 TC_EXPORT void tc_loop_level(float level) { if (g) g->looper.setLevel(level); }
+
+// Five minutes maximum; payload reads are bounded and happen after stopping.
+TC_EXPORT int tc_record_start(int seconds) {
+  return g && seconds > 0 && seconds <= 300 && g->recorder.start(static_cast<int>(g->sr * seconds));
+}
+TC_EXPORT int tc_record_stop() {
+  if (!g) return 0;
+  g->recorder.stop();
+  return g->recorder.frames();
+}
+TC_EXPORT int tc_record_frames() { return g ? g->recorder.frames() : 0; }
+TC_EXPORT int tc_read_recording(float* out, int bytes, int offset) {
+  return g && bytes > 0 ? g->recorder.read(out, bytes / sizeof(float), offset) : 0;
+}
 
 /* ----------------------------- measurement ----------------------------- */
 

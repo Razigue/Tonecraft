@@ -107,7 +107,7 @@ export interface WebPrefs {
 type WorkletMessage =
   | { type: 'ready'; sampleRate: number }
   | { type: 'error'; message: string }
-  | { type: 'result'; id: number; value: number; error?: string }
+  | { type: 'result'; id: number; value: number; error?: string; data?: Uint8Array<ArrayBuffer> }
   | { type: 'meters'; meters: Float32Array; dropouts: number };
 
 export class WebHost implements ChainHost {
@@ -310,7 +310,7 @@ export class WebHost implements ChainHost {
         if (pending === undefined) break;
         this.#pending.delete(data.id);
         self.clearTimeout(pending.timer);
-        pending.resolve(data.error === undefined ? { value: data.value } : { value: data.value, error: data.error });
+        pending.resolve({ value: data.value, error: data.error, data: data.data });
         break;
       }
       case 'meters':

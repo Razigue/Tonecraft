@@ -20,6 +20,8 @@
   import Tuner from './Tuner.svelte';
   import MetronomePanel from './Metronome.svelte';
   import EngineSettings from './EngineSettings.svelte';
+  import TabReader from './TabReader.svelte';
+  import Recorder from './Recorder.svelte';
   import './tokens.css';
 
   let mode = $state<'musician' | 'tester'>('musician');
@@ -51,12 +53,12 @@
 
   async function detectInputs(): Promise<void> {
     // Tonecraft Engine lists its own devices, and needs no microphone permission.
-    if (mode === 'tester' || detecting || state === 'starting' || backend === 'native') return;
+    if (mode === 'tester' || detecting || engineState === 'starting' || backend === 'native') return;
     detecting = true;
     settingsError = '';
     let stream: MediaStream | undefined;
     try {
-      if (state !== 'running' || source !== 'live' || poweredOff) {
+      if (engineState !== 'running' || source !== 'live' || poweredOff) {
         stream = await openInput(navigator.mediaDevices);
         channelCount = stream.getAudioTracks()[0]?.getSettings().channelCount ?? 1;
       }
@@ -78,15 +80,15 @@
   }
 
   async function openTuner(): Promise<void> {
-    if (tunerOpening || tunerDialog?.open || state === 'starting') return;
+    if (tunerOpening || tunerDialog?.open || engineState === 'starting') return;
     tunerOpening = true;
-    tunerPreviousSource = state === 'running' ? source : null;
+    tunerPreviousSource = engineState === 'running' ? source : null;
     tunerResumeFile = filePlaying;
 
     try {
-      if (state !== 'running') await start('play');
+      if (engineState !== 'running') await start('play');
       else if (source !== 'live') await chooseSource('live');
-      if (state !== 'running' || engine === null) return;
+      if (engineState !== 'running' || engine === null) return;
 
       tunerSamples = new Float32Array(engine.tunerBufferSize);
       tunerHistory = [];
@@ -268,8 +270,8 @@
   }
 
   async function power(): Promise<void> {
-    if (state === 'starting' || detecting) return;
-    if (state === 'running') toggleChain();
+    if (engineState === 'starting' || detecting) return;
+    if (engineState === 'running') toggleChain();
     else await start(source === 'file' ? 'demo' : 'play');
   }
 
@@ -307,7 +309,7 @@
     { value: 'sum', label: 'Both' },
   ] as const;
 
-  let state = $state<State>('idle');
+  let engineState = $state<State>('idle');
   let problem = $state<{ cause: string; fix: string } | null>(null);
   /**
    * The round trip, and only that.
@@ -326,7 +328,7 @@
   let asking = $state(true);
   let welcomeDialog = $state<HTMLDialogElement | null>(null);
   $effect(() => {
-    if (asking && state !== 'running') welcomeDialog?.showModal();
+    if (asking && engineState !== 'running') welcomeDialog?.showModal();
     else welcomeDialog?.close();
   });
   let notice = $state<string | null>(null);
@@ -405,7 +407,7 @@
   let takeId: string | null = null;
   let dragging = $state(false);
 
-  let engine: Engine | null = null;
+  let engine = $state.raw<Engine | null>(null);
   let frame = 0;
 
   const capture = $derived(captures.find((c) => c.file === captureFile) ?? null);
@@ -420,7 +422,7 @@
    * a step finer than 1/64 is below the eye's threshold on a brightness ramp
    * and buys nothing but repaints.
    */
-  const light = $derived(state === 'running' && captureLoaded && !poweredOff
+  const light = $derived(engineState === 'running' && captureLoaded && !poweredOff
     ? Math.round(Math.max(0, Math.min(1, (20 * Math.log10(Math.max(0.0001, meters.outputRms)) + 60) / 60)) * 64) / 64
     : 0);
   /**
@@ -558,7 +560,7 @@
    * while somebody is typing in a field or nudging a fader.
    */
   function onWindowKey(event: KeyboardEvent): void {
-    if (state !== 'running') return;
+    if (engineState !== 'running') return;
     const key = event.key.toLowerCase();
     if (key !== BYPASS_KEY && key !== LOOP_KEY) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -600,7 +602,7 @@
   }
 
   function loopPress(): void {
-    if (state !== 'running') return;
+    if (engineState !== 'running') return;
     engine?.loopPress();
   }
 
@@ -647,7 +649,7 @@
   /* The chain is rebuilt from the rig's state on every start, in either host,
      so a restart is how a device or buffer change takes effect. */
   async function restart(): Promise<void> {
-    if (state !== 'running') return;
+    if (engineState !== 'running') return;
     const intent: Intent = source === 'file' ? 'demo' : 'play';
     await stop();
     await start(intent);
@@ -820,7 +822,7 @@
 
   function play(): void {
     if (engine === null || filePeaks === null) return;
-    if (state !== 'running') { notice = 'Press start to power the chain.'; return; }
+    if (engineState !== 'running') { notice = 'Press start to power the chain.'; return; }
     engine.playFile();
     filePlaying = true;
   }
@@ -881,8 +883,8 @@
   type Intent = 'play' | 'demo';
 
   async function start(intent: Intent = 'play'): Promise<void> {
-    if (state === 'starting' || state === 'running' || detecting) return;
-    state = 'starting';
+    if (engineState === 'starting' || engineState === 'running' || detecting) return;
+    engineState = 'starting';
     problem = null;
     // Milliseconds after load, long settled by the first click; awaited so a
     // very fast one cannot start the chain on defaults.
@@ -919,7 +921,7 @@
       }
       latencyMs = engine.roundTripMs;
       asking = false;
-      state = 'running';
+      engineState = 'running';
       // Labels are withheld until permission has been granted, so the device
       // list is only meaningful from here on.
       // Only meaningful once permission has been granted, which the demo path
@@ -968,10 +970,10 @@
         backend = 'browser';
         persist();
         engine = null;
-        state = 'idle';
+        engineState = 'idle';
         await start(intent);
         // The selector shows what is running, not what was wished for.
-        if (state === 'running') {
+        if ((engineState as State) === 'running') {
           notice = 'Tonecraft Engine is not running, so this is playing in the browser. ' +
             'Start it and choose ASIO again in the audio settings to go back.';
         }
@@ -988,7 +990,7 @@
           fix: 'Reload the page and try again.',
         };
       }
-      state = 'failed';
+      engineState = 'failed';
       // Dismissing the sheet must not hide the reason the engine did not start.
       asking = true;
     }
@@ -1006,7 +1008,7 @@
     loop = NO_LOOP;
     latencyMs = null;
     captureLoaded = false;
-    state = 'idle';
+    engineState = 'idle';
     meters = { input: 0, drive: 0, output: 0, outputRms: 0, gate: 1, channelPeaks: [0], channels: 1,
       pitchDelayMs: 0, loop: NO_LOOP };
   }
@@ -1046,7 +1048,7 @@
         <span class="latency" title={latencyDetail}>{latencyMs.toFixed(1)} ms</span>
       {/if}
       {#if mode === 'musician'}
-      <button class="settings-button" type="button" aria-label="Audio settings" title="Audio settings" onclick={openSettings} disabled={state === 'starting'}>
+      <button class="settings-button" type="button" aria-label="Audio settings" title="Audio settings" onclick={openSettings} disabled={engineState === 'starting'}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m9.5 3-.6 2.2-1.7 1L5 5.6 2.5 9.9l1.6 1.6v2L2.5 15 5 19.3l2.2-.6 1.7 1 .6 2.3h5l.6-2.3 1.7-1 2.2.6 2.5-4.3-1.6-1.5v-2l1.6-1.6L19 5.6l-2.2.6-1.7-1L14.5 3z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
       </button>
       {/if}
@@ -1077,12 +1079,12 @@
         <div class="control-group"><button class="group-label" aria-label="Pitch enabled" aria-pressed={values.pitch_bypass !== 1} onclick={() => setParam('pitch_bypass',values.pitch_bypass === 1 ? 0 : 1)}>PITCH <span>{values.pitch_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['pitch_shift','pitch_mix'] as id}<Knob param={param(id)} value={values[id]!} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
         <div class="control-group"><button class="group-label" aria-label="Boost enabled" aria-pressed={values.drive_bypass !== 1} onclick={() => setParam('drive_bypass',values.drive_bypass === 1 ? 0 : 1)}>BOOST <span>{values.drive_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['drive_gain','drive_tone'] as id}<Knob param={param(id)} value={values[id]!} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
         <div class="control-group"><button class="group-label" aria-label="Reverb enabled" aria-pressed={values.reverb_bypass !== 1} onclick={() => setParam('reverb_bypass',values.reverb_bypass === 1 ? 0 : 1)}>REVERB <span>{values.reverb_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row"><Knob param={param('reverb_mix')} value={values.reverb_mix!} resetValue={resetValues.reverb_mix} onchange={v => setParam('reverb_mix',v)} /></div></div>
-        <button class="power-indicator" type="button" aria-label="Amplifier power" aria-pressed={state === 'running' && !poweredOff} aria-busy={state === 'starting'} disabled={state === 'starting' || detecting} onclick={power}><span class:lit={state === 'running' && !poweredOff}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></span><small>POWER</small></button>
+        <button class="power-indicator" type="button" aria-label="Amplifier power" aria-pressed={engineState === 'running' && !poweredOff} aria-busy={engineState === 'starting'} disabled={engineState === 'starting' || detecting} onclick={power}><span class:lit={engineState === 'running' && !poweredOff}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></span><small>POWER</small></button>
       </div>
     </section>
     <div class="amp-foot"><span></span><span></span></div>
     <div class="capture-info" data-capture={latencyMs === null ? 'idle' : captureLoaded ? 'loaded' : 'silent'}></div>
-    {#if state === 'running' && !captureLoaded}<p class="alert">This capture is not running: you are hearing your dry guitar. Reload the page.</p>{/if}
+    {#if engineState === 'running' && !captureLoaded}<p class="alert">This capture is not running: you are hearing your dry guitar. Reload the page.</p>{/if}
     <p class="notice" role="status">{notice ?? ''}</p>
     {#if mode === 'musician'}
       <section class="session-bar" aria-label="Audio session">
@@ -1101,12 +1103,12 @@
               class="loop-main"
               type="button"
               data-state={loop.state}
-              disabled={state !== 'running'}
-              title={state === 'running' ? `${loopAction} (L)` : 'Start the amplifier to use the looper'}
+              disabled={engineState !== 'running'}
+              title={engineState === 'running' ? `${loopAction} (L)` : 'Start the amplifier to use the looper'}
               onclick={loopPress}
             >{loopAction}</button>
-            <button class="loop-small" type="button" disabled={state !== 'running' || !loopHas || loop.state === 'stopped'} onclick={loopStop}>Stop</button>
-            <button class="loop-small" type="button" disabled={state !== 'running' || !loopHas} onclick={loopClear}>Clear</button>
+            <button class="loop-small" type="button" disabled={engineState !== 'running' || !loopHas || loop.state === 'stopped'} onclick={loopStop}>Stop</button>
+            <button class="loop-small" type="button" disabled={engineState !== 'running' || !loopHas} onclick={loopClear}>Clear</button>
             <label class="loop-level">
               <span class="eyebrow">LEVEL</span>
               <input type="range" min="0" max="1" step="0.01" value={loopLevel} aria-label="Loop level" oninput={(e) => setLoopLevel(Number(e.currentTarget.value))} />
@@ -1120,6 +1122,9 @@
       </section>
     {/if}
 
+    <Recorder engine={engineState === 'running' ? engine : null} powered={engineState === 'running' && !poweredOff}
+      tone={{ values, capture: captures.find(c => c.file === captureFile) ?? null, cab }} />
+    <TabReader />
   </main>
 
   {#if mode === 'musician'}
@@ -1129,7 +1134,7 @@
       aria-label="Open tuner"
       title="Tuner"
       aria-busy={tunerOpening}
-      disabled={state === 'starting' || tunerOpening}
+      disabled={engineState === 'starting' || tunerOpening}
       onclick={() => void openTuner()}
     >
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
@@ -1187,13 +1192,13 @@
     {#if backend === 'native'}
     {#if nativeOpened !== null && channelCount > 1}<div class="device-controls"><Segmented label="Input channel" options={CHANNELS} value={channel} onchange={chooseChannel}/><div class="levels">{#each meters.channelPeaks as peak}<span class="level"><span class="level-fill" style={`transform:scaleX(${level(peak)})`}></span></span>{/each}</div></div>{/if}
     {:else}
-    <button class="start small" disabled={detecting || state === 'starting'} onclick={detectInputs}>{detecting ? 'Detecting inputs…' : 'Detect audio inputs'}</button>
+    <button class="start small" disabled={detecting || engineState === 'starting'} onclick={detectInputs}>{detecting ? 'Detecting inputs…' : 'Detect audio inputs'}</button>
     <div aria-busy={detecting}>
     <div class="device-controls">{#if devices.length > 0}<label class="field"><span class="t-small">Input device</span><select disabled={detecting} value={deviceId} onchange={e => chooseDevice(e.currentTarget.value)}><option value="">Default input</option>{#each devices as d}<option value={d.id}>{d.label || 'Input'}</option>{/each}</select></label>{/if}{#if channelCount > 1}<Segmented label="Input channel" options={CHANNELS} value={channel} onchange={chooseChannel}/><div class="levels">{#each meters.channelPeaks as peak}<span class="level"><span class="level-fill" style={`transform:scaleX(${level(peak)})`}></span></span>{/each}</div>{/if}{#if outputs.length > 1}<label class="field"><span class="t-small">Output device</span><select value={outputId} onfocus={() => void probeOutputs()} onchange={e => chooseOutput(e.currentTarget.value)}><option value="">Same as input</option>{#each outputs as d}<option value={d.id}>{d.label || 'Output'}{d.outputMs === undefined ? '' : ` — ${d.outputMs.toFixed(0)} ms`}</option>{/each}</select></label>{/if}</div>
     </div>
     {/if}
     {#if settingsError}<p class="failure" role="alert">{settingsError}</p>{/if}
-    <button class="connect" disabled={detecting || state === 'starting'} onclick={() => { settingsDialog?.close(); if (state !== 'running') void power(); }}>Done</button>
+    <button class="connect" disabled={detecting || engineState === 'starting'} onclick={() => { settingsDialog?.close(); if (engineState !== 'running') void power(); }}>Done</button>
   </dialog>
   {/if}
 
@@ -1271,7 +1276,7 @@
             class="choice"
             type="button"
             onclick={chooseMusician}
-            disabled={state === 'starting'}
+            disabled={engineState === 'starting'}
           >
             <span class="t-module">Musicien</span>
             <span class="t-small">Branchez votre guitare et sélectionnez votre entrée audio.</span>
@@ -1280,7 +1285,7 @@
             class="choice"
             type="button"
             onclick={chooseTester}
-            disabled={state === 'starting'}
+            disabled={engineState === 'starting'}
           >
             <span class="t-module">Testeur</span>
             <span class="t-small">Explorez les sons avec une démo, sans guitare ni accès au micro.</span>

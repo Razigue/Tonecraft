@@ -83,6 +83,13 @@ jobs:
       - name: End-to-end in a browser
         run: npm run test:browser
 
+      # The reader and the recorder, in the same served build: importing a
+      # score, recording the input and downloading both WAVs are things only a
+      # real browser does — the worker export, the download and the file picker
+      # have no equivalent in Node.
+      - name: The tab reader and the recorder in a browser
+        run: npm run test:studio
+
       # GitHub Pages serves this under /<repo>/ unless a custom domain is set,
       # so what is deployed is rebuilt against that base.
       - name: Rebuild for deployment

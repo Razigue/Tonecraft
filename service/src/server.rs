@@ -560,6 +560,7 @@ impl Control {
             args: fixed,
             id,
             want_error: name == "tc_load_model",
+            readback: name.starts_with("tc_read_"),
             payload: payload.map(Vec::into_boxed_slice),
         };
         session
@@ -579,6 +580,9 @@ impl Control {
             let mut v = json!({"type": "result", "id": reply.id, "value": reply.value});
             if let Some(e) = reply.error {
                 v["error"] = Value::String(e);
+            }
+            if let Some(data) = reply.data {
+                v["data"] = json!(data);
             }
             out.push(Message::text(v.to_string()));
         }

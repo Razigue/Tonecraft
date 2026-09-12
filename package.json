@@ -20,7 +20,8 @@
     "measure:latency": "tsx scripts/measure-latency.ts",
     "design:halfband": "tsx scripts/design-halfband.ts",
     "check": "tsx scripts/check-schema.ts",
-    "test": "npm run check && npm run test:chain && npm run test:input && npm run test:diagnosis && npm run test:tuner && npm run test:metronome && npm run test:store",
+    "check:types": "svelte-check",
+    "test": "npm run check && npm run test:chain && npm run test:recording && npm run test:input && npm run test:diagnosis && npm run test:tuner && npm run test:metronome && npm run test:store",
     "test:chain": "tsx scripts/test-chain.ts",
     "test:parity": "tsx scripts/test-native-parity.ts",
     "test:input": "tsx engine/input.test.ts",
@@ -28,12 +29,15 @@
     "test:tuner": "tsx engine/tuner.test.ts",
     "test:metronome": "tsx engine/metronome.test.ts",
     "test:store": "tsx store/session.test.ts",
+    "test:recording": "tsx scripts/test-recording.ts",
+    "test:studio": "node scripts/test-studio.mjs",
     "test:browser": "node scripts/browser-test.mjs",
-    "verify": "npm test && npm run build && npm run test:browser"
+    "verify": "npm test && npm run build && npm run test:browser && npm run test:studio"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",
     "@astrojs/svelte": "^9.0.1",
+    "@coderline/alphatab": "^1.8.4",
     "astro": "^7.2.10",
     "nanostores": "^1.5.2",
     "svelte": "^5.57.0"
@@ -41,8 +45,10 @@
   "description": "Guitar amp and effects in a browser tab. No install, no plugin, no account, no server.",
   "private": true,
   "devDependencies": {
+    "@coderline/alphatab-vite": "^1.8.4",
     "@tailwindcss/vite": "^4.3.3",
     "playwright": "^1.63.0",
+    "svelte-check": "^4.7.6",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.13",
     "typescript": "^6.0.3"

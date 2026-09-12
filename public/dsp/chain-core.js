@@ -140,6 +140,8 @@ export class ChainCore {
       new Uint8Array(this.state.memory.buffer, ptr, bytes.byteLength).set(bytes);
       try {
         result = e[fn](ptr, bytes.byteLength, ...args);
+        // Read exports write into the supplied payload, using the same ABI.
+        if (fn.startsWith('tc_read_')) bytes.set(new Uint8Array(this.state.memory.buffer, ptr, bytes.byteLength));
       } finally {
         e.tc_free(ptr);
       }

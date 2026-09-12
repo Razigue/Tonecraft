@@ -42,6 +42,7 @@ import {
 } from './web-host.ts';
 import { NativeHost, NativeLink, type NativeOpened } from './native-host.ts';
 import type { ClickTransport, ClickVoice } from './metronome.ts';
+import type { Recording } from './recording.ts';
 
 export { EngineError, type EngineFailure, type LatencyParts } from './chain-host.ts';
 export type { InputDevice, OutputDevice } from './web-host.ts';
@@ -157,6 +158,8 @@ export class Engine {
   #click: ClickState = null;
   /** The looper's playback level. It outlives a host; the loop itself does not. */
   #loopLevel = 0.8;
+  #recording = false;
+  #recorded: Recording | null = null;
 
   // Browser preferences: they outlive a host, which is rebuilt on every start.
   #deviceId: string | undefined;
@@ -349,6 +352,10 @@ export class Engine {
   }
 
   async stop(): Promise<void> {
+    if (this.#recording) {
+      try { await this.stopRecording(); } catch { this.#recorded = null; }
+      finally { this.#recording = false; }
+    }
     const host = this.#host;
     this.#host = null;
     this.#web = null;
@@ -493,7 +500,7 @@ export class Engine {
 
   /** The live input is open while it is heard, or while the tuner listens to it. */
   #syncLive(): void {
-    const open = this.#source === 'live' && (this.#tuning || (this.#powered && !this.#direct));
+    const open = this.#source === 'live' && (this.#recording || this.#tuning || (this.#powered && !this.#direct));
     const host = this.#host;
     if (host === null) return;
     host.send('tc_set_live_input', [open ? 1 : 0]);
@@ -619,6 +626,51 @@ export class Engine {
 
   get loopLevel(): number { return this.#loopLevel; }
 
+  async startRecording(): Promise<void> {
+    const host = this.#host;
+    if (!host || this.#engineError) throw new Error('Start the audio engine before recording.');
+    if (this.#recording) throw new Error('A recording is already running.');
+    // Older companions can run the new DSP but cannot return payloads yet.
+    const probe = await host.call('tc_read_recording', [0], new Uint8Array(4));
+    if (!probe.data) throw new Error(host.kind === 'native'
+      ? 'Update Tonecraft Engine to record, or select the browser audio engine.' : 'The recording engine could not be loaded. Reload the page.');
+    const result = await host.call('tc_record_start', [300]);
+    if (result.error || result.value !== 1) throw new Error(result.error ?? 'Recording could not start.');
+    this.#recorded = null;
+    this.#recording = true;
+    this.#syncLive();
+    host.resume();
+  }
+
+  async recordingSeconds(): Promise<number> {
+    const host = this.#host;
+    if (!this.#recording || !host) return this.#recorded ? this.#recorded.samples.length / this.#recorded.sampleRate : 0;
+    const result = await host.call('tc_record_frames');
+    if (result.error) throw new Error(result.error);
+    return result.value / host.sampleRate;
+  }
+
+  async stopRecording(): Promise<Recording> {
+    if (!this.#recording && this.#recorded) return this.#recorded;
+    const host = this.#host;
+    if (!host) throw new Error('The audio engine stopped before the take could be saved.');
+    const result = await host.call('tc_record_stop');
+    this.#recording = false;
+    this.#syncLive();
+    if (result.error) throw new Error(result.error);
+    if (result.value <= 0) throw new Error('The recording is empty.');
+    const samples = new Float32Array(result.value);
+    for (let offset = 0; offset < samples.length; offset += 16384) {
+      const count = Math.min(16384, samples.length - offset);
+      const chunk = await host.call('tc_read_recording', [offset], new Uint8Array(count * 4));
+      if (chunk.error || chunk.value !== count || chunk.data?.byteLength !== count * 4) throw new Error(chunk.error ?? 'The recorded audio could not be retrieved.');
+      const view = new DataView(chunk.data.buffer, chunk.data.byteOffset, chunk.data.byteLength);
+      for (let i = 0; i < count; i++) samples[offset + i] = view.getFloat32(i * 4, true);
+    }
+    this.#recorded = { samples, sampleRate: host.sampleRate };
+    return this.#recorded;
+  }
+
   // -------------------------------------------------------------------------
   // The file source
   //
@@ -711,4 +763,3 @@ export class Engine {
     else this.#fileCursor = at;
   }
 }
-

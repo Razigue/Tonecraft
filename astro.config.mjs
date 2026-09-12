@@ -3,6 +3,7 @@ import { defineConfig } from 'astro/config';
 import svelte from '@astrojs/svelte';
 import sitemap from '@astrojs/sitemap';
 import tailwind from '@tailwindcss/vite';
+import { alphaTab } from '@coderline/alphatab-vite';
 
 // Provisional. PRODUCT.md section 7 targets tonecraft.app; the domain is not
 // bought yet and trademark clearance (OI-6) has not run. Sitemap and canonical
@@ -30,6 +31,7 @@ export default defineConfig({
   integrations: [svelte(), sitemap()],
 
   vite: {
-    plugins: [tailwind()],
+    plugins: [tailwind(), alphaTab()],
+    worker: { format: 'es' },
   },
 });

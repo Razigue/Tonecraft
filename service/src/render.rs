@@ -71,9 +71,9 @@ pub fn main(args: &[String]) -> Result<(), String> {
         let index = chain
             .export_index(&spec.name)
             .ok_or_else(|| format!("no chain export named {}", spec.name))?;
-        let payload = spec.data.as_deref().map(b64::decode).transpose()?;
+        let mut payload = spec.data.as_deref().map(b64::decode).transpose()?;
         let value = chain
-            .call(index, &spec.args, payload.as_deref())
+            .call(index, &spec.args, payload.as_deref_mut())
             .map_err(|e| format!("{}: {e}", spec.name))?;
         if spec.name == "tc_load_model" && value == 0.0 {
             return Err(format!("tc_load_model: {}", chain.last_error()));

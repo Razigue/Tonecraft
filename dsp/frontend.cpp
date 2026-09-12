@@ -91,13 +91,10 @@ void Frontend::init(double sampleRate, int stages, bool adaa) {
   adaa_ = adaa;
 
   attC_ = 1 - std::exp(-1 / (sr_ * 0.0012));   // open: 1.2 ms
-  /* Close: 12 ms, down from 50. The gain applied is gg squared, so the time
-     constant is not the time you hear: silence arrives at roughly 3.45 tau.
-     50 ms shut the gate 172 ms after the phrase ended, long enough to hear the
-     hiss arrive before it left; 12 ms puts it at 41 ms, inside the gap. The
-     floor under this is chatter, held off by the 6 dB of hysteresis below.
-     Faster than about 8 ms and held notes start being clipped. */
-  relC_ = 1 - std::exp(-1 / (sr_ * 0.012));
+  /* Close: 8 ms. The applied gain is gg squared, reaching -60 dB about
+     28 ms after the detector closes (previously 41 ms at 12 ms).
+     The 6 dB hysteresis below keeps the gate from chattering. */
+  relC_ = 1 - std::exp(-1 / (sr_ * 0.008));
   envC_ = 1 - std::exp(-1 / (sr_ * 0.0025));   // detector: 2.5 ms
   dA_ = onePoleHP(18, sr_);
 

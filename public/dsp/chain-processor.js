@@ -69,7 +69,10 @@ class ChainProcessor extends AudioWorkletProcessor {
     } catch (err) {
       error = String((err && err.message) || err);
     }
-    if (message.id !== undefined) this.port.postMessage({ type: 'result', id: message.id, value, error });
+    if (message.id !== undefined) {
+      const data = !error && message.fn.startsWith('tc_read_') ? message.data : undefined;
+      this.port.postMessage({ type: 'result', id: message.id, value, error, data }, data ? [data.buffer] : []);
+    }
   }
 
   process(inputs, outputs) {

@@ -2,6 +2,24 @@
 
 **Depends on `schema/`.**
 
+Recording uses `dsp/recorder.h` to keep the selected raw mono input before
+trim and effects (up to five minutes). `Engine.startRecording/stopRecording`
+return a take via bounded `tc_read_recording` payloads; the capture stays open
+while recording even when output Power is off. Completed takes survive normal
+engine stops. `recording.ts` encodes float32 WAV without normalizing the DI;
+`render-recording.ts` runs the current tone through the same WASM in an export
+worker, preserving reverb and pitch tails. Neither score audio, the metronome
+nor looper playback enters the recording tap. Native recording needs the
+payload-return support documented in `service/PROTOCOL.md`.
+
+What that costs, measured: the five-minute buffer is 57 MB and is allocated on
+the audio thread by the first `tc_record_start`, 35 ms — one dropout when
+Record is first pressed, before the take begins. It is then kept, so every
+later take starts in 0.00 ms. The tap itself is a copy of the block: about
+4 µs per 128 frames while the fresh pages are first touched, 1.5% of a core,
+and nothing measurable after that. Export renders in a worker, so it costs the
+audio thread nothing at all.
+
 The chain itself is one WebAssembly module, `public/dsp/chain.wasm`, compiled
 from `dsp/` by `npm run build:dsp`:
 

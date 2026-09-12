@@ -189,6 +189,7 @@ pub struct Command {
     pub args: [f64; MAX_ARGS],
     pub id: Option<u32>,
     pub want_error: bool,
+    pub readback: bool,
     pub payload: Option<Box<[u8]>>,
 }
 
@@ -197,6 +198,7 @@ pub struct Reply {
     pub value: f64,
     /// Only on failure, which is off the steady-state path.
     pub error: Option<String>,
+    pub data: Option<Box<[u8]>>,
 }
 
 pub struct MeterFrame {
@@ -587,11 +589,11 @@ struct OutputState {
 impl OutputState {
     fn commands(&mut self) {
         while let Ok(mut cmd) = self.commands.pop() {
-            let payload = cmd.payload.take();
+            let mut payload = cmd.payload.take();
             let result = self.chain.call(
                 cmd.func as usize,
                 &cmd.args[..cmd.argc as usize],
-                payload.as_deref(),
+                payload.as_deref_mut(),
             );
             if let Some(id) = cmd.id {
                 let reply = match result {
@@ -601,11 +603,13 @@ impl OutputState {
                         // Loading a capture is allowed to allocate: it
                         // already does, inside the chain, in both hosts.
                         error: (v == 0.0 && cmd.want_error).then(|| self.chain.last_error()),
+                        data: if cmd.readback { payload.take() } else { None },
                     },
                     Err(e) => Reply {
                         id,
                         value: 0.0,
                         error: Some(e.to_string()),
+                        data: None,
                     },
                 };
                 let _ = self.replies.push(reply);

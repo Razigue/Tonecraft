@@ -124,7 +124,7 @@ type Incoming =
   | ({ type: 'devices'; host: string } & NativeDevices)
   | ({ type: 'opened' } & NativeOpened)
   | { type: 'closed' }
-  | { type: 'result'; id: number; value: number; error?: string }
+  | { type: 'result'; id: number; value: number; error?: string; data?: number[] }
   | { type: 'meters'; meters: number[]; dropouts: number }
   | { type: 'autostart'; enabled: boolean }
   | { type: 'error'; context: string; message: string }
@@ -444,7 +444,8 @@ export class NativeHost implements ChainHost {
         if (pending === undefined) break;
         this.#pending.delete(message.id);
         self.clearTimeout(pending.timer);
-        pending.resolve(message.error === undefined ? { value: message.value } : { value: message.value, error: message.error });
+        pending.resolve({ value: message.value, error: message.error,
+          data: message.data === undefined ? undefined : Uint8Array.from(message.data) });
         break;
       }
       case 'meters':

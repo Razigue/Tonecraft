@@ -39,6 +39,7 @@
   }
 
   function beginDrag(event: PointerEvent): void {
+    if (!(event.currentTarget instanceof HTMLElement)) return;
     dragging = true;
     originY = event.clientY;
     originPosition = position;
@@ -54,7 +55,7 @@
 
   function endDrag(event: PointerEvent): void {
     dragging = false;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+    if (event.currentTarget instanceof HTMLElement && event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
   }

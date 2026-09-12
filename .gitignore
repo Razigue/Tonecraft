@@ -33,6 +33,8 @@ service/target/
 # pure function of the .wasm plus the DI loop in assets/, so CI regenerates
 # them. Source assets in assets/ ARE committed.
 public/presets/
+public/font/
+public/soundfont/
 site/**/*.generated.json
 
 # Astro generated types

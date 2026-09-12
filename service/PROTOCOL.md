@@ -78,6 +78,16 @@ an `opened` carrying `"reopened": true`**: the engine reopened the streams
 itself after a `configure` changed a device, the chain is a new one, and it has
 none of the page's state until the page sends it again.
 
+## Returning payloads
+
+Exports named `tc_read_*` fill the supplied payload. The host copies it back
+before freeing the WASM allocation and includes it as a JSON byte array in the
+`result` message's optional `data` field. Other calls are unchanged. The page
+reads a stopped recording in 64 KB chunks through `tc_read_recording`; no audio
+is streamed over this path while recording. Older companions omit `data`, so
+the page probes support before starting a recording and requests an updated
+companion or the browser backend when it is absent.
+
 ## Configuration
 
 ```json

@@ -358,7 +358,7 @@ impl Chain {
         &mut self,
         index: usize,
         args: &[f64],
-        payload: Option<&[u8]>,
+        mut payload: Option<&mut [u8]>,
     ) -> Result<f64, &'static str> {
         if self.dead {
             return Err("the chain has stopped");
@@ -378,7 +378,8 @@ impl Chain {
         let n = export.params.len();
         let r = usize::from(export.result.is_some());
         let mut ptr = 0;
-        if let Some(bytes) = payload {
+        let readback = export.name.starts_with("tc_read_");
+        if let Some(bytes) = payload.as_deref() {
             if bytes.len() > i32::MAX as usize {
                 return Err("payload too large");
             }
@@ -398,6 +399,11 @@ impl Chain {
         }
         let mut results = [Val::I32(0)];
         let outcome = self.funcs[index].call(&mut self.store, &params[..n], &mut results[..r]);
+        if outcome.is_ok() && readback {
+            if let Some(bytes) = payload.as_deref_mut() {
+                bytes.copy_from_slice(&self.memory.data(&self.store)[ptr..ptr + bytes.len()]);
+            }
+        }
         if payload.is_some() {
             let _ = self.free.call(&mut self.store, ptr as i32);
         }

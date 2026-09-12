@@ -113,6 +113,32 @@ console.log('\nThe chain — from Node, through chain-core.js\n');
 }
 
 {
+  // A muted phrase must shut out the noise promptly, at every supported rate,
+  // while sustained notes and the next attack still open the gate fully.
+  for (const rate of [44_100, 48_000, 96_000]) {
+    const core = await instantiateChain(wasm);
+    core.init(rate, 1024);
+    neutral(core, { gate_bypass: 0, gate_threshold: -65 });
+    const note = Float32Array.from({ length: rate / 5 }, (_, i) =>
+      0.01 * Math.sin(2 * Math.PI * 1000 * i / rate));
+    run(core, note, [128]);
+    check(`gate passes a sustained note at ${rate} Hz`, core.meters![meterIndex('gate')]! > 0.99);
+    // Align the mute with a meter update: meters refresh only at 30 Hz.
+    for (let i = 0; i < rate; i++) {
+      core.inputs[0]![0] = note[i % note.length]!;
+      if (core.process(1, 1)) break;
+    }
+    run(core, noise(Math.round(rate * 0.07), 10 ** (-90 / 20)), [1]);
+    const gain = core.meters![meterIndex('gate')]!;
+    const attenuation = 40 * Math.log10(gain + 1e-30); // applied gain is squared
+    check(`gate suppresses noise by 100 dB within 70 ms of a muted phrase at ${rate} Hz`, attenuation < -100,
+      `${attenuation.toFixed(1)} dB`);
+    run(core, note.subarray(0, Math.round(rate * 0.05)), [128]);
+    check(`gate reopens for the next attack at ${rate} Hz`, core.meters![meterIndex('gate')]! > 0.99);
+  }
+}
+
+{
   // The cabinet: a real one, synthesised the way the product does it.
   const cab = cabIR(SR, DEFAULT_CAB);
   const x = noise(SR, 0.05);

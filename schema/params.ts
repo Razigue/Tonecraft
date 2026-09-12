@@ -155,18 +155,10 @@ export const PARAMS: readonly Param[] = [
   // captures amplify enormously — 0.02 in comes back out at -19 dBFS — so the
   // useful thresholds all sit in the last 20 dB above silence.
   //
-  // -60 rather than the -65 this carried, which was itself -72.9 before that.
-  // Each move up came from the same place: playing it. At -72.9 the gate never
-  // closed on a real DI; at -65 it closed, but only once the hiss had already
-  // been heard. The last 5 dB are what put the close inside the gap between
-  // phrases rather than at the end of it.
-  //
-  // This is the top of the useful range, not a safe middle. These captures
-  // amplify enormously — 0.02 in comes back out at -19 dBFS — so every dB here
-  // is a dB of quiet playing the gate can swallow. Anyone whose picking hand is
-  // lighter than the one this was set by should pull it back down.
+  // -65 preserves quieter picking; the 8 ms release in dsp/frontend.cpp
+  // tightens the close independently of this level threshold.
   { id: 'gate_threshold', stage: 'gate', label: 'Threshold', unit: 'dB',
-    min: -95, max: -30, default: -60, taper: 'linear' },
+    min: -95, max: -30, default: -65, taper: 'linear' },
   { id: 'gate_bypass', stage: 'gate', label: 'Bypass', unit: 'bool',
     min: 0, max: 1, default: 0, taper: 'switch' },
 
@@ -265,7 +257,7 @@ export const PARAMS: readonly Param[] = [
   // Whole semitones on the control, any value on the wire (AD-9): the taper is
   // presentation, and a link written by hand with 7.5 still plays.
   { id: 'pitch_shift', stage: 'pitch', label: 'Shift', unit: 'semitones',
-    min: -12, max: 12, default: 12, taper: 'stepped' },
+    min: -12, max: 12, default: 0, taper: 'stepped' },
   // Full wet by default: this is a transposer before it is a harmoniser, and
   // the dry guitar underneath is the choice, not the starting point.
   { id: 'pitch_mix', stage: 'pitch', label: 'Mix', unit: 'ratio',

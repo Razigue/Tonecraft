@@ -39,11 +39,21 @@ Trois contraintes non négociables, par ordre de priorité :
 | Moteur natif (ASIO) | Rust : cpal + wasmtime, exécute le même `chain.wasm` | Oui |
 | Prototypage DSP | Faust (`@grame/faustwasm`) | Non |
 | Baffle et reverb | Convolution dans la chaîne : tête FIR directe + queue partitionnée, latence nulle | Non |
+| Lecture de tablatures | alphaTab, chargé par `import()` à la première ouverture de fichier | Non |
 | Styles | CSS custom properties + Tailwind | Non |
 | Hébergement | GitHub Pages + domaine custom | Oui |
 | Analytics | GoatCounter ou Cloudflare Web Analytics | Non |
 
 **Interdits explicites :** React, toute dépendance runtime > 15 kB gzip, WebGL, `ScriptProcessorNode`, `SharedArrayBuffer`, tout package npm de DSP audio non audité.
+
+**Une exception à la règle des 15 kB, et une seule : le lecteur de tablatures.**
+Lire un fichier Guitar Pro demande un parseur par format et un moteur de gravure ;
+il n'existe pas de version de ça à 15 kB, et l'écrire serait un deuxième projet.
+alphaTab pèse 1,2 Mo, plus 3,6 Mo de police Bravura et 2,3 Mo de soundfont. Ce
+qui rend l'exception acceptable est que **rien de tout ça n'est chargé tant
+qu'aucune tablature n'est ouverte** : `import()` dynamique, donc zéro octet sur
+le chemin écouter et zéro sur le chemin jouer. La règle reste la règle partout
+ailleurs, y compris pour une deuxième dépendance qui viendrait servir le lecteur.
 
 ---
 
@@ -105,6 +115,7 @@ matériel du joueur, pas son son, et n'a rien à faire dans un tone link.
 - **Rien dans la chaîne n'ajoute de latence propre.** `npm run test:chain` l'asserte à l'impulsion et `npm run measure:latency` l'affiche : 0 frame pour la chaîne, 4,6 frames (0,1 ms) dans le suréchantillonneur du boost. Un étage qui retarde doit le justifier en ms, ici, avant d'entrer. Les filtres demi-bande de l'oversampling sont des allpass polyphases IIR (délai de groupe < 5 échantillons), pas des FIR à phase linéaire (36 échantillons) : la linéarité de phase au-dessus de 20 kHz ne s'entend pas, la latence oui.
 - **Une seule exception, et elle est payante à l'usage : le transposeur** (`dsp/pitch.cpp`). Décaler une note dans le temps impose d'attendre que sa forme d'onde revienne : mesuré, 8,6 ms à l'octave inférieure, 14,1 ms à l'octave supérieure, 0 ms sans décalage. L'arbitrage est explicite : **il est bypassé par défaut**, il ne coûte rien tant qu'il l'est (ni CPU ni latence), et ce qu'il ajoute est **remonté dans la trame de mesure** et additionné au chiffre affiché en permanence — un retard qu'on ne nomme pas est un retard imputé au produit. Un vocodeur de phase, lui, coûterait 40 ms avant même de commencer : écarté pour cette raison.
 - **Le looper enregistre la sortie de la chaîne, pas l'entrée** (`dsp/looper.h`), avant le master et le limiteur. Enregistrer le DI et le rejouer à travers l'ampli enverrait la boucle et le jeu dans la même saturation : deux accords superposés dans une même distorsion ne font pas deux accords, ils font de la bouillie. Corollaire : la boucle est de l'audio, pas de l'état — elle ne survit ni à un arrêt du moteur ni à un tone link, et le métronome, ajouté après le limiteur, n'y est jamais imprimé.
+- **Le recorder enregistre l'entrée, pas la sortie** (`dsp/recorder.h`) — l'exact inverse du looper, et par le même raisonnement retourné. Une boucle sert à être rejouée telle qu'elle a été jouée ; une prise sert à être réécoutée **avec un autre son**, parfois le lendemain. Le DI est donc stocké brut, avant trim, gate et pitch, et l'export le repasse hors ligne dans la chaîne courante, dans un worker : chaîne coupée au moment du clic, le fichier est le DI intact ; chaîne active, c'est le rendu, queues de reverb comprises. Ce rendu utilise exactement les réglages du temps réel, pour la raison qui vaut déjà pour les fichiers pré-rendus. Corollaire : ni le métronome, ni la lecture du looper, ni le lecteur de tablatures n'entrent dans une prise.
 - Noise gate en début de chaîne, avant le preamp.
 
 ### Compilation WASM
@@ -164,6 +175,7 @@ L'utilisateur ne peut pas distinguer un problème d'impédance d'un mauvais mote
 - Interdits en animation : `backdrop-filter`, `filter: blur()`, `box-shadow` animée. Uniquement `transform` et `opacity`.
 - Polices self-hostées, woff2, sous-ensemblées, `font-display: swap`. Aucun appel à Google Fonts.
 - Le thread principal ne doit jamais bloquer plus de 8 ms : un jank UI se traduit par un dropout audible.
+- **Le lecteur de tablatures ne touche pas à la chaîne, et la chaîne ne l'attend pas.** Rendu en SVG, jamais en canvas — alphaTab sait faire les deux, le choix est écrit dans la config plutôt que hérité d'un défaut. Sa lecture audio a son propre `AudioContext` : elle ne partage ni le graphe, ni l'horloge, ni le worklet, et n'entre donc ni dans le looper ni dans une prise. Le moteur, les polices de notation et le soundfont sont chargés au premier fichier ouvert, pas avant.
 
 ---
 

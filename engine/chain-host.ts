@@ -32,6 +32,8 @@ export class EngineError extends Error {
 
 export interface CallResult {
   readonly value: number;
+  /** tc_read_* exports return the caller's payload after the chain fills it. */
+  readonly data?: Uint8Array<ArrayBuffer>;
   /** Set when the call failed; for `tc_load_model`, the chain's own reason. */
   readonly error?: string;
 }

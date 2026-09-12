@@ -27,7 +27,11 @@ still plays.
 - **Nothing starts by itself.** A restored session never opens an
   `AudioContext` or plays a sound; it only pre-fills what the next gesture uses.
 
-## Planned (Guitar Pro reader, cover timeline, backing tracks)
+The reader saves its last valid import as `last-score` (`kind: 'score'`). The
+recorder saves a completed float32 DI WAV as `last-recording` (`kind: 'take'`),
+separately from the imported DI player file. Restoring either never starts sound.
+
+## Planned (cover timeline, backing tracks)
 
 Each is one migration entry and one module, no change to what is here:
 
