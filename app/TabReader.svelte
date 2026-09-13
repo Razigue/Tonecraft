@@ -5,7 +5,7 @@
   import Fretboard from './Fretboard.svelte';
   import { KEYS, SCALES, SCALE_GROUPS, scaleById, scaleOnNeck, scaleNoteNames, keyOfSignature } from '../engine/scales.ts';
   import { STORES, dbGet, dbPut } from '../store/db.ts';
-  import { monoSoundFont } from '../engine/soundfont.ts';
+  import { prepareSoundFont } from '../engine/soundfont.ts';
 
   /** The score's opening tempo, and where on screen the score came in from. */
   let { ontempo }: { ontempo?: (bpm: number, from: DOMRect) => void } = $props();
@@ -158,18 +158,18 @@
 
   /**
    * The instruments, fetched once and patched once for every reader after it.
-   * Not handed to alphaTab as a URL: MuseScore_General keeps its piano as
-   * stereo sample pairs, which alphaTab skips — a warning per sample in the
-   * console, and a tab with a piano in it that played nothing at all, because
-   * the empty piano voices turned the whole mix to NaN. `monoSoundFont` retypes
-   * them in memory (engine/soundfont.ts). alphaTab copies what it is given to
-   * its worker, so the same bytes serve the next file opened too.
+   * Not handed to alphaTab as a URL: MuseScore_General is voiced for
+   * FluidSynth, and under alphaTab its piano was skipped outright — a warning
+   * per sample, and a tab with a piano in it that played nothing at all — then,
+   * once loaded, muffled and 45 dB too quiet. `prepareSoundFont` corrects it in
+   * memory (engine/soundfont.ts). alphaTab copies what it is given to its
+   * worker, so the same bytes serve the next file opened too.
    */
   let instruments: Promise<Uint8Array> | null = null;
   function soundFont() {
     instruments ??= fetch(`${BASE}musescore-general/MuseScore_General.sf3`)
       .then(r => { if (!r.ok) throw new Error(`the instruments did not load (HTTP ${r.status})`); return r.arrayBuffer(); })
-      .then(buffer => { const bytes = new Uint8Array(buffer); monoSoundFont(bytes); return bytes; })
+      .then(buffer => { const bytes = new Uint8Array(buffer); prepareSoundFont(bytes); return bytes; })
       .catch(e => { instruments = null; throw e; });
     return instruments;
   }

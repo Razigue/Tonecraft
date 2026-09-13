@@ -1,12 +1,12 @@
 /**
  * The tab reader's soundfont, as alphaTab actually plays it.
  *
- * The failure this guards against had two faces: a console full of "Skipping
- * load of unsupported sample" warnings, and — the one that mattered — a tab
- * with a piano in it that played nothing at all, guitar included. Both are
- * checked here through alphaTab's own synthesizer, rendering a guitar and a
- * piano offline from the committed file: once as it is on disk, which is the
- * bug, and once patched, which is what the reader loads.
+ * Everything that went wrong here still produced sound, or nothing that looked
+ * like a bug: a console full of "Skipping load of unsupported sample", a tab
+ * with a piano in it that played nothing at all, then a piano that played 45 dB
+ * too quiet and muffled. Each is checked through alphaTab's own synthesizer,
+ * rendering offline from the committed file — as it is on disk, which is the
+ * bug, and prepared, which is what the reader loads.
  *
  * Usage:  npm run test:soundfont
  */
@@ -16,7 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as alpha from '@coderline/alphatab';
 
-import { monoSoundFont } from './soundfont.ts';
+import { monoSoundFont, prepareSoundFont } from './soundfont.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FILE = path.join(ROOT, 'public/musescore-general/MuseScore_General.sf3');
@@ -81,75 +81,123 @@ const typesOf = (bytes: Uint8Array, count: number): number[] => {
 }
 
 const disk = new Uint8Array(fs.readFileSync(FILE));
-const patched = disk.slice();
+const prepared = disk.slice();
+const monoOnly = disk.slice();
 {
-  const changed = monoSoundFont(patched);
-  check('the committed soundfont has its stereo samples retyped', changed === 146, `${changed} of them`);
-  check('and the file on disk is untouched', !disk.every((v, i) => v === patched[i]) && monoSoundFont(disk.slice()) === 146);
+  const report = prepareSoundFont(prepared);
+  check('the committed soundfont has its stereo samples retyped', report.retyped === 146, `${report.retyped} of them`);
+  check('the pianos are the presets corrected, and only they',
+    report.pianoPresets === 4 && report.pianoInstruments === 16,
+    `${report.pianoPresets} presets, ${report.pianoInstruments} instruments`);
+  check('and the file on disk is untouched', monoSoundFont(monoOnly) === 146 && prepareSoundFont(disk.slice()).retyped === 146);
 }
 
-/**
- * A two-track tab — a guitar and a piano — rendered by alphaTab's own
- * synthesizer. Returns how many output samples were not finite, the RMS of the
- * rest, and the warnings alphaTab logged while loading. `exportAudio` only
- * reads `this` when it is given no soundfont, so it is called without a live
- * synthesizer: there is no audio device in Node to give it.
- */
-function renderBand(soundFont: Uint8Array): { broken: number; rms: number; warnings: number } {
-  const importer = new alpha.importer.AlphaTexImporter();
-  importer.initFromString('\\title "Band" \\tempo 120 . '
-    + '\\track "Guitar" :4 0.6 3.6 5.5 7.4 | :4 0.4 2.4 3.3 5.2 '
-    + '\\track "Piano" :4 0.3 1.2 0.1 3.1 | :4 0.3 1.2 0.1 3.1');
-  const score = importer.readScore();
-  // The importer has already written the instrument into the first beat, so
-  // the program is set there too — otherwise the MIDI still says guitar.
-  const piano = score.tracks[1]!;
-  piano.playbackInfo.program = 0;   // acoustic grand piano
-  for (const bar of piano.staves[0]!.bars) for (const voice of bar.voices) for (const beat of voice.beats) {
-    for (const a of beat.automations) if (a.type === alpha.model.AutomationType.Instrument) a.value = 0;
+/** MIDI for a score, with the track's instrument set where alphaTab reads it. */
+function midiOf(score: alpha.model.Score, instruments: Record<number, number>): alpha.midi.MidiFile {
+  // The importer has already written each track's instrument into its first
+  // beat, so the program is set there too — otherwise the MIDI keeps the old one.
+  for (const [track, program] of Object.entries(instruments)) {
+    const t = score.tracks[Number(track)]!;
+    t.playbackInfo.program = program;
+    for (const bar of t.staves[0]!.bars) for (const voice of bar.voices) for (const beat of voice.beats) {
+      for (const a of beat.automations) if (a.type === alpha.model.AutomationType.Instrument) a.value = program;
+    }
   }
   const midi = new alpha.midi.MidiFile();
   new alpha.midi.MidiFileGenerator(score, new alpha.Settings(), new alpha.midi.AlphaSynthMidiFileHandler(midi)).generate();
-  const programs = new Set(midi.tracks.flatMap((t) => t.events).filter((e) => e.type === 0xc0)
-    .map((e) => (e as unknown as { program: number }).program));
-  if (!programs.has(0)) throw new Error('the test score has no piano in it');
+  return midi;
+}
 
+interface Render { samples: Float32Array; broken: number; warnings: number }
+
+/**
+ * Offline, through alphaTab's own synthesizer. `exportAudio` only reads `this`
+ * when it is given no soundfont, so it is called without a live synthesizer:
+ * there is no audio device in Node to give it.
+ */
+function render(soundFont: Uint8Array, midi: alpha.midi.MidiFile, seconds = 8): Render {
   const options = new alpha.synth.AudioExportOptions();
   options.soundFonts = [soundFont];
   options.sampleRate = 44100;
   options.masterVolume = 1;
   options.metronomeVolume = 0;
-
   const warn = console.warn;
   let warnings = 0;
   console.warn = (...args: unknown[]) => { if (String(args.join(' ')).includes('Skipping load of unsupported sample')) warnings++; };
-  let broken = 0, sum = 0, n = 0;
+  const parts: Float32Array[] = [];
+  let broken = 0, total = 0;
   try {
     const exporter = alpha.synth.AlphaSynth.prototype.exportAudio.call(
       { synthesizer: { presets: [] } } as unknown as alpha.synth.AlphaSynth, options, midi, [], new Map());
-    for (let chunk = exporter.render(500); chunk; chunk = exporter.render(500)) {
-      for (const v of chunk.samples) {
-        if (Number.isFinite(v)) { sum += v * v; n++; } else broken++;
-      }
+    for (let chunk = exporter.render(500); chunk && total < seconds * 88200; chunk = exporter.render(500)) {
+      for (const v of chunk.samples) if (!Number.isFinite(v)) broken++;
+      parts.push(chunk.samples.slice());
+      total += chunk.samples.length;
     }
   } finally {
     console.warn = warn;
   }
-  return { broken, rms: Math.sqrt(sum / Math.max(1, n)), warnings };
+  const samples = new Float32Array(total);
+  let at = 0;
+  for (const p of parts) { samples.set(p, at); at += p.length; }
+  return { samples, broken, warnings };
+}
+
+/** The loudest sample of a note's first 300 ms, in dBFS. */
+function attack(r: Render): number {
+  let peak = 0;
+  for (let i = 0; i < Math.min(r.samples.length, 0.3 * 88200); i++) peak = Math.max(peak, Math.abs(r.samples[i]!));
+  return 20 * Math.log10(peak + 1e-20);
+}
+
+/** One whole note on a guitar-tuned staff (`string.fret`), at a dynamic. */
+function note(position: string, dynamic: string, program: number): alpha.midi.MidiFile {
+  const importer = new alpha.importer.AlphaTexImporter();
+  importer.initFromString(`\\title "Note" \\tempo 60 . \\track "Note" :1 ${position}{dy ${dynamic}} | :1 r`, new alpha.Settings());
+  return midiOf(importer.readScore(), { 0: program });
 }
 
 {
-  // The bug as the player met it: a piano anywhere in the score, and not a
-  // note of the whole tab came out — one empty piano voice turns alphaTab's
+  // The bug as the player first met it: a piano anywhere in the score, and not
+  // a note of the whole tab came out — one empty piano voice turns alphaTab's
   // entire mix to NaN.
-  const before = renderBand(disk);
+  const importer = new alpha.importer.AlphaTexImporter();
+  importer.initFromString('\\title "Band" \\tempo 120 . '
+    + '\\track "Guitar" :4 0.6 3.6 5.5 7.4 | :4 0.4 2.4 3.3 5.2 '
+    + '\\track "Piano" :4 0.3 1.2 0.1 3.1 | :4 0.3 1.2 0.1 3.1', new alpha.Settings());
+  const band = midiOf(importer.readScore(), { 1: 0 });
+  const before = render(disk, band);
   check('as shipped, a score with a piano loads with warnings and plays nothing at all',
-    before.warnings > 0 && before.broken > 0 && before.rms === 0,
-    `${before.warnings} warnings, ${before.broken} non-finite samples`);
-  const after = renderBand(patched);
-  check('patched, it loads without a single warning', after.warnings === 0, `${after.warnings} warnings`);
+    before.warnings > 0 && before.broken === before.samples.length,
+    `${before.warnings} warnings, ${before.broken} of ${before.samples.length} samples not a number`);
+  const after = render(prepared, band);
+  check('prepared, it loads without a single warning', after.warnings === 0, `${after.warnings} warnings`);
   check('and every sample of the output is a number', after.broken === 0, `${after.broken} non-finite`);
-  check('and the band is heard', after.rms > 1e-3, `rms ${after.rms.toExponential(1)}`);
+}
+
+{
+  // The piano's level, against the electric piano on the same notes. Across
+  // the range, because the low and high halves are different instruments with
+  // different filters, and a fix that only lifted one half would still be a
+  // piano that disappears in the treble.
+  const positions: [string, string][] = [['0.5', 'A2'], ['2.3', 'A3'], ['5.1', 'A4'], ['12.1', 'E5']];
+  const gaps = positions.map(([p]) => attack(render(prepared, note(p, 'f', 2), 1)) - attack(render(prepared, note(p, 'f', 0), 1)));
+  const shipped = attack(render(monoOnly, note('2.3', 'f', 0), 1)) - attack(render(monoOnly, note('2.3', 'f', 2), 1));
+  check('a forte grand piano sits within 10 dB of the electric piano, low to high',
+    gaps.every((g) => g > -3 && g < 10),
+    positions.map(([, n], i) => `${n} ${gaps[i]!.toFixed(1)}`).join(', ') + ' dB below');
+  check('where loaded but uncorrected it was 45 dB and more below', shipped < -40, `${shipped.toFixed(1)} dB`);
+
+  const dynamics = ['ppp', 'p', 'mp', 'mf', 'f', 'fff'];
+  const levels = dynamics.map((d) => attack(render(prepared, note('2.3', d, 0), 1)));
+  check('and it plays louder the harder it is struck',
+    levels.every((v, i) => i === 0 || v > levels[i - 1]!),
+    dynamics.map((d, i) => `${d} ${levels[i]!.toFixed(1)}`).join(', '));
+
+  // Scope: nothing but the pianos was touched.
+  const guitar = render(monoOnly, note('2.3', 'f', 29), 1).samples;
+  const same = render(prepared, note('2.3', 'f', 29), 1).samples;
+  check('the other instruments render bit-identical', guitar.length === same.length && guitar.every((v, i) => v === same[i]));
 }
 
 console.log(failures === 0 ? '\nall checks passed\n' : `\n${failures} check(s) failed\n`);
