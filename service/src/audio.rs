@@ -8,7 +8,11 @@
 //!
 //! Latency, which the player asked above all not to lose:
 //!
-//! - the buffer defaults to the smallest the device accepts;
+//! - the buffer defaults to the smallest the device accepts — except on ASIO,
+//!   where it defaults to the size set in the interface's own control panel.
+//!   An ASIO buffer is the driver's, shared with every program using it:
+//!   choosing one there rewrites the player's setting, so it is only done
+//!   when they choose it here;
 //! - on ASIO the input stream is registered first. asio-sys keeps stream
 //!   callbacks in a `Vec` in registration order and runs them in that order
 //!   inside one `bufferSwitch` (asio-sys 0.4.0, `buffer_switch_time_info`),
@@ -390,7 +394,9 @@ pub fn open(
     let (in_range, in_format) = pick(&in_dev, true, rate, in_need)?;
     let (out_range, out_format) = pick(&out_dev, false, rate, out_need)?;
 
-    // The smallest buffer both directions accept, unless the player chose one.
+    // Unless the player chose one: on ASIO, the driver's preferred size (cpal
+    // passes no size, and asio-sys takes `ASIOGetBufferSize`'s preferred one);
+    // elsewhere, the smallest both directions accept.
     let accepted = |r: &SupportedStreamConfigRange| match *r.buffer_size() {
         SupportedBufferSize::Range { min, max } => Some((min, max)),
         SupportedBufferSize::Unknown => None,
@@ -403,6 +409,7 @@ pub fn open(
     let buffer = match (req.buffer_size, bounds) {
         (Some(n), Some((min, max))) => Some(n.clamp(min, max.max(min))),
         (Some(n), None) => Some(n),
+        (None, _) if asio => None,
         (None, Some((min, _))) => Some(min),
         (None, None) => None,
     };

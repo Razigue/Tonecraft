@@ -15,8 +15,8 @@ use serde_json::{Map, Value};
 use crate::audio::OpenRequest;
 
 /// `None` everywhere means the engine's best choice: the preferred host, the
-/// default devices, the device's rate, the smallest buffer, the first two
-/// channels.
+/// default devices, the device's rate, the interface's own buffer on ASIO and
+/// the smallest one elsewhere, the first two channels.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Config {

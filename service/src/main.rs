@@ -20,11 +20,10 @@ Usage:
 Options:
   --port N               loopback port to listen on (default 47800)
   --allow-origin ORIGIN  also accept pages from ORIGIN, e.g. https://example.org
-  --headless             no tray icon (servers, tests); stays running with no page
-  --background           started at login; stays running with no page
+  --headless             no tray icon (servers, tests)
+  --background           started at login; changes nothing: it always starts minimised
 
-Launched by hand, it stops the sound as soon as Tonecraft's tab closes and
-exits a few seconds later, unless a page comes back (a reload).
+Closing Tonecraft's tab stops the sound; the engine stays by the clock until Quit.
 ";
 
 fn main() -> ExitCode {
@@ -52,13 +51,8 @@ fn main() -> ExitCode {
                 print!("{HELP}");
                 return ExitCode::SUCCESS;
             }
-            // Started at login because the player asked it to live with the
-            // computer: closing Tonecraft's tab must not undo that choice.
-            "--background" => options.resident = true,
-            "--headless" => {
-                headless = true;
-                options.resident = true;
-            }
+            "--background" => {}
+            "--headless" => headless = true,
             "--install-autostart" | "--uninstall-autostart" => {
                 let enable = args[i] == "--install-autostart";
                 return match autostart::set(enable) {
@@ -125,7 +119,7 @@ fn main() -> ExitCode {
         }
     };
     if headless {
-        return match server::serve(listener, options.origins, options.resident, None) {
+        return match server::serve(listener, options.origins, None) {
             Ok(()) => ExitCode::SUCCESS,
             Err(server::RunError::AlreadyRunning) => ExitCode::SUCCESS,
             Err(server::RunError::Other(e)) => {
@@ -135,5 +129,5 @@ fn main() -> ExitCode {
             }
         };
     }
-    tray::run(listener, options.origins, options.resident)
+    tray::run(listener, options.origins)
 }

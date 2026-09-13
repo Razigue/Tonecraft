@@ -89,7 +89,7 @@ export interface NativeConfig {
   readonly input: string | null;
   readonly output: string | null;
   readonly sampleRate: number | null;
-  /** null: the smallest buffer the device accepts — the lowest latency it offers. */
+  /** null: on ASIO, the buffer set in the interface's own control panel; elsewhere, the smallest the device accepts. */
   readonly bufferSize: number | null;
   readonly inputChannels: readonly number[] | null;
   readonly outputChannels: readonly number[] | null;

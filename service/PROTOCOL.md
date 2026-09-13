@@ -23,9 +23,8 @@ missing here.
   `{"type":"replaced"}` and is closed: a second tab takes over from the first.
 - **A page leaving takes the sound with it.** When the connection ends — the
   tab closed, reloaded or crashed — the engine stops the streams and drops the
-  chain at once, as `close` would. Launched by hand, it then exits if no page
-  connects within 10 seconds; a reload reconnects well inside that. Started at
-  login (`--background`) or `--headless`, it stays, idle, until the next page.
+  chain at once, as `close` would. The engine itself keeps running, idle,
+  until the next page or until the player quits it from the tray.
 - Text frames are JSON. Binary frames start with a one-byte kind.
 
 ## Page → engine
@@ -64,9 +63,11 @@ Every field but `type` is optional. **The engine owns the device
 configuration** (below): a field present in `open` is merged into it and saved,
 and a missing one comes from it. `null` means the engine's choice: ASIO where
 there is a driver (the platform's default host elsewhere), the host's default
-device, the device's default rate, the **smallest buffer the device accepts**
-(the lowest latency it offers — raising it is the player's call, when the
-dropout count says so), the first two inputs, the first two outputs. The two
+device, the device's default rate, **on ASIO the buffer set in the
+interface's own control panel** (an ASIO buffer belongs to the driver and every
+program using it, so the engine never rewrites it unasked) and elsewhere the
+**smallest buffer the device accepts** (the lowest latency it offers — raising
+it is the player's call, when the dropout count says so), the first two inputs, the first two outputs. The two
 input channels become the chain's left and right, where the page's channel
 choice (left, right, both, follow) applies as it does in the browser. The
 chain's mono output is written to both output channels.
@@ -169,7 +170,8 @@ Nothing in the engine adds latency beyond the device's own buffers:
 - the ring between the input and output callbacks never holds more than one
   block: a backlog means the output would be late, so the oldest samples are
   dropped instead (and counted as a dropout) — on ASIO the backlog is zero;
-- the buffer defaults to the smallest the device accepts.
+- the buffer defaults to the smallest the device accepts, except on ASIO,
+  where it is the interface's own setting until the player chooses one.
 
 ## Dropouts
 

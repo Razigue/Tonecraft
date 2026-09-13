@@ -46,16 +46,15 @@ it, and run `tonecraft-engine`. It has no window: open Tonecraft, choose
 ### When Tonecraft closes
 
 Closing Tonecraft's tab stops the sound at once and releases the interface.
-Launched by hand, the engine then exits by itself a few seconds later —
-reloading the page is quick enough to keep it.
+The engine stays by the clock, idle, until the next tab or until you choose
+*Quit* in its menu.
 
 ### Start with the session
 
 `tonecraft-engine --install-autostart` starts it at every login (the page
 offers the same switch); `--uninstall-autostart` stops that. It is per user:
 the Windows `Run` key in HKCU, a LaunchAgent on macOS, an XDG autostart entry
-on Linux. Started that way it stays by the clock, idle, when the tab closes:
-it was asked to live with the computer, not with the tab.
+on Linux.
 
 Logs: `%LOCALAPPDATA%\Tonecraft\Engine\engine.log`, `~/Library/Logs/Tonecraft/`,
 or `~/.local/state/tonecraft/`.
@@ -64,8 +63,10 @@ or `~/.local/state/tonecraft/`.
 
 Nothing in the engine adds latency beyond the device's own buffers:
 
-- the buffer defaults to the **smallest the device accepts**. Raise it in the
-  page's settings only if the dropout count says so;
+- on ASIO the buffer and the sample rate are the ones set in your interface's
+  control panel, and the engine does not change them unless you choose others
+  in the page's settings. Elsewhere the buffer defaults to the **smallest the
+  device accepts**; raise it only if the dropout count says so;
 - on ASIO, the input and output are served by one driver callback. The input
   stream is registered first, and asio-sys runs stream callbacks in
   registration order inside each `bufferSwitch`, so a block is captured,

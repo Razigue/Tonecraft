@@ -167,12 +167,13 @@
         {/if}
 
         {#if sizes.length > 0}
-          <!-- The smallest by default: the lowest delay the device offers. A
-               larger one is the player's call, when the sound crackles. -->
+          <!-- By default, ASIO keeps the buffer set in the interface's own
+               control panel, which other programs share; elsewhere, the
+               smallest the device offers. Any other size is the player's call. -->
           <label class="field"><span class="t-small">Buffer</span>
             <select value={config?.bufferSize == null ? '' : String(config.bufferSize)}
                     onchange={(e) => set({ bufferSize: e.currentTarget.value === '' ? null : Number(e.currentTarget.value) })}>
-              <option value="">Smallest — {sizes[0]} frames, {ms(sizes[0]!)} ms</option>
+              <option value="">{isAsio ? 'Interface setting' : `Smallest — ${sizes[0]} frames, ${ms(sizes[0]!)} ms`}</option>
               {#each sizes as n (n)}<option value={String(n)}>{n} frames — {ms(n)} ms</option>{/each}
             </select>
           </label>
@@ -225,8 +226,7 @@
       <div class="guide">
         <p class="t-small">
           {platform === 'windows' ? 'ASIO needs Tonecraft Engine' : 'This needs Tonecraft Engine'}: a small free program that
-          plays through {platform === 'other' ? 'your system’s audio driver' : DRIVER[platform]} directly, with the smallest
-          buffer it allows. It sits as an icon by the clock; everything is set from here, and the tone is the same.
+          plays through {platform === 'other' ? 'your system’s audio driver' : DRIVER[platform]} directly{platform === 'windows' ? ', at the buffer set in your interface’s control panel' : ', with the smallest buffer it allows'}. It sits as an icon by the clock; everything is set from here, and the tone is the same.
         </p>
         <ol class="t-small">
           {#if platform === 'other'}
