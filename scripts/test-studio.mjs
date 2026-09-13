@@ -164,6 +164,35 @@ try {
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
   console.log('ok the neck matches the track and lights the note being played');
 
+  // Scales: every key, rings on the neck, and the note being played drawn
+  // inside them rather than hidden by them — or hiding them.
+  const keySelect = page.getByRole('combobox', { name: 'Scale key', exact: true });
+  const scaleSelect = page.getByRole('combobox', { name: 'Scale', exact: true });
+  assert.equal(await keySelect.locator('option').count(), 12, 'all twelve keys are offered');
+  await keySelect.selectOption('4');
+  await scaleSelect.selectOption('minor-pentatonic');
+  const marks = await page.locator('.neck .scale').count();
+  assert(marks > 55 && marks < 70, `E minor pentatonic lights the neck (${marks} positions)`);
+  assert((await page.locator('.neck .scale.root').count()) > 0, 'and marks its roots');
+  assert.equal(await page.locator('.scale-notes').innerText(), 'E · G · A · B · D');
+  await page.getByRole('button', { name: 'Play tablature', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.neck .core').length > 0, { timeout: 15000 });
+  const layered = await page.evaluate(() => {
+    const all = [...document.querySelectorAll('.neck svg .halo, .neck svg .scale, .neck svg .core')];
+    const kinds = all.map(e => ['halo', 'scale', 'core'].find(k => e.classList.contains(k)));
+    return {
+      scales: kinds.filter(k => k === 'scale').length,
+      cores: kinds.filter(k => k === 'core').length,
+      ordered: kinds.lastIndexOf('halo') < kinds.indexOf('scale') && kinds.lastIndexOf('scale') < kinds.indexOf('core'),
+    };
+  });
+  await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
+  assert(layered.scales > 55 && layered.cores > 0, 'the scale stays lit while the tab plays');
+  assert(layered.ordered, 'glow under the scale, the played note on top of it');
+  await scaleSelect.selectOption('');
+  assert.equal(await page.locator('.neck .scale').count(), 0, 'None takes the scale off');
+  console.log('ok scales in all twelve keys light the neck, under the note being played');
+
   // The accepted extensions must be the ones the loader actually reads.
   // alphaTex is the entry furthest from Guitar Pro on that list.
   await picker.setInputFiles({ name: 'riff.atex', mimeType: 'text/plain',

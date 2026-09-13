@@ -193,6 +193,16 @@ every row carries the number of bars that track plays in, the sidebar names the
 range, and one button goes there. Nothing is uploaded: the file is read in the tab, and
 the last one opened comes back on the next visit.
 
+**A scale can be laid over the neck** — any of the twelve keys, the major and
+minor scales, the pentatonics and the blues, the modes, and the colours metal
+players ask for by name (phrygian dominant, harmonic minor, the diminished
+scales). The key follows the song's key signature until a scale is chosen. It
+stays lit while the tab plays, because the point is seeing the notes being
+played land inside it: the scale is a ring, the root filled, and the note being
+played a warm dot drawn inside its ring — a note outside the scale is a dot
+alone. The positions are counted from the capo, as alphaTab counts a played
+note, so under a capo the two lights still land on the same fret.
+
 **It costs nothing until it is used.** alphaTab, the Bravura notation font and
 the soundfont are 43 MB between them, far past the 15 kB this project allows a
 dependency — so they are fetched by a dynamic `import()` at the first file

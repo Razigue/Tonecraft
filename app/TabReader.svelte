@@ -3,6 +3,8 @@
   import type { AlphaTabApi, model } from '@coderline/alphatab';
   import { loadMedia, saveMedia } from '../store/media.ts';
   import Fretboard from './Fretboard.svelte';
+  import { KEYS, SCALES, SCALE_GROUPS, scaleById, scaleOnNeck, scaleNoteNames, keyOfSignature } from '../engine/scales.ts';
+  import { STORES, dbGet, dbPut } from '../store/db.ts';
 
   /** The score's opening tempo, and where on screen the score came in from. */
   let { ontempo }: { ontempo?: (bpm: number, from: DOMRect) => void } = $props();
@@ -82,6 +84,20 @@
   // A neck only makes sense for a staff that has strings: a keyboard or a drum
   // track has none, and gets none.
   const stave = $derived(score?.tracks[track]?.staves.find(s => s.tuning.length > 0) ?? null);
+
+  /**
+   * A scale laid over the neck. It stays lit while the tab plays: the point is
+   * seeing the notes being played land inside it — or not — so the two lights
+   * share the neck rather than taking turns (Fretboard.svelte draws them in
+   * layers). Kept on this device like the last score, and never part of a tone.
+   */
+  const SCALE_KEY = 'reader-scale';
+  let scaleId = $state('');
+  let scaleRoot = $state(0);
+  const scaleDef = $derived(scaleById(scaleId) ?? null);
+  const scaleNotes = $derived(stave && scaleDef ? scaleOnNeck(stave.tuning, stave.capo, scaleRoot, scaleDef) : []);
+  const scaleNames = $derived(scaleDef ? scaleNoteNames(scaleRoot, scaleDef) : []);
+  function rememberScale() { void dbPut(STORES.state, { scaleId, scaleRoot }, SCALE_KEY); }
 
   /**
    * One line, running right to left under a playhead that stays in the middle
@@ -233,6 +249,13 @@
       if (disposed) return;
       score = parsed; filename = file.name;
       track = Math.max(0, parsed.tracks.findIndex(t => t.staves.some(s => s.tuning.length > 0)));
+      // The key follows the song until a scale is chosen: picking one then
+      // starts in the key being played. A scale already lit is the player's,
+      // and a new file does not move it.
+      if (scaleId === '') {
+        const first = parsed.tracks[track]?.staves[0]?.bars[0];
+        if (first) scaleRoot = keyOfSignature(first.keySignature, first.keySignatureType === 1);
+      }
       muted = false; solo = false; looping = false; selection = false; position = 0; duration = 0; lit = [];
       const fresh = await reader(alpha);
       fresh.renderScore(parsed, [track]);
@@ -285,7 +308,14 @@
       e.preventDefault(); e.stopPropagation(); togglePlay();
     }
   }
-  onMount(() => { void loadMedia('last-score').then(file => { if (file && !disposed && !busy && !score) void open(file, false); }); });
+  onMount(() => {
+    void dbGet<{ scaleId?: unknown; scaleRoot?: unknown }>(STORES.state, SCALE_KEY).then(saved => {
+      if (disposed || !saved) return;
+      if (typeof saved.scaleId === 'string' && (saved.scaleId === '' || scaleById(saved.scaleId))) scaleId = saved.scaleId;
+      if (typeof saved.scaleRoot === 'number' && Number.isInteger(saved.scaleRoot) && saved.scaleRoot >= 0 && saved.scaleRoot < 12) scaleRoot = saved.scaleRoot;
+    });
+    void loadMedia('last-score').then(file => { if (file && !disposed && !busy && !score) void open(file, false); });
+  });
   onDestroy(() => { disposed = true; api?.destroy(); });
 </script>
 
@@ -357,7 +387,21 @@
         <div class="score-paper" class:hidden={!score} bind:this={surface}></div>
         {#if tail > 0}<div class="score-tail" style:width={`${tail}px`}></div>{/if}
       </div>
-      {#if score && stave}<Fretboard strings={stave.tuning} {lit} capo={stave.capo} />{/if}
+      {#if score && stave}
+        <div class="scale-bar">
+          <span class="eyebrow">SCALE</span>
+          <label>Key<select aria-label="Scale key" bind:value={scaleRoot} onchange={rememberScale}>{#each KEYS as k}<option value={k.root}>{k.label}</option>{/each}</select></label>
+          <label>Scale<select aria-label="Scale" bind:value={scaleId} onchange={rememberScale}>
+            <option value="">None</option>
+            {#each SCALE_GROUPS as group}<optgroup label={group}>{#each SCALES.filter(s => s.group === group) as s}<option value={s.id}>{s.name}</option>{/each}</optgroup>{/each}
+          </select></label>
+          {#if scaleDef}
+            <span class="scale-notes" aria-label="Notes of the scale">{scaleNames.join(' · ')}</span>
+            <span class="legend" aria-hidden="true"><i class="root"></i>Root<i class="tone"></i>Scale<i class="play"></i>Playing</span>
+          {/if}
+        </div>
+        <Fretboard strings={stave.tuning} {lit} capo={stave.capo} scale={scaleNotes} />
+      {/if}
       </div>
     </div>
     {#if score}<div class="reader-footer"><span>{score.title || filename}{score.artist ? ` · ${score.artist}` : ''}</span><span>{ready ? 'Click the score · Space plays' : 'Preparing playback…'}</span></div>{/if}
@@ -372,6 +416,7 @@
   .reader-body{display:grid;grid-template-columns:185px minmax(0,1fr)}.stage{display:flex;flex-direction:column;min-width:0;min-height:0}.reader-body.empty{display:block}aside{padding:22px 12px;background:#202020;min-width:0;border-right:1px solid #414141}.tracks{display:grid;gap:5px;margin-top:15px;max-height:300px;overflow:auto}.tracks button{display:flex;align-items:baseline;gap:10px;text-align:left;border-color:transparent;background:none;padding:10px 8px;overflow-wrap:anywhere;line-height:1.5}.tracks .selected{background:#363636;border-color:#555}.track-number{font:10px var(--mono);color:#9e9e9e}.track-bars{margin-left:auto;font:10px var(--mono);color:#8b8b8b}.tracks .selected .track-bars{color:#c8c8c8}.track-tools{display:flex;gap:6px;margin:16px 8px}.track-tools button{flex:1}aside p{font:11px var(--mono);line-height:1.7;padding:0 8px;color:#ccc}aside p span{color:#999}.plays{font:11px/1.7 var(--body)!important;color:#b6b6b6;margin:16px 0 0}.plays b{color:#e4e4e4;font-weight:500}.jump{display:block;margin-top:9px;padding:5px 9px;font-size:11px;min-height:30px}aside .hint{font:11px/1.7 var(--body);color:#aaa;margin-top:22px}
   .score-viewport{overflow-x:auto;overflow-y:hidden;min-width:0;position:relative;scrollbar-color:#777 #dedbd5}.has-score{display:flex;align-items:stretch}.score-tail{flex:0 0 auto}.has-score{background:#faf8f3;color:#222}.score-paper{flex:0 0 auto;min-width:100%;min-height:120px;background:#faf8f3;color:#171717}.hidden{display:none}.empty-state{padding:48px 24px;text-align:center;background:radial-gradient(ellipse at top,#303030,#1c1c1c 75%)}h3{font:500 21px var(--body);margin:22px 0 10px}.empty-state p{font-size:13px;color:#b2b2b2;margin-bottom:20px}.formats{font:10px var(--mono);letter-spacing:1px;color:#c5c1ba}.empty-state small{display:block;margin-top:16px;font-size:11px;color:#999}.tab-mark{width:124px;position:relative;margin:auto;padding:4px 0}.tab-mark i{display:block;height:1px;background:#696762;margin:7px 0}.tab-mark span{position:absolute;inset:0;display:grid;place-items:center;font:600 17px var(--mono);letter-spacing:3px;color:#dedbd5;text-shadow:0 0 6px #222;background:linear-gradient(90deg,transparent,#282828 32%,#282828 68%,transparent)}
   .reader-footer{display:flex;justify-content:space-between;gap:16px;padding:12px 18px;border-top:1px solid #404040;font:10px var(--mono);color:#aaa}.reader-footer>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.focused{position:fixed;inset:16px;z-index:50;margin:0;display:flex;flex-direction:column;box-shadow:0 0 0 30px #080808e8}.focused .drop-surface{flex:1;min-height:0;display:flex;flex-direction:column}.focused .reader-body{flex:1;min-height:0}.focused .stage{justify-content:center}.focused aside{overflow:auto}
+  .scale-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 18px;background:#242424;border-top:1px solid #404040}.scale-bar label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa}.scale-bar select{padding:5px}.scale-notes{font:11px var(--mono);color:#dedbd5;letter-spacing:.5px}.legend{margin-left:auto;display:flex;align-items:center;gap:6px;font:10px var(--mono);color:#999}.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:8px}.legend .root{background:#2f6f6a}.legend .tone{border:1.5px solid #5fa39c;box-sizing:border-box}.legend .play{background:#c08a32}
   :global(.at-cursor-bar){background:#bda77230}:global(.at-cursor-beat){background:#866329;width:3px}:global(.at-selection div){background:#bda77244}:global(.at-highlight *){fill:#a37320!important;stroke:#a37320!important}
-  @media(max-width:760px){.reader-heading{padding:18px 14px}.heading-actions{gap:6px}.heading-actions button{padding:5px 8px}.reader-body{grid-template-columns:minmax(0,1fr)}aside{padding:12px;border-right:0;border-bottom:1px solid #444}aside>.eyebrow,aside p:not(.plays){display:none}.plays{margin-top:10px}.jump{display:inline-block;margin:0 0 0 8px}.tracks{display:flex;margin:0;overflow:auto;max-height:90px}.tracks button{flex-shrink:0;max-width:180px}.track-tools{margin:10px 0 0;max-width:160px}.transport{padding:12px;gap:8px}.volume{display:none!important}.view-select{margin-left:0}.focused{inset:6px}.focused .reader-body{display:flex;flex-direction:column}.focused .stage{flex:1}.reader-footer>span:last-child{display:none}.empty-state{padding:32px 18px}}
+  @media(max-width:760px){.scale-bar{padding:8px 12px;gap:8px}.legend{display:none}.reader-heading{padding:18px 14px}.heading-actions{gap:6px}.heading-actions button{padding:5px 8px}.reader-body{grid-template-columns:minmax(0,1fr)}aside{padding:12px;border-right:0;border-bottom:1px solid #444}aside>.eyebrow,aside p:not(.plays){display:none}.plays{margin-top:10px}.jump{display:inline-block;margin:0 0 0 8px}.tracks{display:flex;margin:0;overflow:auto;max-height:90px}.tracks button{flex-shrink:0;max-width:180px}.track-tools{margin:10px 0 0;max-width:160px}.transport{padding:12px;gap:8px}.volume{display:none!important}.view-select{margin-left:0}.focused{inset:6px}.focused .reader-body{display:flex;flex-direction:column}.focused .stage{flex:1}.reader-footer>span:last-child{display:none}.empty-state{padding:32px 18px}}
 </style>

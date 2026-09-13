@@ -14,11 +14,22 @@
    * and the point here is reading a position, not looking at a photograph of a
    * guitar. Nothing here is skeuomorphic (DESIGN.md): flat lines on the same
    * paper as the score.
+   *
+   * Two lights can share a position: a scale, marked as a ring, and the note
+   * being played, a filled dot. They are drawn in three layers — the played
+   * note's halo, the scale, the played note's core — so a note played inside
+   * the scale reads as a dot inside its ring, one outside it as a dot alone,
+   * and neither ever hides the other.
    */
-  let { strings, lit, capo = 0 }: {
+  import type { NeckNote } from '../engine/scales.ts';
+
+  let { strings, lit, capo = 0, scale = [] }: {
     strings: readonly number[];
+    /** Frets counted from the capo, as alphaTab reports a played note. */
     lit: readonly { string: number; fret: number }[];
     capo?: number;
+    /** The same coordinates as `lit`, so the two land on the same spot. */
+    scale?: readonly NeckNote[];
   } = $props();
 
   const FRETS = 24;
@@ -30,7 +41,9 @@
   // The highest string on top, the way a tab staff is written: the dots then
   // land on the same rows as the numbers above them.
   const BOARD = 780;
-  const NUT = 34;
+  // Room left of the nut for two columns: the string's name, and a scale ring
+  // on the open string, which would otherwise sit on top of the name.
+  const NUT = 46;
   const END = BOARD - 14;
   const TOP = 26;
   const GAP = 20;
@@ -40,13 +53,24 @@
   // from the highest: a note's row is counted back from the bottom.
   const row = (index: number) => TOP + index * GAP;
   const y = (string: number) => row(strings.length - string);
-  const x = (fret: number) => (fret === 0 ? NUT - 12 : NUT + (fret - 0.5) * width);
+  /* Where a fret counted from the capo sits on the neck. alphaTab sounds a note
+     at tuning + capo + fret, so a tab's 0 under a capo on 2 is played at the
+     second fret, not at the nut. */
+  const x = (fret: number) => {
+    const onNeck = capo + fret;
+    return onNeck === 0 ? NUT - 12 : NUT + (onNeck - 0.5) * width;
+  };
   const middle = $derived(TOP + ((strings.length - 1) * GAP) / 2);
+  const onBoard = (note: { string: number; fret: number }) =>
+    note.string >= 1 && note.string <= strings.length && note.fret >= 0 && capo + note.fret <= FRETS;
+  const name = (note: { string: number; fret: number }) =>
+    NAMES[(((strings[strings.length - note.string] ?? 0) + capo + note.fret) % 12 + 12) % 12];
+  const played = $derived(lit.filter(onBoard));
 </script>
 
 <div class="neck" aria-hidden="true">
   <svg viewBox={`0 0 ${BOARD} ${height}`} preserveAspectRatio="xMidYMid meet">
-    <!-- frets, then strings on top of them, then what is being played -->
+    <!-- frets, then strings on top of them, then the scale and what is being played -->
     {#each Array(FRETS) as _, i}
       <line class="fret" x1={NUT + (i + 1) * width} x2={NUT + (i + 1) * width} y1={TOP - 7} y2={height - TOP + 7} />
     {/each}
@@ -59,18 +83,28 @@
     {#if capo > 0 && capo <= FRETS}<line class="capo" x1={NUT + capo * width} x2={NUT + capo * width} y1={TOP - 7} y2={height - TOP + 7} />{/if}
     {#each strings as note, i}
       <line class="string" x1={NUT} x2={END} y1={row(i)} y2={row(i)} style:stroke-width={0.7 + i * 0.2} />
-      <text class="open" x={NUT - 22} y={row(i) + 4}>{NAMES[((note % 12) + 12) % 12]}</text>
+      <text class="open" x={NUT - 36} y={row(i) + 4}>{NAMES[((note % 12) + 12) % 12]}</text>
     {/each}
     {#each [...INLAYS, ...DOUBLE] as fret}
       <text class="number" x={NUT + (fret - 0.5) * width} y={height - 6}>{fret}</text>
     {/each}
-    {#each lit as note (`${note.string}:${note.fret}`)}
-      {#if note.string >= 1 && note.string <= strings.length && note.fret >= 0 && note.fret <= FRETS}
-        <g class="lit">
-          <circle class="halo" cx={x(note.fret)} cy={y(note.string)} r="13" />
-          <circle class="core" cx={x(note.fret)} cy={y(note.string)} r="6.5" />
+
+    <!-- 1. the played note's glow, under everything it could cover -->
+    {#each played as note (`h${note.string}:${note.fret}`)}
+      <circle class="halo" cx={x(note.fret)} cy={y(note.string)} r="13" />
+    {/each}
+    <!-- 2. the scale: rings, the root filled, each named -->
+    {#each scale as note (`s${note.string}:${note.fret}`)}
+      {#if onBoard(note)}
+        <g class="scale" class:root={note.root}>
+          <circle class="mark" cx={x(note.fret)} cy={y(note.string)} r="8.5" />
+          <text class="degree" x={x(note.fret)} y={y(note.string) + 3}>{name(note)}</text>
         </g>
       {/if}
+    {/each}
+    <!-- 3. the played note itself, inside its ring when it has one -->
+    {#each played as note (`c${note.string}:${note.fret}`)}
+      <circle class="core" cx={x(note.fret)} cy={y(note.string)} r="6" />
     {/each}
   </svg>
 </div>
@@ -85,10 +119,16 @@
   .inlay{fill:#e6e1d5}
   .open{font:11px var(--mono);fill:#8b8378;text-anchor:middle}
   .number{font:9px var(--mono);fill:#b1a99d;text-anchor:middle}
-  .halo{fill:#a3732033}
+  /* The scale is cool and drawn, the playing note warm and filled: two hues
+     and two shapes, so neither depends on telling colours apart (DESIGN.md §8). */
+  .mark{fill:#faf8f3;stroke:#2f6f6a;stroke-width:1.6}
+  .degree{font:7.5px var(--mono);fill:#2f6f6a;text-anchor:middle;pointer-events:none}
+  .root .mark{fill:#2f6f6a}
+  .root .degree{fill:#faf8f3;font-weight:600}
+  .halo{fill:#a3732040}
   .core{fill:#a37320}
-  .lit{transform-box:fill-box;transform-origin:center;animation:strike .13s ease-out}
+  .halo,.core{transform-box:fill-box;transform-origin:center;animation:strike .13s ease-out}
   @keyframes strike{from{opacity:0;transform:scale(.55)}to{opacity:1;transform:scale(1)}}
-  @media(prefers-reduced-motion:reduce){.lit{animation:none}}
-  @media(max-width:760px){.neck{padding:10px 8px 14px;min-height:110px}.number{display:none}}
+  @media(prefers-reduced-motion:reduce){.halo,.core{animation:none}}
+  @media(max-width:760px){.neck{padding:10px 8px 14px;min-height:110px}.number{display:none}.degree{display:none}}
 </style>
