@@ -49,7 +49,9 @@ Trois contraintes non négociables, par ordre de priorité :
 **Une exception à la règle des 15 kB, et une seule : le lecteur de tablatures.**
 Lire un fichier Guitar Pro demande un parseur par format et un moteur de gravure ;
 il n'existe pas de version de ça à 15 kB, et l'écrire serait un deuxième projet.
-alphaTab pèse 1,2 Mo, plus 3,6 Mo de police Bravura et 2,3 Mo de soundfont. Ce
+alphaTab pèse 1,2 Mo, plus 3,6 Mo de police Bravura et 38 Mo de soundfont
+(MuseScore_General en SF3 : la SONiVOX livrée avec alphaTab faisait 2,3 Mo et
+sonnait comme un jouet). Ce
 qui rend l'exception acceptable est que **rien de tout ça n'est chargé tant
 qu'aucune tablature n'est ouverte** : `import()` dynamique, donc zéro octet sur
 le chemin écouter et zéro sur le chemin jouer. La règle reste la règle partout

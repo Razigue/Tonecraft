@@ -166,7 +166,10 @@
         staveProfile: notation === 'tab' ? alpha.StaveProfile.Tab : alpha.StaveProfile.ScoreTab },
       player: {
         playerMode: alpha.PlayerMode.EnabledSynthesizer,
-        soundFont: `${BASE}soundfont/sonivox.sf2`,
+        // Not alphaTab's bundled SONiVOX: at 2.3 MB its guitars sound like a
+        // toy. MuseScore_General is FluidR3 retuned, and as SF3 (Ogg samples)
+        // it is 38 MB instead of 206 — fetched with the first file, never before.
+        soundFont: `${BASE}musescore-general/MuseScore_General.sf3`,
         scrollElement: viewport, enableCursor: true, enableUserInteraction: true,
       },
     });

@@ -27,6 +27,10 @@ const errors = [];
 // never which step threw it.
 page.on('pageerror', e => { errors.push(e.message); console.log('pageerror:', e.stack ?? e.message); });
 page.on('console', m => { if (m.type() === 'error') console.log('browser:', m.text()); });
+// The path lives in TabReader.svelte and nothing else fails if it goes stale:
+// alphaTab would sit silently waiting for a soundfont that 404s.
+const soundFonts = [];
+page.on('response', r => { if (r.url().endsWith('/MuseScore_General.sf3')) soundFonts.push(r.status()); });
 try {
   await page.goto(`http://127.0.0.1:${server.address().port}${base}`);
   await page.getByRole('button', { name: 'Musicien' }).click();
@@ -78,6 +82,7 @@ try {
   await page.getByRole('button', { name: 'Play tablature', exact: true }).click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor();
   await page.waitForFunction(() => !document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
+  assert.deepEqual(soundFonts, [200], 'the MuseScore_General soundfont is fetched once, and served');
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
   await page.getByRole('combobox', { name: 'Playback speed', exact: true }).selectOption('70');
   await page.getByRole('button', { name: '↻ Loop song', exact: true }).click();

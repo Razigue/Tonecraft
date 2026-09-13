@@ -194,7 +194,7 @@ range, and one button goes there. Nothing is uploaded: the file is read in the t
 the last one opened comes back on the next visit.
 
 **It costs nothing until it is used.** alphaTab, the Bravura notation font and
-the soundfont are 7 MB between them, far past the 15 kB this project allows a
+the soundfont are 43 MB between them, far past the 15 kB this project allows a
 dependency — so they are fetched by a dynamic `import()` at the first file
 opened, and neither the listening path nor the playing path downloads a byte of
 them. Its playback has its own `AudioContext` and never meets the chain, which
@@ -247,7 +247,12 @@ schema ──> engine ──> app ──> site
 
 ## What is in this repository that is binary
 
-One file: `public/dsp/chain.wasm`, `dsp/` and NeuralAmpModelerCore at a pinned
+Two files. The tab reader's soundfont, `public/musescore-general/MuseScore_General.sf3`
+(38 MB, third-party and unmodified — provenance and checksum in
+`assets/README.md`), is committed so the deploy stays a pure function of the
+commit; it is fetched only when a tablature is opened.
+
+The other is `public/dsp/chain.wasm`, `dsp/` and NeuralAmpModelerCore at a pinned
 tag, compiled by `scripts/build-dsp.mjs` with SIMD. Committing it is what makes
 a clean checkout deployable without a C++ toolchain and without CI needing
 network access beyond npm — and it is the file Tonecraft Engine is tested
@@ -289,9 +294,13 @@ pushed, with asset names that never change, so the settings sheet links to
   **GNU GPL v3**. See `public/models/COPYING`.
 - **The tab reader** — [alphaTab](https://alphatab.net), MPL-2.0, © Daniel
   Kuschny and contributors. Its **Bravura** notation font (SIL OFL 1.1,
-  Steinberg) and the **SONiVOX EAS** soundfont (Apache-2.0, © Sonic Network
-  Inc.) are copied into `public/font/` and `public/soundfont/` at build time,
-  each with its own licence file, and served from there.
+  Steinberg) is copied into `public/font/` at build time, with its licence
+  file, and served from there.
+- **The tab reader's instruments** — the **MuseScore_General** soundfont
+  v0.2.0, MIT: © Frank Wen (FluidR3), Michael Cowgill (FluidR3Mono), S.
+  Christian Collins (MuseScore_General), Ethan Winer (Temple Blocks), Michael
+  Schorsch (Drumline Cymbals). Committed in `public/musescore-general/` with its
+  licence file.
 
 ⚠️ The captures are GPL v3. Distributing Tonecraft with `public/models/` included
 brings the obligations of the GPL v3 with it. For personal use there is no
