@@ -5,6 +5,7 @@
   import Fretboard from './Fretboard.svelte';
   import { KEYS, SCALES, SCALE_GROUPS, scaleById, scaleOnNeck, scaleNoteNames, keyOfSignature } from '../engine/scales.ts';
   import { STORES, dbGet, dbPut } from '../store/db.ts';
+  import { restoreFadedVolume } from '../engine/tab-fades.ts';
 
   let { ontempo }: { ontempo?: (bpm: number) => void } = $props();
 
@@ -309,6 +310,7 @@
       // to be a score leaves the one being read exactly as it was.
       const parsed = alpha.importer.ScoreLoader.loadScoreFromBytes(new Uint8Array(await file.arrayBuffer()), new alpha.Settings());
       if (disposed) return;
+      restoreFadedVolume(parsed, alpha);
       score = parsed; filename = file.name;
       track = Math.max(0, parsed.tracks.findIndex(t => t.staves.some(s => s.tuning.length > 0)));
       // The key follows the song until a scale is chosen: picking one then
