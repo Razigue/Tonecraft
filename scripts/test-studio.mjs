@@ -96,6 +96,14 @@ try {
   await page.getByRole('button', { name: /^02 Bass/ }).click();
   assert.equal(await page.getByRole('button', { name: 'Solo', exact: true }).getAttribute('aria-pressed'), 'true', 'a solo survives choosing other tracks');
   assert.equal(await page.locator('.tracks button.silenced').count(), 2, 'the track list shows which tracks a solo silences');
+  // A volume per track, kept like mute and solo while other tracks are chosen.
+  assert.equal(await page.locator('.tracks input.track-volume').count(), 3, 'every track has its own volume');
+  await page.getByLabel('Volume of Guitar', { exact: true }).fill('35');
+  await page.getByRole('button', { name: /^03 Late Solo/ }).click();
+  await page.getByRole('button', { name: /^02 Bass/ }).click();
+  assert.equal(await page.getByLabel('Volume of Guitar', { exact: true }).inputValue(), '35', 'a track keeps its volume');
+  assert.equal(await page.getByLabel('Volume of Bass', { exact: true }).inputValue(), '100', 'the others stay at full volume');
+  await page.getByLabel('Volume of Guitar', { exact: true }).fill('100');
   // Back to the whole band unmuted, for the playback below.
   await page.getByRole('button', { name: 'Solo', exact: true }).click();
   await page.getByRole('button', { name: /^01 Guitar/ }).click();
