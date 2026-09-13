@@ -5,7 +5,6 @@
   import Fretboard from './Fretboard.svelte';
   import { KEYS, SCALES, SCALE_GROUPS, scaleById, scaleOnNeck, scaleNoteNames, keyOfSignature } from '../engine/scales.ts';
   import { STORES, dbGet, dbPut } from '../store/db.ts';
-  import { prepareSoundFont } from '../engine/soundfont.ts';
 
   /** The score's opening tempo, and where on screen the score came in from. */
   let { ontempo }: { ontempo?: (bpm: number, from: DOMRect) => void } = $props();
@@ -159,18 +158,24 @@
   /**
    * The instruments, fetched once and patched once for every reader after it.
    * Not handed to alphaTab as a URL: MuseScore_General is voiced for
-   * FluidSynth, and under alphaTab its piano was skipped outright — a warning
-   * per sample, and a tab with a piano in it that played nothing at all — then,
-   * once loaded, muffled and 45 dB too quiet. `prepareSoundFont` corrects it in
-   * memory (engine/soundfont.ts). alphaTab copies what it is given to its
-   * worker, so the same bytes serve the next file opened too.
+   * FluidSynth, and alphaTab reads it otherwise — a piano that silenced the
+   * whole tab, an instrument 100 dB down, synths with their filters shut.
+   * `prepareSoundFont` corrects a copy in memory (engine/soundfont.ts), in a
+   * worker of its own, because it would hold the main thread for 45-75 ms.
+   * alphaTab copies what it is given to its worker, so the same bytes serve
+   * the next file opened too.
    */
   let instruments: Promise<Uint8Array> | null = null;
   function soundFont() {
-    instruments ??= fetch(`${BASE}musescore-general/MuseScore_General.sf3`)
-      .then(r => { if (!r.ok) throw new Error(`the instruments did not load (HTTP ${r.status})`); return r.arrayBuffer(); })
-      .then(buffer => { const bytes = new Uint8Array(buffer); prepareSoundFont(bytes); return bytes; })
-      .catch(e => { instruments = null; throw e; });
+    instruments ??= new Promise<Uint8Array>((resolve, reject) => {
+      const worker = new Worker(new URL('../engine/soundfont-worker.ts', import.meta.url), { type: 'module' });
+      worker.onmessage = (e: MessageEvent<{ bytes?: Uint8Array; error?: string }>) => {
+        worker.terminate();
+        if (e.data.bytes) resolve(e.data.bytes); else reject(new Error(e.data.error ?? 'the instruments did not load'));
+      };
+      worker.onerror = e => { worker.terminate(); reject(new Error(e.message || 'the instruments did not load')); };
+      worker.postMessage(new URL(`${BASE}musescore-general/MuseScore_General.sf3`, location.href).href);
+    }).catch(e => { instruments = null; throw e; });
     return instruments;
   }
 

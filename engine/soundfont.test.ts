@@ -3,10 +3,11 @@
  *
  * Everything that went wrong here still produced sound, or nothing that looked
  * like a bug: a console full of "Skipping load of unsupported sample", a tab
- * with a piano in it that played nothing at all, then a piano that played 45 dB
- * too quiet and muffled. Each is checked through alphaTab's own synthesizer,
- * rendering offline from the committed file — as it is on disk, which is the
- * bug, and prepared, which is what the reader loads.
+ * with a piano in it that played nothing at all, a piano 45 dB too quiet and
+ * muffled, an instrument that was silence, synths with their filters shut.
+ * Each is checked through alphaTab's own synthesizer, rendering offline from
+ * the committed file — as it is on disk, which is the bug, and prepared, which
+ * is what the reader loads.
  *
  * Usage:  npm run test:soundfont
  */
@@ -27,7 +28,7 @@ const check = (name: string, ok: boolean, detail = ''): void => {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
 };
 
-/** The smallest SoundFont the patch will walk: RIFF sfbk, a LIST pdta, one shdr. */
+/** The smallest SoundFont the retyping will walk: RIFF sfbk, a LIST pdta, one shdr. */
 function tiny(types: readonly number[]): Uint8Array {
   const shdr = new Uint8Array((types.length + 1) * 46);   // plus the terminal EOS record
   const sv = new DataView(shdr.buffer);
@@ -75,21 +76,26 @@ const typesOf = (bytes: Uint8Array, count: number): number[] => {
 }
 
 {
-  let threw = false;
-  try { monoSoundFont(new TextEncoder().encode('<html>404 Not Found</html>')); } catch { threw = true; }
-  check('a page that is not a SoundFont is an error, not a silent reader', threw);
+  let threw = 0;
+  for (const f of [monoSoundFont, prepareSoundFont]) {
+    try { f(new TextEncoder().encode('<html>404 Not Found</html>')); } catch { threw++; }
+  }
+  check('a page that is not a SoundFont is an error, not a silent reader', threw === 2);
 }
 
 const disk = new Uint8Array(fs.readFileSync(FILE));
-const prepared = disk.slice();
+/** What the reader loaded before the voicing was corrected: the stereo samples retyped, nothing else. */
 const monoOnly = disk.slice();
+monoSoundFont(monoOnly);
+const report = prepareSoundFont(disk);
+const prepared = report.bytes;
 {
-  const report = prepareSoundFont(prepared);
   check('the committed soundfont has its stereo samples retyped', report.retyped === 146, `${report.retyped} of them`);
-  check('the pianos are the presets corrected, and only they',
-    report.pianoPresets === 4 && report.pianoInstruments === 16,
-    `${report.pianoPresets} presets, ${report.pianoInstruments} instruments`);
-  check('and the file on disk is untouched', monoSoundFont(monoOnly) === 146 && prepareSoundFont(disk.slice()).retyped === 146);
+  check('values alphaTab would count twice are corrected', report.summed > 0, `${report.summed} values`);
+  check('filter modulation is written into generators', report.filters > 0,
+    `${report.filters} zones, ${report.copies} instruments copied to follow a preset's key`);
+  const fresh = fs.readFileSync(FILE);
+  check('and the bytes given are left as they were', disk.length === fresh.length && disk.every((v, i) => v === fresh[i]));
 }
 
 /** MIDI for a score, with the track's instrument set where alphaTab reads it. */
@@ -150,12 +156,28 @@ function attack(r: Render): number {
   return 20 * Math.log10(peak + 1e-20);
 }
 
+/**
+ * How much of a note's first half second is treble: the RMS of the left
+ * channel's first difference over its RMS. A first difference rises 6 dB per
+ * octave, so a filter that opens by octaves moves it by a large factor.
+ */
+function brightness(r: Render): number {
+  let diff = 0, sum = 0;
+  for (let i = 2; i < Math.min(r.samples.length, 0.5 * 88200); i += 2) {
+    diff += (r.samples[i]! - r.samples[i - 2]!) ** 2;
+    sum += r.samples[i]! ** 2;
+  }
+  return Math.sqrt(diff / (sum + 1e-30));
+}
+
 /** One whole note on a guitar-tuned staff (`string.fret`), at a dynamic. */
 function note(position: string, dynamic: string, program: number): alpha.midi.MidiFile {
   const importer = new alpha.importer.AlphaTexImporter();
   importer.initFromString(`\\title "Note" \\tempo 60 . \\track "Note" :1 ${position}{dy ${dynamic}} | :1 r`, new alpha.Settings());
   return midiOf(importer.readScore(), { 0: program });
 }
+const A3 = '2.3', A4 = '5.1';
+const level = (soundFont: Uint8Array, program: number, position = A3): number => attack(render(soundFont, note(position, 'f', program), 1));
 
 {
   // The bug as the player first met it: a piano anywhere in the score, and not
@@ -180,24 +202,50 @@ function note(position: string, dynamic: string, program: number): alpha.midi.Mi
   // the range, because the low and high halves are different instruments with
   // different filters, and a fix that only lifted one half would still be a
   // piano that disappears in the treble.
-  const positions: [string, string][] = [['0.5', 'A2'], ['2.3', 'A3'], ['5.1', 'A4'], ['12.1', 'E5']];
-  const gaps = positions.map(([p]) => attack(render(prepared, note(p, 'f', 2), 1)) - attack(render(prepared, note(p, 'f', 0), 1)));
-  const shipped = attack(render(monoOnly, note('2.3', 'f', 0), 1)) - attack(render(monoOnly, note('2.3', 'f', 2), 1));
+  const positions: [string, string][] = [['0.5', 'A2'], [A3, 'A3'], [A4, 'A4'], ['12.1', 'E5']];
+  const gaps = positions.map(([p]) => level(prepared, 2, p) - level(prepared, 0, p));
+  const shipped = level(monoOnly, 0) - level(monoOnly, 2);
   check('a forte grand piano sits within 10 dB of the electric piano, low to high',
     gaps.every((g) => g > -3 && g < 10),
     positions.map(([, n], i) => `${n} ${gaps[i]!.toFixed(1)}`).join(', ') + ' dB below');
   check('where loaded but uncorrected it was 45 dB and more below', shipped < -40, `${shipped.toFixed(1)} dB`);
 
   const dynamics = ['ppp', 'p', 'mp', 'mf', 'f', 'fff'];
-  const levels = dynamics.map((d) => attack(render(prepared, note('2.3', d, 0), 1)));
+  const levels = dynamics.map((d) => attack(render(prepared, note(A3, d, 0), 1)));
   check('and it plays louder the harder it is struck',
     levels.every((v, i) => i === 0 || v > levels[i - 1]!),
     dynamics.map((d, i) => `${d} ${levels[i]!.toFixed(1)}`).join(', '));
+}
 
-  // Scope: nothing but the pianos was touched.
-  const guitar = render(monoOnly, note('2.3', 'f', 29), 1).samples;
-  const same = render(prepared, note('2.3', 'f', 29), 1).samples;
-  check('the other instruments render bit-identical', guitar.length === same.length && guitar.every((v, i) => v === same[i]));
+{
+  // Attenuation set in a global zone and again in a local one, which alphaTab
+  // adds up. Each is measured against its own neighbour, before and after.
+  const ice = [level(monoOnly, 96), level(prepared, 96)];
+  check('Ice Rain, counted 100 dB down, is heard', ice[0]! < -200 && ice[1]! > -50,
+    `${ice[0]!.toFixed(0)} dB, then ${ice[1]!.toFixed(1)}`);
+  const bandoneon = [monoOnly, prepared].map((b) => level(b, 23) - level(b, 22));
+  check('the bandoneon comes up to the harmonica beside it', bandoneon[0]! < -15 && Math.abs(bandoneon[1]!) < 8,
+    `${bandoneon[0]!.toFixed(1)} dB, then ${bandoneon[1]!.toFixed(1)}`);
+  const fm = [monoOnly, prepared].map((b) => level(b, 5, A3) - level(b, 5, A4));
+  check('the FM electric piano no longer drops from A4 up', fm[0]! > 12 && Math.abs(fm[1]!) < 6,
+    `A3 to A4 ${fm[0]!.toFixed(1)} dB, then ${fm[1]!.toFixed(1)}`);
+}
+
+{
+  // Filters the soundfont opens with modulators, which alphaTab ignores.
+  for (const [program, name] of [[90, 'polysynth'], [38, 'synth bass']] as const) {
+    const [before, after] = [monoOnly, prepared].map((b) => brightness(render(b, note(A3, 'f', program), 1)));
+    check(`the ${name}'s filter opens`, after! > 2 * before!, `treble ${before!.toFixed(3)}, then ${after!.toFixed(3)}`);
+  }
+}
+
+{
+  // Scope: an instrument neither correction reaches renders exactly as before.
+  for (const [program, name] of [[29, 'overdrive guitar'], [27, 'clean guitar'], [34, 'picked bass']] as const) {
+    const before = render(monoOnly, note(A3, 'f', program), 1).samples;
+    const after = render(prepared, note(A3, 'f', program), 1).samples;
+    check(`the ${name} renders bit-identical`, before.length === after.length && before.every((v, i) => v === after[i]));
+  }
 }
 
 console.log(failures === 0 ? '\nall checks passed\n' : `\n${failures} check(s) failed\n`);
