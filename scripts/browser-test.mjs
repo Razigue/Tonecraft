@@ -741,6 +741,34 @@ await nativePage.getByRole('button', { name: 'Audio settings' }).first().click()
 check('and the engine choice shows what is actually running',
   (await engines.nth(0).getAttribute('aria-checked')) === 'true');
 
+/*
+ * An engine older than the newest release is offered the update, explicitly.
+ * Both ends are faked: the engine by a routed WebSocket that says hello at
+ * 0.1.0, GitHub by a routed release list whose newest engine is 0.1.2.
+ */
+const updatePage = await browser.newPage();
+await updatePage.routeWebSocket('ws://127.0.0.1:47800/', (ws) => {
+  ws.onMessage((data) => {
+    const message = JSON.parse(String(data));
+    if (message.type === 'hello') ws.send(JSON.stringify({ type: 'hello', abi: 1, version: '0.1.0', platform: 'windows', hosts: [], chain: false,
+      config: { host: null, input: null, output: null, sampleRate: null, bufferSize: null, inputChannels: null, outputChannels: null, monitor: 1 } }));
+  });
+});
+await updatePage.route('https://api.github.com/**', (route) => route.fulfill({
+  status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' },
+  body: JSON.stringify([{ tag_name: 'engine-v0.1.2', draft: false, prerelease: false }, { tag_name: 'engine-v0.1.1', draft: false, prerelease: false }]),
+}));
+await updatePage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+await updatePage.getByRole('button', { name: 'Musicien' }).click();
+await updatePage.getByRole('radiogroup', { name: 'Audio engine' }).getByRole('radio').nth(1).click();
+let updateOffered = false;
+try {
+  await updatePage.locator('.audio-settings a', { hasText: 'Update Tonecraft Engine' }).waitFor({ timeout: 15_000 });
+  updateOffered = true;
+} catch { /* reported below */ }
+check('an engine older than the newest release is offered the update', updateOffered,
+  updateOffered ? '' : await updatePage.locator('.audio-settings').innerText());
+
 await browser.close();
 server.close();
 

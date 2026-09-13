@@ -153,6 +153,26 @@
     api.timePosition = ms;
   }
 
+  /**
+   * alphaTab sizes its surface to the layout's unscaled width while the parts
+   * inside it are scaled: zoomed out, the line ended well before the surface
+   * did and scrolled on as blank paper; zoomed in, its last bars lay past the
+   * end, out of reach. The surface, and the cursor layer over it, are fitted
+   * to the parts actually drawn.
+   */
+  function fitSurface(reader: AlphaTabApi) {
+    const element = (reader.canvasElement as unknown as { element?: HTMLElement } | null)?.element;
+    if (!element) return;
+    let right = 0;
+    for (const child of element.children) {
+      if (child instanceof HTMLElement && 'layoutResultId' in child) right = Math.max(right, child.offsetLeft + child.offsetWidth);
+    }
+    if (right <= 0) return;
+    const width = `${Math.ceil(right)}px`;
+    element.style.width = width;
+    for (const layer of element.parentElement?.querySelectorAll<HTMLElement>(':scope > .at-cursors') ?? []) layer.style.width = width;
+  }
+
   /** The engine, the notation fonts and the soundfont: fetched at the first file opened, never before. */
   function library() {
     loading ??= import('@coderline/alphatab').catch(e => { loading = null; throw e; });
@@ -244,6 +264,7 @@
     // is longer than the window: on a short one it would be paper to nowhere.
     api.postRenderFinished.on(() => {
       if (!viewport || !surface) return;
+      fitSurface(created);
       tail = 0;
       const width = surface.scrollWidth;
       if (width > viewport.clientWidth) tail = Math.round(viewport.clientWidth / 2);
@@ -269,7 +290,9 @@
       lit = held;
     });
     api.playbackRangeChanged.on(e => { selection = e.playbackRange !== null; });
-    api.error.on(e => { error = e.message || 'Unable to display this score.'; busy = false; });
+    // alphaTab's own errors are for the console, not the player: a line like
+    // "Cannot read properties of undefined" says nothing they can act on.
+    api.error.on(e => { console.warn('[tab reader]', e); busy = false; });
     return api;
   }
 
@@ -308,7 +331,8 @@
         if (saved === null) storageNote = 'Opened for this session. Browser storage is unavailable.';
       }
     } catch (e) {
-      error = `Could not open ${file.name}. ${e instanceof Error ? e.message : 'The file may be damaged or unsupported.'}`;
+      console.warn('[tab reader]', e);
+      error = `Could not open ${file.name}: the file may be damaged or unsupported.`;
     } finally { busy = false; }
   }
 

@@ -177,6 +177,23 @@ try {
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
   console.log('ok the score slides horizontally under a centred playhead');
 
+  // Zoomed, the line ends where the score ends. alphaTab kept its surface at
+  // the unscaled width: zoomed out, blank paper ran on after the last bar;
+  // zoomed in, the last bars were out of reach.
+  for (const zoom of ['75', '150', '100']) {
+    await page.getByRole('combobox', { name: 'Tab zoom', exact: true }).selectOption(zoom);
+    await page.waitForTimeout(2500);
+    const line = await page.evaluate(() => {
+      const parts = [...document.querySelectorAll('.score-paper div')].filter(d => 'layoutResultId' in d);
+      const score = Math.max(...parts.map(p => p.offsetLeft + p.offsetWidth));
+      const tail = document.querySelector('.score-tail')?.offsetWidth ?? 0;
+      return { score, scrollable: document.querySelector('.score-viewport').scrollWidth - tail };
+    });
+    assert(Math.abs(line.scrollable - line.score) <= 2, `at ${zoom}% the line ends with the score (${JSON.stringify(line)})`);
+  }
+  assert.equal(await page.locator('.reader .error').count(), 0, 'zooming shows no error');
+  console.log('ok zooming keeps the line exactly as long as the score');
+
   // The neck under the tab is the track's own: a four-string bass draws four.
   assert.equal(await page.locator('.neck .fret').count(), 24);
   assert.equal(await page.locator('.neck .string').count(), 6);

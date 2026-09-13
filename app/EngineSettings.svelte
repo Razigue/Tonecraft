@@ -18,6 +18,7 @@
     type NativeConfig, type NativeDevice, type NativeInfo, type NativeOpened,
   } from '../engine/native-host.ts';
   import type { Backend } from '../engine/engine.ts';
+  import { engineUpdate } from '../engine/engine-update.ts';
 
   interface Props {
     backend: Backend;
@@ -47,6 +48,15 @@
   let devicesFor = '';
 
   const host = $derived(config?.host ?? info?.hosts[0]?.id ?? null);
+
+  /* The running engine against the newest release: it does not update itself. */
+  let latest = $state<string | null>(null);
+  $effect(() => {
+    const version = info?.version;
+    latest = null;
+    if (version !== undefined) void engineUpdate(version).then((l) => { if (info?.version === version) latest = l; });
+  });
+  const updateHref = platform === 'windows' || platform === 'macos' || platform === 'linux' ? downloadUrl(platform) : releasesUrl;
 
   async function probe(): Promise<void> {
     const found = await link.connect();
@@ -133,6 +143,10 @@
       <p class="failure"><span>Safari cannot reach Tonecraft Engine.</span><span class="fix">Use Chrome, Edge or Firefox for ASIO.</span></p>
     {:else if status === 'connected' && info !== null}
       <p class="t-small note">Tonecraft Engine {info.version} is running: the sound leaves through it.</p>
+      {#if latest !== null}
+        <p class="update t-small"><span>Version {latest} is available. Quit the engine from its icon, then open the new one.</span>
+          <a class="download update-link" href={updateHref} rel="noopener">Update Tonecraft Engine</a></p>
+      {/if}
 
       {#if info.hosts.length > 1}
         <label class="field"><span class="t-small">Driver</span>
@@ -263,6 +277,8 @@
   .guide p, .guide ol { margin: 0; line-height: 1.6; }
   .guide ol { padding-left: calc(var(--u) * 2.5); display: flex; flex-direction: column; gap: var(--u); }
   .download { color: var(--ink); font-weight: 500; }
+  .update { display: flex; flex-direction: column; align-items: flex-start; gap: var(--u); margin: 0; line-height: 1.6; }
+  .update-link { padding: 8px 14px; border: 1px solid var(--ink); border-radius: var(--radius); text-decoration: none; }
   a { color: var(--ink); }
   a:focus-visible, .inline:focus-visible, input:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
   code { font-family: var(--mono); font-size: 12px; }
