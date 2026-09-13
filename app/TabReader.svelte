@@ -5,6 +5,7 @@
   import Fretboard from './Fretboard.svelte';
   import { KEYS, SCALES, SCALE_GROUPS, scaleById, scaleOnNeck, scaleNoteNames, keyOfSignature } from '../engine/scales.ts';
   import { STORES, dbGet, dbPut } from '../store/db.ts';
+  import { monoSoundFont } from '../engine/soundfont.ts';
 
   /** The score's opening tempo, and where on screen the score came in from. */
   let { ontempo }: { ontempo?: (bpm: number, from: DOMRect) => void } = $props();
@@ -156,6 +157,24 @@
   }
 
   /**
+   * The instruments, fetched once and patched once for every reader after it.
+   * Not handed to alphaTab as a URL: MuseScore_General keeps its piano as
+   * stereo sample pairs, which alphaTab skips — a warning per sample in the
+   * console, and a tab with a piano in it that played nothing at all, because
+   * the empty piano voices turned the whole mix to NaN. `monoSoundFont` retypes
+   * them in memory (engine/soundfont.ts). alphaTab copies what it is given to
+   * its worker, so the same bytes serve the next file opened too.
+   */
+  let instruments: Promise<Uint8Array> | null = null;
+  function soundFont() {
+    instruments ??= fetch(`${BASE}musescore-general/MuseScore_General.sf3`)
+      .then(r => { if (!r.ok) throw new Error(`the instruments did not load (HTTP ${r.status})`); return r.arrayBuffer(); })
+      .then(buffer => { const bytes = new Uint8Array(buffer); monoSoundFont(bytes); return bytes; })
+      .catch(e => { instruments = null; throw e; });
+    return instruments;
+  }
+
+  /**
    * One reader per score, rather than a new score into the reader on screen.
    * A layout runs in alphaTab's own worker and what comes back is resolved
    * against whatever score the api holds by then, so replacing the score under
@@ -181,13 +200,20 @@
       display: { scale: zoom / 100, padding: [24, 28, 24, 28], layoutMode: alpha.LayoutMode.Horizontal,
         staveProfile: notation === 'tab' ? alpha.StaveProfile.Tab : alpha.StaveProfile.ScoreTab },
       player: {
+        // The soundfont is loaded below rather than named here: see soundFont().
         playerMode: alpha.PlayerMode.EnabledSynthesizer,
-        // Not alphaTab's bundled SONiVOX: at 2.3 MB its guitars sound like a
-        // toy. MuseScore_General is FluidR3 retuned, and as SF3 (Ogg samples)
-        // it is 38 MB instead of 206 — fetched with the first file, never before.
-        soundFont: `${BASE}musescore-general/MuseScore_General.sf3`,
         scrollElement: viewport, enableCursor: true, enableUserInteraction: true,
       },
+    });
+    // Not alphaTab's bundled SONiVOX: at 2.3 MB its guitars sound like a toy.
+    // MuseScore_General is FluidR3 retuned, and as SF3 (Ogg samples) it is
+    // 38 MB instead of 206 — fetched with the first file, never before.
+    const created = api;
+    void soundFont().then(bytes => {
+      if (api !== created || disposed) return;
+      if (!created.loadSoundFont(bytes, false)) error = 'Playback is unavailable: the synthesizer did not start.';
+    }).catch(e => {
+      if (api === created) error = `Playback is unavailable: ${e instanceof Error ? e.message : String(e)}.`;
     });
     api.masterVolume = volume / 100;
     // alphaTab's own handler for this layout parks the cursor on the left edge.
