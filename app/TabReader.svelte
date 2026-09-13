@@ -39,8 +39,14 @@
   let notation = $state('tab');
   let looping = $state(false);
   let selection = $state(false);
-  let solo = $state(false);
-  let muted = $state(false);
+  /**
+   * Solo and mute belong to each track, not to the one on screen: choosing a
+   * track used to clear them all, so muting a second track unmuted the first.
+   */
+  let soloed = $state.raw<ReadonlySet<number>>(new Set());
+  let mutedTracks = $state.raw<ReadonlySet<number>>(new Set());
+  const solo = $derived(soloed.has(track));
+  const muted = $derived(mutedTracks.has(track));
   let position = $state(0);
   let duration = $state(0);
   let volume = $state(60);
@@ -201,7 +207,11 @@
     api = new alpha.AlphaTabApi(surface, {
       // SVG, spelled out rather than relied on: canvas is forbidden here
       // (CLAUDE.md section 4) and alphaTab renders either way.
-      core: { fontDirectory: `${BASE}font/`, engine: 'svg' },
+      // Every part of the line drawn as soon as it is laid out, not when it
+      // scrolls into view: alphaTab's intersection-driven drawing left parts
+      // blank for good after a zoom — while playing, or in focus view — some
+      // requested and never drawn, some never reported visible at all.
+      core: { fontDirectory: `${BASE}font/`, engine: 'svg', enableLazyLoading: false },
       display: { scale: zoom / 100, padding: [24, 28, 24, 28], layoutMode: alpha.LayoutMode.Horizontal,
         staveProfile: notation === 'tab' ? alpha.StaveProfile.Tab : alpha.StaveProfile.ScoreTab },
       player: {
@@ -287,7 +297,7 @@
         const first = parsed.tracks[track]?.staves[0]?.bars[0];
         if (first) scaleRoot = keyOfSignature(first.keySignature, first.keySignatureType === 1);
       }
-      muted = false; solo = false; looping = false; selection = false; position = 0; duration = 0; lit = [];
+      mutedTracks = new Set(); soloed = new Set(); looping = false; selection = false; position = 0; duration = 0; lit = [];
       const fresh = await reader(alpha);
       fresh.renderScore(parsed, [track]);
       fresh.playbackSpeed = speed / 100;
@@ -306,10 +316,38 @@
 
   function chooseTrack(index: number) {
     if (!score || !api) return;
-    api.changeTrackSolo(score.tracks, false);
-    api.changeTrackMute(score.tracks, false);
-    track = index; solo = false; muted = false; lit = [];
+    track = index; lit = [];
     api.renderTracks([score.tracks[index]!]);
+  }
+  function toggled(set: ReadonlySet<number>): Set<number> {
+    const next = new Set(set);
+    if (!next.delete(track)) next.add(track);
+    return next;
+  }
+  function toggleSolo() {
+    if (!score || !api) return;
+    soloed = toggled(soloed);
+    api.changeTrackSolo([score.tracks[track]!], soloed.has(track));
+  }
+  function toggleMute() {
+    if (!score || !api) return;
+    mutedTracks = toggled(mutedTracks);
+    api.changeTrackMute([score.tracks[track]!], mutedTracks.has(track));
+  }
+
+  /**
+   * Focus view takes the reader out of the page's flow, so the page shortens
+   * under it and the browser clamps its scroll; Firefox leaves it there, near
+   * the top, when focus view closes. Leaving puts the page back where it was.
+   */
+  let pageScroll = 0;
+  async function setFocused(on: boolean) {
+    if (on === focused) return;
+    if (on) pageScroll = window.scrollY;
+    focused = on;
+    if (on) return;
+    await tick();
+    window.scrollTo({ top: pageScroll, behavior: 'instant' });
   }
   function updateDisplay() {
     if (!api) return;
@@ -334,7 +372,7 @@
     section?.focus({ preventScroll: true });
   }
   function keydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && focused) { focused = false; e.stopPropagation(); }
+    if (e.key === 'Escape' && focused) { void setFocused(false); e.stopPropagation(); }
     if (e.code === 'Space' && e.target instanceof Element && !e.target.closest('input,select,button')) {
       e.preventDefault(); e.stopPropagation(); togglePlay();
     }
@@ -355,7 +393,7 @@
   <div class="reader-heading">
     <div><span class="eyebrow">PRACTICE</span><h2>Tab reader</h2></div>
     <div class="heading-actions">
-      {#if score}<button aria-pressed={focused} onclick={() => { focused = !focused; }}> {focused ? 'Exit focus' : 'Focus view'} </button>{/if}
+      {#if score}<button aria-pressed={focused} onclick={() => setFocused(!focused)}> {focused ? 'Exit focus' : 'Focus view'} </button>{/if}
       <button class="primary" bind:this={openButton} disabled={busy} onclick={() => picker.click()}>{busy ? 'Opening…' : score ? 'Open another tab' : 'Import tab'}</button>
     </div>
     <input bind:this={picker} type="file" accept={ACCEPT} aria-label="Import tablature" onchange={e => { const f = e.currentTarget.files?.[0]; if (f) void open(f); e.currentTarget.value = ''; }} />
@@ -391,8 +429,8 @@
             <button class:selected={track === i} aria-pressed={track === i} onclick={() => chooseTrack(i)}><span class="track-number">{String(i + 1).padStart(2, '0')}</span><span>{t.name || `Track ${i + 1}`}</span><span class="track-bars" title="{activity[i]?.bars ?? 0} of {score.masterBars.length} bars have notes">{activity[i]?.bars ?? 0}</span></button>
           {/each}</div>
           <div class="track-tools">
-            <button aria-pressed={solo} class:active={solo} onclick={() => { solo = !solo; api?.changeTrackSolo([score!.tracks[track]!], solo); }}>Solo</button>
-            <button aria-pressed={muted} class:active={muted} onclick={() => { muted = !muted; api?.changeTrackMute([score!.tracks[track]!], muted); }}>Mute</button>
+            <button aria-pressed={solo} class:active={solo} onclick={toggleSolo}>Solo</button>
+            <button aria-pressed={muted} class:active={muted} onclick={toggleMute}>Mute</button>
           </div>
           <p class="plays">
             {#if selected.first < 0}This track has no notes: it stays silent wherever you are in the song.

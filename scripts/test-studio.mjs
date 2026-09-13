@@ -79,6 +79,23 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Solo', exact: true }).getAttribute('aria-pressed'), 'true');
   await page.getByRole('button', { name: /^01 Guitar/ }).click();
   assert.equal(await page.getByRole('button', { name: 'Solo', exact: true }).getAttribute('aria-pressed'), 'false');
+  // Solo and mute belong to their track: choosing another one used to clear
+  // them all, so muting a second track unmuted the first.
+  await page.getByRole('button', { name: 'Mute', exact: true }).click();
+  await page.getByRole('button', { name: /^03 Late Solo/ }).click();
+  assert.equal(await page.getByRole('button', { name: 'Mute', exact: true }).getAttribute('aria-pressed'), 'false');
+  await page.getByRole('button', { name: 'Mute', exact: true }).click();
+  await page.getByRole('button', { name: /^01 Guitar/ }).click();
+  assert.equal(await page.getByRole('button', { name: 'Mute', exact: true }).getAttribute('aria-pressed'), 'true', 'muting a second track leaves the first muted');
+  await page.getByRole('button', { name: /^02 Bass/ }).click();
+  assert.equal(await page.getByRole('button', { name: 'Solo', exact: true }).getAttribute('aria-pressed'), 'true', 'a solo survives choosing other tracks');
+  // Back to the whole band unmuted, for the playback below.
+  await page.getByRole('button', { name: 'Solo', exact: true }).click();
+  await page.getByRole('button', { name: /^01 Guitar/ }).click();
+  await page.getByRole('button', { name: 'Mute', exact: true }).click();
+  await page.getByRole('button', { name: /^03 Late Solo/ }).click();
+  await page.getByRole('button', { name: 'Mute', exact: true }).click();
+  await page.getByRole('button', { name: /^01 Guitar/ }).click();
   await page.getByRole('button', { name: 'Play tablature', exact: true }).click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor();
   await page.waitForFunction(() => !document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
@@ -87,10 +104,17 @@ try {
   await page.getByRole('combobox', { name: 'Playback speed', exact: true }).selectOption('70');
   await page.getByRole('button', { name: '↻ Loop song', exact: true }).click();
   await page.getByRole('combobox', { name: 'Notation view', exact: true }).selectOption('both');
+  // From the end of the page, where the page shortening under focus view
+  // clamps the scroll: leaving it has to put the page back where it was.
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const pageBefore = await page.evaluate(() => window.scrollY);
   await page.getByRole('button', { name: 'Focus view', exact: true }).click();
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(artifacts, 'tab-reader-desktop.png') });
+  await page.evaluate(() => window.scrollTo(0, 0));   // what Firefox leaves behind
   await page.getByRole('button', { name: 'Exit focus', exact: true }).click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => window.scrollY), pageBefore, 'leaving focus view puts the page back where it was');
   console.log('ok Guitar Pro import, tracks, solo, notation, playback, speed, loop and focus view');
 
   // Where a track plays, and getting there. A track that enters late is not a
