@@ -242,20 +242,16 @@
   }
 
   /**
-   * A score carries its tempo, so opening one sets the metronome to it. Nothing
-   * on screen would say so, and a player who never opens the metronome would
-   * never find out: the number itself travels from the tab to the metronome,
-   * and the button lights where it lands. Cause, path and destination, without
-   * a sentence. Transform and opacity only.
+   * A score carries its tempo, so opening one sets the metronome to it, and
+   * the metronome button pulses so a player who never opens it finds out.
+   * Transform and opacity only.
    *
    * It never starts the click: a tab being opened is not a request for sound.
    * A click already running follows the new tempo.
    */
-  let metronomeLaunch = $state<HTMLButtonElement | null>(null);
-  let tempoFlight = $state<{ bpm: number; x: number; y: number; id: number } | null>(null);
   let metronomeGlow = $state(0);
 
-  function takeScoreTempo(bpm: number, from: DOMRect): void {
+  function takeScoreTempo(bpm: number): void {
     if (!Number.isFinite(bpm) || bpm < MIN_BPM || bpm > MAX_BPM) return;
     if (tapResetTimer !== null) clearTimeout(tapResetTimer);
     tapResetTimer = null;
@@ -265,22 +261,7 @@
     metronomeValue = String(bpm);
     if (metronomePlaying) metronome.play(bpm);
     persist();
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { metronomeGlow++; return; }
-    tempoFlight = { bpm, x: from.left + from.width / 2, y: from.top + from.height / 2, id: (tempoFlight?.id ?? 0) + 1 };
-  }
-
-  function fly(node: HTMLElement, flight: { x: number; y: number }): void {
-    const target = metronomeLaunch?.getBoundingClientRect();
-    if (!target) { tempoFlight = null; metronomeGlow++; return; }
-    const dx = target.left + target.width / 2 - flight.x;
-    const dy = target.top + target.height / 2 - flight.y;
-    const animation = node.animate([
-      { transform: 'translate(-50%, -50%) scale(.6)', opacity: 0 },
-      { transform: 'translate(-50%, -50%) scale(1.15)', opacity: 1, offset: 0.18 },
-      { transform: 'translate(-50%, -50%) scale(1)', opacity: 1, offset: 0.35 },
-      { transform: `translate(calc(${dx}px - 50%), calc(${dy}px - 50%)) scale(.35)`, opacity: 0.2 },
-    ], { duration: 1100, easing: 'cubic-bezier(.45, 0, .2, 1)', fill: 'forwards' });
-    animation.onfinish = () => { tempoFlight = null; metronomeGlow++; };
+    metronomeGlow++;
   }
 
   function onMetronomeClosed(): void {
@@ -1128,9 +1109,79 @@
     <div class="capture-info" data-capture={latencyMs === null ? 'idle' : captureLoaded ? 'loaded' : 'silent'}></div>
     {#if engineState === 'running' && !captureLoaded}<p class="alert">This capture is not running: you are hearing your dry guitar. Reload the page.</p>{/if}
     <p class="notice" role="status">{notice ?? ''}</p>
+    {#if mode === 'musician' || source === 'file'}
+      <!-- Where the sound comes from, apart from the looper: a DI take through
+           the identical chain is how anyone without an interface hears this at
+           all, and how two captures get compared on the same performance. -->
+      <section class="source-panel" aria-label="Audio source">
+        {#if mode === 'musician'}<div class="source-block"><span class="eyebrow">AUDIO SOURCE</span><Segmented label="Source" options={SOURCES} value={source} onchange={chooseSource} /></div>{/if}
+        {#if source === 'file'}
+        <div class="file">
+          {#if filePeaks === null}
+            <!-- The musician's only. A tester arrived to hear the thing, not to
+                 supply the material for it: their take is loaded for them, so a
+                 drop target is a question they have no answer to. -->
+            {#if mode === 'musician'}
+            <div
+              class="drop"
+              class:over={dragging}
+              role="button"
+              tabindex="0"
+              ondragover={(e) => { e.preventDefault(); dragging = true; }}
+              ondragleave={() => (dragging = false)}
+              ondrop={onDrop}
+            >
+              <label class="drop-label">
+                <strong class="t-body">Drop an audio file here</strong>
+                <span class="t-small">or choose one — a dry DI guitar take works best</span>
+                <input
+                  type="file"
+                  accept="audio/*"
+                  onchange={(e) => loadFile(e.currentTarget.files?.[0])}
+                />
+              </label>
+              <!-- No guitar, no interface, no file to hand: there is still
+                   something to listen to. -->
+              <button class="quiet demo" type="button" onclick={loadDemo}>
+                or use the demo take
+              </button>
+            </div>
+            {/if}
+          {:else}
+            <Waveform peaks={filePeaks} duration={fileDuration} position={filePosition} onseek={seek} />
+            <div class="transport">
+              <button class="start small" type="button" onclick={() => (filePlaying ? pause() : play())}>
+                {filePlaying ? 'Pause' : 'Play'}
+              </button>
+              <label class="check t-small">
+                <input
+                  type="checkbox"
+                  checked={fileLoop}
+                  onchange={(e) => { fileLoop = e.currentTarget.checked; engine?.setLoop(fileLoop); persist(); }}
+                /> Loop
+              </label>
+              <span class="t-small name">{fileName}</span>
+              {#if mode === 'musician'}
+                <label class="replace t-small">
+                  Replace
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    onchange={(e) => loadFile(e.currentTarget.files?.[0])}
+                  />
+                </label>
+                <!-- Reachable once a file is loaded too, or the demo is a one-way
+                     door: load your own take and there is no way back to it. -->
+                <button class="quiet demo" type="button" onclick={loadDemo}>Load demo</button>
+              {/if}
+            </div>
+          {/if}
+        </div>
+        {/if}
+      </section>
+    {/if}
     {#if mode === 'musician'}
       <section class="session-bar" aria-label="Audio session">
-        <div class="source-block"><span class="eyebrow">AUDIO SOURCE</span><Segmented label="Source" options={SOURCES} value={source} onchange={chooseSource} /></div>
         <!-- The looper. It records what leaves the rig, so a part stays as it
              was played while the capture, the preset and the boost move on
              under it. One button does record, play and overdub, as a pedal
@@ -1164,7 +1215,7 @@
       </section>
     {/if}
 
-    <Recorder engine={engineState === 'running' ? engine : null} powered={engineState === 'running' && !poweredOff}
+    <Recorder engine={engineState === 'running' ? engine : null} powered={engineState === 'running' && !poweredOff} sinkId={engine?.outputId ?? outputId}
       tone={{ values, capture: captures.find(c => c.file === captureFile) ?? null, cab }} />
     <TabReader ontempo={takeScoreTempo} />
   </main>
@@ -1202,14 +1253,7 @@
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5 13 8l-9 5.5z"/></svg>
     {/if}
   </button>
-  {#if tempoFlight}
-    {#key tempoFlight.id}
-      <span class="tempo-flight" aria-hidden="true" style:left="{tempoFlight.x}px" style:top="{tempoFlight.y}px"
-        use:fly={tempoFlight}>♩ {tempoFlight.bpm}</span>
-    {/key}
-  {/if}
   <button
-    bind:this={metronomeLaunch}
     class="metronome-launch"
     type="button"
     aria-label="Open metronome"
@@ -1250,73 +1294,6 @@
     {#if settingsError}<p class="failure" role="alert">{settingsError}</p>{/if}
     <button class="connect" disabled={detecting || engineState === 'starting'} onclick={() => { settingsDialog?.close(); if (engineState !== 'running') void power(); }}>Done</button>
   </dialog>
-  {/if}
-
-  {#if source === 'file'}
-    <!-- Below the strand, and only when it is the source. A DI take through the
-         identical chain is how anyone without an interface hears this at all,
-         and how two captures get compared on the same performance. -->
-    <section class="file">
-      {#if filePeaks === null}
-        <!-- The musician's only. A tester arrived to hear the thing, not to
-             supply the material for it: their take is loaded for them, so a
-             drop target is a question they have no answer to. -->
-        {#if mode === 'musician'}
-        <div
-          class="drop"
-          class:over={dragging}
-          role="button"
-          tabindex="0"
-          ondragover={(e) => { e.preventDefault(); dragging = true; }}
-          ondragleave={() => (dragging = false)}
-          ondrop={onDrop}
-        >
-          <label class="drop-label">
-            <strong class="t-body">Drop an audio file here</strong>
-            <span class="t-small">or choose one — a dry DI guitar take works best</span>
-            <input
-              type="file"
-              accept="audio/*"
-              onchange={(e) => loadFile(e.currentTarget.files?.[0])}
-            />
-          </label>
-          <!-- No guitar, no interface, no file to hand: there is still
-               something to listen to. -->
-          <button class="quiet demo" type="button" onclick={loadDemo}>
-            or use the demo take
-          </button>
-        </div>
-        {/if}
-      {:else}
-        <Waveform peaks={filePeaks} duration={fileDuration} position={filePosition} onseek={seek} />
-        <div class="transport">
-          <button class="start small" type="button" onclick={() => (filePlaying ? pause() : play())}>
-            {filePlaying ? 'Pause' : 'Play'}
-          </button>
-          <label class="check t-small">
-            <input
-              type="checkbox"
-              checked={fileLoop}
-              onchange={(e) => { fileLoop = e.currentTarget.checked; engine?.setLoop(fileLoop); persist(); }}
-            /> Loop
-          </label>
-          <span class="t-small name">{fileName}</span>
-          {#if mode === 'musician'}
-            <label class="replace t-small">
-              Replace
-              <input
-                type="file"
-                accept="audio/*"
-                onchange={(e) => loadFile(e.currentTarget.files?.[0])}
-              />
-            </label>
-            <!-- Reachable once a file is loaded too, or the demo is a one-way
-                 door: load your own take and there is no way back to it. -->
-            <button class="quiet demo" type="button" onclick={loadDemo}>Load demo</button>
-          {/if}
-        </div>
-      {/if}
-    </section>
   {/if}
 
   <dialog class="sheet welcome" bind:this={welcomeDialog} aria-labelledby="welcome-title" oncancel={() => (asking = false)}>
@@ -1409,41 +1386,45 @@
   .tuner-launch:hover, .metronome-launch:hover, .metronome-toggle:hover { color: #d4c9d7; border-color: #655b68; }
   .tuner-launch:disabled, .metronome-launch:disabled, .metronome-toggle:disabled { opacity: .32; cursor: default; }
   .tuner-launch:focus-visible, .metronome-launch:focus-visible, .metronome-toggle:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; }
-  /* Above the focused reader (z-index 50), which is where a tab is often opened. */
-  .tempo-flight {
-    position: fixed;
-    z-index: 60;
-    padding: 5px 10px;
-    border: 1px solid #876f8c;
-    border-radius: 999px;
-    background: #1b171d;
-    color: #e2cce6;
-    font: 12px var(--mono);
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 0;
-    will-change: transform, opacity;
-  }
-  /* Two rings rather than an animated box-shadow: opacity and scale only. */
-  .metronome-glow, .metronome-glow::after {
+  /* A lit disc that pulses three times, and rings that leave it: opacity and
+     scale only, never an animated box-shadow. Above the focused reader
+     (z-index 50), which is where a tab is often opened. */
+  .metronome-launch:has(.metronome-glow) { z-index: 60; }
+  .metronome-glow {
     position: absolute;
     inset: -1px;
-    border: 1px solid #d9bfdd;
     border-radius: 50%;
-    background: #d9bfdd22;
+    background: #d9bfdd66;
     pointer-events: none;
     opacity: 0;
-    animation: metronome-glow 1.6s cubic-bezier(.2, 0, 0, 1);
+    animation: metronome-lit 3.6s ease-out forwards;
   }
-  .metronome-glow::after { content: ''; inset: -1px; background: none; animation-delay: .25s; }
-  @keyframes metronome-glow {
+  .metronome-glow::before, .metronome-glow::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border: 2px solid #ecd6f0;
+    border-radius: 50%;
+    opacity: 0;
+    animation: metronome-ring 1.2s cubic-bezier(.2, 0, 0, 1) 3;
+  }
+  .metronome-glow::after { animation-delay: .4s; }
+  @keyframes metronome-lit {
+    0% { opacity: 0; }
+    8% { opacity: 1; }
+    25% { opacity: .35; }
+    36% { opacity: 1; }
+    58% { opacity: .35; }
+    69% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  @keyframes metronome-ring {
     0% { opacity: 0; transform: scale(1); }
-    15% { opacity: 1; transform: scale(1); }
-    100% { opacity: 0; transform: scale(1.9); }
+    12% { opacity: 1; transform: scale(1.1); }
+    100% { opacity: 0; transform: scale(2.8); }
   }
   @media (prefers-reduced-motion: reduce) {
-    .metronome-glow, .metronome-glow::after { animation-name: metronome-glow-still; }
-    @keyframes metronome-glow-still { 0%, 100% { opacity: 0; } 20%, 60% { opacity: 1; } }
+    .metronome-glow::before, .metronome-glow::after { animation: none; }
   }
 
   /* One target, hit as often as you like. The dot carries the state — the same
@@ -1664,10 +1645,10 @@
   }
   select:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
-  .page{display:flex;flex-direction:column;gap:0;padding:0 48px 28px;max-width:1600px;margin:auto;min-height:100svh}.bar{height:94px;align-items:center}.t-wordmark{font-size:22px;text-transform:lowercase;letter-spacing:-1px;font-weight:600}.workspace{width:100%;max-width:var(--column);margin:36px auto 0}.workspace-heading,.amp-caption,.capture-info,.page-footer{display:flex;justify-content:space-between;gap:16px;font:9px var(--mono);letter-spacing:1.5px;color:#8f8f8f}.workspace-heading{margin-bottom:20px}.edition{color:#c1c1c1}.edition span{color:#6f6f6f}.global-controls{display:grid;grid-template-columns:100px 90px minmax(180px,1fr) minmax(210px,1.2fr) 110px;align-items:center;gap:24px;padding:26px 24px;background:#242424;border:1px solid #3b3b3b;border-radius:8px}.io-control{display:flex;align-items:center;gap:12px}.gate-control{position:relative}.gate-control .enable{bottom:-15px;right:calc(50% - 14px);padding:3px 8px}.enable{position:absolute;right:-2px;bottom:0;background:none;border:0;color:#b7b7b7;font:8px var(--mono);cursor:pointer}.rig-selectors{border-left:1px solid #404040;padding-left:26px;display:grid;gap:16px}.selector{display:flex;flex-direction:column;gap:3px;min-width:0}.selector>span,.eyebrow{font:9px var(--mono);letter-spacing:1.6px;color:#999999}.selector select{width:100%;max-width:100%;min-height:26px;border:0;font-size:12px}.tone-selector{padding:0 20px;border-right:1px solid #404040;text-align:center}.preset-picker{display:flex;align-items:center;gap:8px;margin:10px 0}.preset-picker select{width:100%;max-width:none;text-align:center;background:#323232;border:1px solid #4f4f4f;border-radius:4px;padding:0 8px;font-size:14px;min-height:38px}.preset-picker button{background:none;border:0;font-size:28px;color:#b4b4b4;cursor:pointer;padding:0 3px}.preset-note{font-size:10px;color:#969696}.amp-caption{margin:28px 2px 13px;font-size:8px;letter-spacing:1.4px}.amp-caption>span:first-child{display:flex;align-items:center;gap:7px}.status-dot{width:5px;height:5px;background:#717171;border-radius:50%}.status-dot.live{background:#c0c0c0}.amp-head{margin-top:28px;position:relative;padding:17px;border:1px solid #53534f;border-radius:9px;background:repeating-linear-gradient(32deg,#262626 0 1px,#2a2a2a 1px 3px);box-shadow:0 14px 30px #0005,inset 0 1px 1px #85817a55;--knob-accent:#c5c5c5;--control-label:#b4b4b4}.amp-head.guilt{--knob-material:linear-gradient(135deg,#827187,#39333d 50%,#201d24);--knob-accent:#d2badb;--control-label:#b9adbd}.glass-window{position:relative;height:260px;background:#101010;overflow:hidden;border:2px solid #0e0e10;box-shadow:0 0 0 1px #55505b}.glass-window img{width:100%;height:100%;object-fit:cover;filter:brightness(1.67)}.glass-window .veil{position:absolute;inset:0;background:#000;pointer-events:none;will-change:opacity}.glass-window:after{content:'';position:absolute;inset:0;box-shadow:inset 0 0 35px 12px #08080bd9;background:linear-gradient(0deg,#09080bb0,transparent 65%);pointer-events:none}.amp-brand{position:absolute;z-index:1;bottom:24px;left:0;right:0;text-align:center;display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;color:#e4d4e8;text-shadow:0 2px 8px #000}.amp-brand h1{font:38px Georgia,serif;letter-spacing:12px;margin:0 -12px 0 0}.brand-rule{height:1px;width:42px;background:#ad96b777}.amp-brand p{flex-basis:100%;font:7px var(--mono);letter-spacing:4px;margin:-6px 0 0}.amp-panel{display:flex;align-items:center;justify-content:space-around;gap:20px;padding:22px 20px 20px;background:linear-gradient(110deg,#313131,#232323);border:1px solid #565656;border-top:1px solid #777269}.guilt .amp-panel{background:linear-gradient(110deg,#322f34,#29262d 60%,#252329);border-color:#514852;border-top-color:#7b687e}.control-group{position:relative;border-left:1px solid #69616a55;padding-left:20px}.group-label{display:block;margin:0 auto 14px;font:8px var(--mono);letter-spacing:2px;color:#bcb2c0;background:none;border:0;cursor:pointer}.group-label span{font-size:7px;margin-left:5px;color:var(--knob-accent)}.group-label[aria-pressed=false]{opacity:.45}.knob-row{display:flex;gap:16px}.amp-signature{display:flex;flex-direction:column;align-items:center;gap:8px;min-width:110px;color:#c6b9cb}.amp-signature>span:not(.sig-symbol){font:italic 25px Georgia,serif}.sig-symbol{font-size:32px}.amp-signature small{font:6px var(--mono);letter-spacing:2px}.power-indicator{display:flex;flex-direction:column;align-items:center;gap:15px}.power-indicator>span{width:8px;height:8px;border-radius:50%;background:#5f5163;border:3px solid #252227;box-shadow:0 0 0 1px #75677b}.power-indicator>span.lit{background:#ddbae9;box-shadow:0 0 12px #c47adf}.power-indicator small{font:7px var(--mono);color:#b2aab7;letter-spacing:1px}.screw{position:absolute;width:5px;height:5px;background:linear-gradient(135deg,#777,#222 45%,#999 50%,#333 60%);border-radius:50%}.tl{top:6px;left:7px}.tr{top:6px;right:7px}.bl{bottom:6px;left:7px}.br{bottom:6px;right:7px}.amp-foot{display:flex;justify-content:space-between;margin:0 50px}.amp-foot span{width:65px;height:9px;background:#0f0f0f;border-radius:0 0 3px 3px}.capture-info{margin:0 0 24px;font-size:8px;letter-spacing:.4px}.capture-info>span:last-child{color:#7b7b7b;font-size:7px;letter-spacing:1px}.session-bar{display:flex;align-items:center;gap:24px;border:1px solid #3c3c3c;border-radius:6px;padding:19px 22px;background:#252525}.looper{flex:1;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto auto;gap:9px 16px;align-items:center;border-left:1px solid #414141;padding-left:24px}.looper-head{grid-column:1/3;display:flex;align-items:baseline;justify-content:space-between;gap:12px}.loop-status{display:flex;align-items:center;gap:7px;font:10px var(--mono);letter-spacing:1px;color:#9c9c9c}.loop-dot{width:6px;height:6px;border-radius:50%;background:#5c5c5c}.loop-status[data-state=recording] .loop-dot,.loop-status[data-state=overdubbing] .loop-dot{background:var(--ember)}.loop-status[data-state=playing] .loop-dot{background:#d8c2dd}.looper-controls{grid-column:1/3;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.loop-main{min-width:104px;padding:9px 16px;background:#323232;border:1px solid #565656;border-radius:4px;color:#ededed;font-size:13px;cursor:pointer}.loop-main:hover:not(:disabled){background:#3b3b3b;border-color:#7c7c7c}.loop-main[data-state=recording],.loop-main[data-state=overdubbing]{border-color:#8a4436;color:#f0d5cf}.loop-small{padding:8px 12px;background:none;border:1px solid #4a4a4a;border-radius:4px;color:#b7b7b7;font-size:12px;cursor:pointer}.loop-small:hover:not(:disabled){color:#ededed;border-color:#7c7c7c}.loop-main:disabled,.loop-small:disabled{opacity:.4;cursor:default}.loop-level{display:flex;align-items:center;gap:8px;margin-left:auto}.loop-level input{width:96px;min-height:40px;accent-color:#c2a9c8}.loop-track{height:2px;background:#3a3a3a;overflow:hidden}.loop-fill{display:block;height:100%;background:#6d6d6d;transform-origin:left;transform:scaleX(0)}.loop-fill[data-state=recording],.loop-fill[data-state=overdubbing]{background:var(--ember)}.loop-fill[data-state=playing]{background:#c2a9c8}.loop-clock{font:10px var(--mono);color:#9c9c9c;white-space:nowrap}.source-block{display:flex;flex-direction:column;gap:9px}.session-message{display:flex;flex:1;flex-direction:column;gap:6px;border-left:1px solid #414141;padding-left:24px}.session-message strong{font-size:13px;font-weight:500}.session-message>span{font-size:11px;color:#9c9c9c}.connect{align-self:flex-end;padding:12px 18px;background:#c5c5c5;border:1px solid #d0d0d0;border-radius:4px;font-size:12px;color:#272727;cursor:pointer}.audio-settings .start.small{align-self:flex-start}.connect:disabled{opacity:.5}.session-bar .demo{margin-left:auto;border:0;font-size:11px}.device-controls{display:flex;gap:24px;margin-top:18px;flex-wrap:wrap}.device-controls .levels{width:80px;align-items:center}.page-footer{margin-top:auto;padding:28px 0 22px;font-size:8px;letter-spacing:1px}.page-footer>span:last-child{color:#a5a5a5}.page-footer>span:last-child span{padding:0 8px;color:#636363}.file{margin:22px auto 0}.wash{background:#0f0f0fcc;z-index:10}.sheet{border:1px solid #555555;border-radius:8px}.notice{min-height:0;color:var(--ember);margin:10px 0}.alert{color:var(--ember);font-size:13px}.neutral-art{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:repeating-linear-gradient(0deg,#1b1b1b 0 2px,#2e2e2e 2px 3px);color:#848484}.neutral-art>span{font-size:80px;letter-spacing:-15px;font-weight:800;opacity:.35}.neutral-art small{font-size:8px;letter-spacing:6px}.neutral-art+.amp-brand h1{font:22px var(--body);letter-spacing:7px}.bypassed .glass-window{opacity:.5}:global(select option){background:#2c2c2c;color:#e4e4e4}:global(button:focus-visible){outline:2px solid var(--iris);outline-offset:4px}
+  .page{display:flex;flex-direction:column;gap:0;padding:0 48px 28px;max-width:1600px;margin:auto;min-height:100svh}.bar{height:94px;align-items:center}.t-wordmark{font-size:22px;text-transform:lowercase;letter-spacing:-1px;font-weight:600}.workspace{width:100%;max-width:var(--column);margin:36px auto 0}.workspace-heading,.amp-caption,.capture-info,.page-footer{display:flex;justify-content:space-between;gap:16px;font:9px var(--mono);letter-spacing:1.5px;color:#8f8f8f}.workspace-heading{margin-bottom:20px}.edition{color:#c1c1c1}.edition span{color:#6f6f6f}.global-controls{display:grid;grid-template-columns:100px 90px minmax(180px,1fr) minmax(210px,1.2fr) 110px;align-items:center;gap:24px;padding:26px 24px;background:#242424;border:1px solid #3b3b3b;border-radius:8px}.io-control{display:flex;align-items:center;gap:12px}.gate-control{position:relative}.gate-control .enable{bottom:-15px;right:calc(50% - 14px);padding:3px 8px}.enable{position:absolute;right:-2px;bottom:0;background:none;border:0;color:#b7b7b7;font:8px var(--mono);cursor:pointer}.rig-selectors{border-left:1px solid #404040;padding-left:26px;display:grid;gap:16px}.selector{display:flex;flex-direction:column;gap:3px;min-width:0}.selector>span,.eyebrow{font:9px var(--mono);letter-spacing:1.6px;color:#999999}.selector select{width:100%;max-width:100%;min-height:26px;border:0;font-size:12px}.tone-selector{padding:0 20px;border-right:1px solid #404040;text-align:center}.preset-picker{display:flex;align-items:center;gap:8px;margin:10px 0}.preset-picker select{width:100%;max-width:none;text-align:center;background:#323232;border:1px solid #4f4f4f;border-radius:4px;padding:0 8px;font-size:14px;min-height:38px}.preset-picker button{background:none;border:0;font-size:28px;color:#b4b4b4;cursor:pointer;padding:0 3px}.preset-note{font-size:10px;color:#969696}.amp-caption{margin:28px 2px 13px;font-size:8px;letter-spacing:1.4px}.amp-caption>span:first-child{display:flex;align-items:center;gap:7px}.status-dot{width:5px;height:5px;background:#717171;border-radius:50%}.status-dot.live{background:#c0c0c0}.amp-head{margin-top:28px;position:relative;padding:17px;border:1px solid #53534f;border-radius:9px;background:repeating-linear-gradient(32deg,#262626 0 1px,#2a2a2a 1px 3px);box-shadow:0 14px 30px #0005,inset 0 1px 1px #85817a55;--knob-accent:#c5c5c5;--control-label:#b4b4b4}.amp-head.guilt{--knob-material:linear-gradient(135deg,#827187,#39333d 50%,#201d24);--knob-accent:#d2badb;--control-label:#b9adbd}.glass-window{position:relative;height:260px;background:#101010;overflow:hidden;border:2px solid #0e0e10;box-shadow:0 0 0 1px #55505b}.glass-window img{width:100%;height:100%;object-fit:cover;filter:brightness(1.67)}.glass-window .veil{position:absolute;inset:0;background:#000;pointer-events:none;will-change:opacity}.glass-window:after{content:'';position:absolute;inset:0;box-shadow:inset 0 0 35px 12px #08080bd9;background:linear-gradient(0deg,#09080bb0,transparent 65%);pointer-events:none}.amp-brand{position:absolute;z-index:1;bottom:24px;left:0;right:0;text-align:center;display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;color:#e4d4e8;text-shadow:0 2px 8px #000}.amp-brand h1{font:38px Georgia,serif;letter-spacing:12px;margin:0 -12px 0 0}.brand-rule{height:1px;width:42px;background:#ad96b777}.amp-brand p{flex-basis:100%;font:7px var(--mono);letter-spacing:4px;margin:-6px 0 0}.amp-panel{display:flex;align-items:center;justify-content:space-around;gap:20px;padding:22px 20px 20px;background:linear-gradient(110deg,#313131,#232323);border:1px solid #565656;border-top:1px solid #777269}.guilt .amp-panel{background:linear-gradient(110deg,#322f34,#29262d 60%,#252329);border-color:#514852;border-top-color:#7b687e}.control-group{position:relative;border-left:1px solid #69616a55;padding-left:20px}.group-label{display:block;margin:0 auto 14px;font:8px var(--mono);letter-spacing:2px;color:#bcb2c0;background:none;border:0;cursor:pointer}.group-label span{font-size:7px;margin-left:5px;color:var(--knob-accent)}.group-label[aria-pressed=false]{opacity:.45}.knob-row{display:flex;gap:16px}.amp-signature{display:flex;flex-direction:column;align-items:center;gap:8px;min-width:110px;color:#c6b9cb}.amp-signature>span:not(.sig-symbol){font:italic 25px Georgia,serif}.sig-symbol{font-size:32px}.amp-signature small{font:6px var(--mono);letter-spacing:2px}.power-indicator{display:flex;flex-direction:column;align-items:center;gap:15px}.power-indicator>span{width:8px;height:8px;border-radius:50%;background:#5f5163;border:3px solid #252227;box-shadow:0 0 0 1px #75677b}.power-indicator>span.lit{background:#ddbae9;box-shadow:0 0 12px #c47adf}.power-indicator small{font:7px var(--mono);color:#b2aab7;letter-spacing:1px}.screw{position:absolute;width:5px;height:5px;background:linear-gradient(135deg,#777,#222 45%,#999 50%,#333 60%);border-radius:50%}.tl{top:6px;left:7px}.tr{top:6px;right:7px}.bl{bottom:6px;left:7px}.br{bottom:6px;right:7px}.amp-foot{display:flex;justify-content:space-between;margin:0 50px}.amp-foot span{width:65px;height:9px;background:#0f0f0f;border-radius:0 0 3px 3px}.capture-info{margin:0 0 24px;font-size:8px;letter-spacing:.4px}.capture-info>span:last-child{color:#7b7b7b;font-size:7px;letter-spacing:1px}.session-bar{display:flex;align-items:center;gap:24px;border:1px solid #3c3c3c;border-radius:6px;padding:19px 22px;background:#252525}.looper{flex:1;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto auto;gap:9px 16px;align-items:center}.looper-head{grid-column:1/3;display:flex;align-items:baseline;justify-content:space-between;gap:12px}.loop-status{display:flex;align-items:center;gap:7px;font:10px var(--mono);letter-spacing:1px;color:#9c9c9c}.loop-dot{width:6px;height:6px;border-radius:50%;background:#5c5c5c}.loop-status[data-state=recording] .loop-dot,.loop-status[data-state=overdubbing] .loop-dot{background:var(--ember)}.loop-status[data-state=playing] .loop-dot{background:#d8c2dd}.looper-controls{grid-column:1/3;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.loop-main{min-width:104px;padding:9px 16px;background:#323232;border:1px solid #565656;border-radius:4px;color:#ededed;font-size:13px;cursor:pointer}.loop-main:hover:not(:disabled){background:#3b3b3b;border-color:#7c7c7c}.loop-main[data-state=recording],.loop-main[data-state=overdubbing]{border-color:#8a4436;color:#f0d5cf}.loop-small{padding:8px 12px;background:none;border:1px solid #4a4a4a;border-radius:4px;color:#b7b7b7;font-size:12px;cursor:pointer}.loop-small:hover:not(:disabled){color:#ededed;border-color:#7c7c7c}.loop-main:disabled,.loop-small:disabled{opacity:.4;cursor:default}.loop-level{display:flex;align-items:center;gap:8px;margin-left:auto}.loop-level input{width:96px;min-height:40px;accent-color:#c2a9c8}.loop-track{height:2px;background:#3a3a3a;overflow:hidden}.loop-fill{display:block;height:100%;background:#6d6d6d;transform-origin:left;transform:scaleX(0)}.loop-fill[data-state=recording],.loop-fill[data-state=overdubbing]{background:var(--ember)}.loop-fill[data-state=playing]{background:#c2a9c8}.loop-clock{font:10px var(--mono);color:#9c9c9c;white-space:nowrap}.source-block{display:flex;flex-direction:column;gap:9px}.source-panel{display:flex;flex-wrap:wrap;align-items:flex-start;gap:24px;border:1px solid #3c3c3c;border-radius:6px;padding:19px 22px;background:#252525;margin-bottom:16px}.source-panel .file{flex:1;min-width:260px}.session-message{display:flex;flex:1;flex-direction:column;gap:6px;border-left:1px solid #414141;padding-left:24px}.session-message strong{font-size:13px;font-weight:500}.session-message>span{font-size:11px;color:#9c9c9c}.connect{align-self:flex-end;padding:12px 18px;background:#c5c5c5;border:1px solid #d0d0d0;border-radius:4px;font-size:12px;color:#272727;cursor:pointer}.audio-settings .start.small{align-self:flex-start}.connect:disabled{opacity:.5}.session-bar .demo{margin-left:auto;border:0;font-size:11px}.device-controls{display:flex;gap:24px;margin-top:18px;flex-wrap:wrap}.device-controls .levels{width:80px;align-items:center}.page-footer{margin-top:auto;padding:28px 0 22px;font-size:8px;letter-spacing:1px}.page-footer>span:last-child{color:#a5a5a5}.page-footer>span:last-child span{padding:0 8px;color:#636363}.file{margin:0}.wash{background:#0f0f0fcc;z-index:10}.sheet{border:1px solid #555555;border-radius:8px}.notice{min-height:0;color:var(--ember);margin:10px 0}.alert{color:var(--ember);font-size:13px}.neutral-art{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:repeating-linear-gradient(0deg,#1b1b1b 0 2px,#2e2e2e 2px 3px);color:#848484}.neutral-art>span{font-size:80px;letter-spacing:-15px;font-weight:800;opacity:.35}.neutral-art small{font-size:8px;letter-spacing:6px}.neutral-art+.amp-brand h1{font:22px var(--body);letter-spacing:7px}.bypassed .glass-window{opacity:.5}:global(select option){background:#2c2c2c;color:#e4e4e4}:global(button:focus-visible){outline:2px solid var(--iris);outline-offset:4px}
   @media(min-width:1500px){.glass-window{height:310px}.workspace{margin-top:48px}}
   @media(max-width:1100px){.page{padding:0 24px}.global-controls{gap:14px;padding:22px 16px;grid-template-columns:85px 65px 1fr 1fr 90px}.rig-selectors{padding-left:16px}.tone-selector{padding:0 10px}.amp-panel{flex-wrap:wrap;gap:18px 10px;padding:20px 12px}.amp-signature{min-width:70px}.control-group{padding-left:12px}.knob-row{gap:5px}.tone-group{flex-basis:100%;border-left:0;padding-left:0}.tone-group .knob-row{justify-content:center;gap:14px}.power-indicator{display:flex}.session-bar{gap:15px}.session-message{padding-left:15px}}
-  @media(max-width:760px){.page{padding:0 16px}.bar{height:76px}.t-wordmark{font-size:20px}.bar-right{gap:10px}.workspace{margin-top:24px}.edition{display:none}.global-controls{grid-template-columns:1fr 1fr 1fr;gap:22px}.io-control{justify-content:center}.output-control{grid-column:3;grid-row:1}.gate-control{display:flex;justify-content:center}.enable{right:5px}.rig-selectors{grid-column:1/3;grid-row:2;padding:0;border:0}.tone-selector{grid-column:3;grid-row:2;padding:0;border:0;min-width:0}.preset-picker{gap:0}.preset-picker select{font-size:12px;min-width:0}.preset-note{display:none}.glass-window{height:210px}.amp-head{padding:12px}.amp-panel{flex-wrap:wrap;padding:18px 10px;gap:22px 12px}.amp-signature{display:none}.tone-group{flex-basis:100%;border:0;padding:0}.knob-row{justify-content:space-evenly;gap:15px}.control-group{border:0;padding:0}.amp-brand h1{font-size:30px}.capture-info{line-height:1.6}.capture-info>span:last-child{display:none}.session-bar{flex-wrap:wrap;padding:16px}.looper{flex-basis:100%;border-left:0;padding-left:0;border-top:1px solid #414141;padding-top:16px}.loop-level{margin-left:0}.session-message{flex:1;min-width:130px}.session-message>span{line-height:1.6}.page-footer{font-size:6px}.amp-caption{font-size:7px;letter-spacing:.6px}.chain-label{letter-spacing:0;font-size:9px}.bar .start{font-size:11px;padding:0 10px}}
+  @media(max-width:760px){.page{padding:0 16px}.bar{height:76px}.t-wordmark{font-size:20px}.bar-right{gap:10px}.workspace{margin-top:24px}.edition{display:none}.global-controls{grid-template-columns:1fr 1fr 1fr;gap:22px}.io-control{justify-content:center}.output-control{grid-column:3;grid-row:1}.gate-control{display:flex;justify-content:center}.enable{right:5px}.rig-selectors{grid-column:1/3;grid-row:2;padding:0;border:0}.tone-selector{grid-column:3;grid-row:2;padding:0;border:0;min-width:0}.preset-picker{gap:0}.preset-picker select{font-size:12px;min-width:0}.preset-note{display:none}.glass-window{height:210px}.amp-head{padding:12px}.amp-panel{flex-wrap:wrap;padding:18px 10px;gap:22px 12px}.amp-signature{display:none}.tone-group{flex-basis:100%;border:0;padding:0}.knob-row{justify-content:space-evenly;gap:15px}.control-group{border:0;padding:0}.amp-brand h1{font-size:30px}.capture-info{line-height:1.6}.capture-info>span:last-child{display:none}.session-bar{flex-wrap:wrap;padding:16px}.looper{flex-basis:100%}.source-panel{padding:16px}.loop-level{margin-left:0}.session-message{flex:1;min-width:130px}.session-message>span{line-height:1.6}.page-footer{font-size:6px}.amp-caption{font-size:7px;letter-spacing:.6px}.chain-label{letter-spacing:0;font-size:9px}.bar .start{font-size:11px;padding:0 10px}}
   @media(prefers-reduced-motion:reduce){.glass-window .veil{opacity:.61!important}}
 
   .settings-button{display:grid;place-items:center;width:40px;height:40px;padding:8px;border:0;background:none;color:var(--ink);cursor:pointer;border-radius:4px;font-size:26px}.settings-button:hover{background:#252525}.audio-settings{width:min(440px,calc(100vw - 64px));padding:calc(var(--u)*3);color:var(--ink);background:#171717;border:1px solid #444;border-radius:8px}.audio-settings[open]{display:flex;flex-direction:column;gap:calc(var(--u)*3)}.audio-settings::backdrop{background:#000a}.settings-heading{display:flex;align-items:center;justify-content:space-between}.settings-heading h2{margin:0;font-size:18px;font-weight:500}.audio-settings .device-controls{flex-direction:column;gap:calc(var(--u)*2);margin-top:0}.audio-settings select{max-width:100%;width:100%}.audio-settings .failure{margin-top:0}.power-indicator{border:0;background:none;cursor:pointer;color:#bab0bf;padding:8px;min-width:44px}.power-indicator>span{width:28px;height:28px;display:grid;place-items:center;background:#29252d}.power-indicator>span.lit{color:#fff;background:#66536f}.power-indicator:disabled{opacity:.5;cursor:wait}

@@ -53,6 +53,11 @@ try {
   const dry = await download('Export DI · WAV');
   assert.equal(dry.toString('ascii', 0, 4), 'RIFF');
   assert(dry.length > 100000);
+  // The take is heard before it is exported.
+  await page.getByRole('button', { name: 'Listen to take', exact: true }).click();
+  await page.getByRole('button', { name: 'Pause take', exact: true }).waitFor({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Pause take', exact: true }).click();
+  await page.getByRole('button', { name: 'Listen to take', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Amplifier power', exact: true }).click();
   const wet = await download('Export amp · WAV');
   assert.notDeepEqual(dry, wet);
@@ -87,8 +92,10 @@ try {
   await page.getByRole('button', { name: 'Mute', exact: true }).click();
   await page.getByRole('button', { name: /^01 Guitar/ }).click();
   assert.equal(await page.getByRole('button', { name: 'Mute', exact: true }).getAttribute('aria-pressed'), 'true', 'muting a second track leaves the first muted');
+  assert.equal(await page.locator('.tracks button.muted .flag.mute').count(), 2, 'the track list shows which tracks are muted');
   await page.getByRole('button', { name: /^02 Bass/ }).click();
   assert.equal(await page.getByRole('button', { name: 'Solo', exact: true }).getAttribute('aria-pressed'), 'true', 'a solo survives choosing other tracks');
+  assert.equal(await page.locator('.tracks button.silenced').count(), 2, 'the track list shows which tracks a solo silences');
   // Back to the whole band unmuted, for the playback below.
   await page.getByRole('button', { name: 'Solo', exact: true }).click();
   await page.getByRole('button', { name: /^01 Guitar/ }).click();
@@ -122,7 +129,7 @@ try {
   const late = page.getByRole('button', { name: /^03 Late Solo/ });
   assert.equal((await late.innerText()).trim().split(/\s+/).pop(), '1', 'the track list counts the bars a track plays in');
   await late.click();
-  await page.getByText('Plays bars 40\u201340, 1 of 40.').waitFor();
+  await page.locator('.plays').filter({ hasText: '40\u201340 \u00b7 1/40' }).waitFor();
   await page.getByRole('button', { name: 'Stop tablature', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
   await page.getByRole('button', { name: 'Go to its first bar', exact: true }).click();
