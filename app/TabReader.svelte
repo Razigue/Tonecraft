@@ -8,7 +8,7 @@
   import { restoreFadedVolume } from '../engine/tab-fades.ts';
   import {
     DURATIONS, STRING_COUNTS, TUNINGS, addTrack, clearString, deleteBeat, emptyTab, layout as layBeats, makeRest, nudgeDuration,
-    readTab, setDuration, setStrings, setTempo, setTuning, stepBeat, stepString, toAlphaTex, toggleDotted, typeDigit,
+    readTab, removeTrack, setDuration, setStrings, setTempo, setTuning, stepBeat, stepString, toAlphaTex, toggleDotted, typeDigit,
     type Cursor, type EditTab, type PendingDigit,
   } from '../engine/tab-editor.ts';
 
@@ -620,6 +620,20 @@
     clearTimeout(drawTimer);
     drawTimer = window.setTimeout(() => { void renderDraft(); void dbPut(STORES.state, draft, DRAFT_KEY); }, 40);
   }
+  /**
+   * The track being written goes; the one before it is written next. Solo,
+   * mute and level are held by track index, so the tracks after it keep
+   * theirs by moving down one.
+   */
+  function deleteTrack() {
+    const gone = cursor.track;
+    if (draft.tracks.length <= 1) return;
+    const shift = <T,>(held: ReadonlyMap<number, T>) => new Map([...held].filter(([i]) => i !== gone).map(([i, v]) => [i > gone ? i - 1 : i, v]));
+    const shiftSet = (held: ReadonlySet<number>) => new Set([...held].filter(i => i !== gone).map(i => (i > gone ? i - 1 : i)));
+    mutedTracks = shiftSet(mutedTracks); soloed = shiftSet(soloed); trackVolumes = shift(trackVolumes);
+    const track = Math.max(0, gone - 1);
+    act(removeTrack(draft, gone), { track, beat: 0, string: draft.tracks[track === gone ? gone + 1 : track]!.tuning.length });
+  }
   /** From a control: the keys go back to the tab. */
   function act(next: EditTab, at: Cursor = cursor) {
     commit(next, at);
@@ -695,7 +709,26 @@
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   }
 
+  /**
+   * alphaTab signs every layout with "rendered by alphaTab" under the last
+   * line, and has no setting to leave it out. It is not a licence condition
+   * (MPL-2.0 asks for nothing on screen), and in a reader of one line it is a
+   * caption under the music that says nothing about it. The signature arrives
+   * as a part of its own, holding that one text: it is hidden as it is added,
+   * looking only at added parts and at how many texts they hold, never at the
+   * text of the whole score.
+   */
+  const SIGNATURE = 'rendered by alphaTab';
+  const signature = new MutationObserver(records => {
+    for (const record of records) for (const node of record.addedNodes) {
+      if (!(node instanceof HTMLElement || node instanceof SVGElement)) continue;
+      const texts = node.getElementsByTagName('text');
+      if (texts.length === 1 && texts[0]!.textContent?.trim() === SIGNATURE) (node as HTMLElement).style.display = 'none';
+    }
+  });
+
   onMount(() => {
+    signature.observe(surface, { childList: true, subtree: true });
     void dbGet<{ scaleId?: unknown; scaleRoot?: unknown }>(STORES.state, SCALE_KEY).then(saved => {
       if (disposed || !saved) return;
       if (typeof saved.scaleId === 'string' && (saved.scaleId === '' || scaleById(saved.scaleId))) scaleId = saved.scaleId;
@@ -703,7 +736,7 @@
     });
     void loadMedia('last-score').then(file => { if (file && !disposed && !busy && !score) void open(file, false); });
   });
-  onDestroy(() => { disposed = true; api?.destroy(); });
+  onDestroy(() => { disposed = true; signature.disconnect(); api?.destroy(); });
 </script>
 
 <section class="reader" class:focused role="application" aria-label="Tab reader" tabindex="-1"
@@ -758,6 +791,7 @@
           {#each tunings as t, i}<option value={i}>{t.name}</option>{/each}
         </select></label>
         <button onclick={() => act(addTrack(draft), { track: draft.tracks.length, beat: 0, string: 6 })}>+ Track</button>
+        <button disabled={draft.tracks.length <= 1} onclick={deleteTrack}>Delete track</button>
         <button class="primary export" onclick={exportGp}>Export .gp</button>
       </div>
     {/if}

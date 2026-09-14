@@ -154,6 +154,10 @@ try {
   await page.locator('.reader').scrollIntoViewIfNeeded();
   await picker.setInputFiles({ name: 'practice.gp', mimeType: 'application/octet-stream', buffer: gp });
   await page.locator('.score-paper svg').first().waitFor({ timeout: 30000 });
+  await page.waitForTimeout(1500);
+  const signed = await page.evaluate(() => [...document.querySelectorAll('.score-paper svg text')]
+    .filter(t => t.textContent.includes('rendered by') && t.getClientRects().length > 0).length);
+  assert.equal(signed, 0, 'the score carries no "rendered by alphaTab" caption');
   await page.getByRole('button', { name: /^02 Bass/ }).click();
   assert.equal(await page.getByRole('button', { name: /^02 Bass/ }).getAttribute('aria-pressed'), 'true');
   await page.getByRole('button', { name: 'Solo', exact: true }).click();
@@ -430,6 +434,15 @@ try {
   await editor.getByLabel('String count', { exact: true }).selectOption('7');
   await page.waitForFunction(() => document.querySelectorAll('.neck .string').length === 7, null, { timeout: 15000 });
   await editor.getByLabel('Tuning', { exact: true }).selectOption({ label: 'Drop A' });
+  assert(await editor.getByRole('button', { name: 'Delete track', exact: true }).isDisabled(), 'the last track cannot be deleted');
+  await editor.getByRole('button', { name: '+ Track', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.tracks button').length === 2, null, { timeout: 15000 });
+  await editor.getByRole('button', { name: 'Delete track', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.tracks button').length === 1, null, { timeout: 15000 });
+  await page.waitForFunction(() => {
+    const texts = [...document.querySelectorAll('.score-paper svg text')].map(t => t.textContent.trim());
+    return ['3', '12', '5'].every(f => texts.includes(f));
+  }, null, { timeout: 15000 });
   await editor.getByRole('button', { name: '+ Track', exact: true }).click();
   await page.waitForFunction(() => document.querySelectorAll('.tracks button').length === 2, null, { timeout: 15000 });
   const pendingGp = page.waitForEvent('download', { timeout: 30000 });

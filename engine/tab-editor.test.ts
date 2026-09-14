@@ -8,7 +8,7 @@
 import * as alpha from '@coderline/alphatab';
 
 import {
-  addTrack, clearString, deleteBeat, emptyTab, layout, nudgeDuration, pitchOf, readTab, setDuration, setFret, setStrings,
+  addTrack, clearString, deleteBeat, emptyTab, layout, nudgeDuration, pitchOf, readTab, removeTrack, setDuration, setFret, setStrings,
   setTempo, stepBeat, stepString, toAlphaTex, toggleDotted, typeDigit, type Cursor, type EditTab,
 } from './tab-editor.ts';
 
@@ -110,6 +110,9 @@ const beatsOf = (score: alpha.model.Score, track = 0) =>
   check('a second track, a bass, padded to the same bars', score.tracks.length === 2 && score.tracks[1]!.staves[0]!.tuning.length === 4
     && score.tracks[1]!.staves[0]!.bars.length === score.tracks[0]!.staves[0]!.bars.length, `${score.tracks.map((t) => t.name).join(', ')}`);
   check('the tempo is written', score.tempo === 96);
+  const removed = removeTrack(tab, 1);
+  check('a track can be deleted, the others kept as written',
+    removed.tracks.length === 1 && removed.tracks[0] === tab.tracks[0] && removeTrack(removed, 0) === removed);
   const { at } = layout(tab.tracks[0]!.beats);
   const mapped = at.every(([bar, index], i) => {
     const b = score.tracks[0]!.staves[0]!.bars[bar]!.voices[0]!.beats[index]!;
