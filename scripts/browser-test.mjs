@@ -663,9 +663,20 @@ await demoPage.getByRole('button', { name: 'Tester' }).click();
 // A tester is walked through the page one window at a time, the rest in the
 // dark, each window lit where it is and explained beside it.
 check('a tester starts with the tutorial', await demoPage.locator('.tour-card').isVisible());
-const tourTargets = ['.global-controls', '.amp-head', '.demo-panel', '.reader', '.write-tab', '.metronome-launch', null];
+const tourTargets = ['.global-controls', '.amp-head', '.demo-panel', '.reader', '.reader', '.metronome-launch', null];
 const tourSeen = [];
-for (const target of tourTargets) {
+let tourWaited = false;
+for (const [step, target] of tourTargets.entries()) {
+  // The composing step waits for a note written from the keyboard.
+  if (step === 4) {
+    await demoPage.waitForTimeout(900);
+    const waited = await demoPage.locator('.tour-card .tour-next').isDisabled();
+    await demoPage.locator('.write-tab').click();
+    await demoPage.locator('.editor-bar').waitFor({ timeout: 30000 });
+    await demoPage.keyboard.press('3');
+    await demoPage.waitForFunction(() => !document.querySelector('.tour-card .tour-next').disabled, null, { timeout: 15000 });
+    tourWaited = waited;
+  }
   await demoPage.waitForTimeout(900);
   tourSeen.push(await demoPage.evaluate((selector) => {
     const card = document.querySelector('.tour-card').getBoundingClientRect();
@@ -690,6 +701,8 @@ for (const target of tourTargets) {
 }
 check('the tutorial lights each window in turn, the page dark around it, the explanation beside it',
   tourSeen.every((s) => s.ok), tourSeen.map((s) => `${s.title}: ${s.ok ? 'ok' : s.detail}`).join(' · '));
+check('the composing step waits for a note written from the keyboard', tourWaited);
+await demoPage.locator('.write-tab').click();
 check('and gives the page back as it was',
   (await demoPage.locator('.tour-shade, .tour-lit').count()) === 0
     && (await demoPage.evaluate(() => document.querySelector('.global-controls').style.zIndex === '' && document.querySelector('.metronome-launch').style.zIndex === '')));

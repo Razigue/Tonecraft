@@ -8,7 +8,7 @@
 import * as alpha from '@coderline/alphatab';
 
 import {
-  addTrack, clearString, deleteBeat, emptyTab, layout, nudgeDuration, pitchOf, readTab, removeTrack, setDuration, setSignature, setFret, setStrings,
+  addTrack, clearString, deleteBeat, emptyTab, layout, nudgeDuration, pickFret, pitchOf, readTab, removeTrack, setDuration, setSignature, setFret, setStrings,
   setTempo, stepBeat, stepString, toAlphaTex, toggleDotted, typeDigit, type Cursor, type EditTab,
 } from './tab-editor.ts';
 
@@ -154,6 +154,17 @@ const beatsOf = (score: alpha.model.Score, track = 0) =>
   check('a draft kept before time signatures reads as 4/4',
     readTab({ tempo: 100, tracks: [{ name: 'Guitar', tuning: [64, 59, 55, 50, 45, 40], beats: [{ duration: 4, dotted: false, notes: [] }] }] })?.signature.numerator === 4
       && readTab(JSON.parse(JSON.stringify(six)))?.signature.denominator === 8);
+}
+
+{
+  // The neck: a click writes a fret, another fret replaces it, the same fret takes it off.
+  const c: Cursor = { track: 0, beat: 0, string: 6 };
+  const notes = (tab: EditTab) => tab.tracks[0]!.beats[0]!.notes.map((n) => `${n.string}:${n.fret}`).sort();
+  const one = pickFret(emptyTab(), c, 2, 3);
+  const chord = pickFret(one, c, 5, 0);
+  check('a fret clicked on the neck is written on its string, whatever string the cursor is on', JSON.stringify(notes(chord)) === '["2:3","5:0"]');
+  check('another fret on the same string replaces it', JSON.stringify(notes(pickFret(chord, c, 2, 7))) === '["2:7","5:0"]');
+  check('and the same fret takes it off', JSON.stringify(notes(pickFret(chord, c, 2, 3))) === '["5:0"]');
 }
 
 console.log(failures === 0 ? '\nall checks passed\n' : `\n${failures} check(s) failed\n`);

@@ -293,7 +293,9 @@
     { targets: ['.amp-head'] },
     { targets: ['.demo-panel'] },
     { targets: ['.reader'], figure: 'tracks' },
-    { targets: ['.write-tab'], figure: 'compose' },
+    // The whole reader, not the button alone: the step waits for a note, and
+    // the note written has to be seen on the tab and the neck, not in the dark.
+    { targets: ['.reader'], figure: 'compose' },
     { targets: ['.metronome-launch', '.metronome-toggle'] },
     { targets: [] },
   ];
@@ -335,10 +337,13 @@
     tutorial: '.tour-button',
   };
   let touring = $state(false);
+  /** The composing step's task: a note written during this tutorial, not one left in a draft. */
+  let wroteNote = $state(false);
+  $effect(() => { if (!touring) wroteNote = false; });
 
   let locale = $state<Locale>(detectLocale());
   const text = $derived(MESSAGES[locale]);
-  const testerTour = $derived<readonly TourStep[]>(text.tour.steps.map((step, i) => ({ ...step, ...TOUR_LAYOUT[i]! })));
+  const testerTour = $derived<readonly TourStep[]>(text.tour.steps.map((step, i) => ({ ...step, ...TOUR_LAYOUT[i]!, done: wroteNote })));
   $effect(() => { document.documentElement.lang = locale; });
   function chooseLocale(next: Locale): void {
     locale = next;
@@ -1234,7 +1239,7 @@
       <Recorder engine={engineState === 'running' ? engine : null} sinkId={engine?.outputId ?? outputId}
         tone={{ values, capture: captures.find(c => c.file === captureFile) ?? null, cab }} />
     {/if}
-    <TabReader ontempo={takeScoreTempo} />
+    <TabReader ontempo={takeScoreTempo} onwrite={() => { if (touring) wroteNote = true; }} />
   </main>
 
   {#if mode === 'musician'}

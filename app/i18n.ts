@@ -31,7 +31,12 @@ export function saveLocale(locale: Locale): void {
  * and hovering it rings what it names (the terms are mapped to the page in
  * Rig.svelte). `**words**` is bold alone.
  */
-export interface TourText { readonly title: string; readonly body: readonly string[] }
+export interface TourText {
+  readonly title: string;
+  readonly body: readonly string[];
+  /** Something to do on the page before the next step, which waits for it. */
+  readonly task?: string;
+}
 
 export interface Messages {
   readonly language: string;
@@ -112,10 +117,11 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
           body: [
             '[Write a tab](write) opens an empty tab to compose your own.',
             'Start by choosing the [tempo](tempo), the [time signature](signature) (4/4, 3/4, 6/8…) and the [tuning](tuning), as well as the number of strings.',
-            'Write notes with the [number keys](digits) on your keyboard, on the numeric keypad or the row above the letters: type 1 then 2 for fret 12.',
-            'Move through the beats of the bar with the [arrow keys](arrows) ← and →, and change string with ↑ and ↓. Several notes on the same beat make a chord.',
+            'Write notes with the [number keys](digits) on your keyboard, on the numeric keypad or the row above the letters: type 1 then 2 for fret 12. You can also click a fret on the [neck](neck).',
+            'Move through the beats of the bar with the [arrow keys](arrows) ← and →, and change string with ↑ and ↓. Several notes on the same beat make a chord. **Delete** erases the note, **Backspace** the whole beat.',
             '**+** and **−** make a note shorter or longer, **Space** plays back what you have written, and **Export .gp** saves it as a Guitar Pro file.',
           ],
+          task: 'Your turn: click **Write a tab**, then type a number on your keyboard. You will hear the note as it is written.',
         },
         {
           title: 'The metronome',
@@ -191,10 +197,11 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
           body: [
             '[Write a tab](write) ouvre une tablature vide pour composer la vôtre.',
             'Choisissez d’abord le [tempo](tempo), la [signature rythmique](signature) (4/4, 3/4, 6/8…) et l’[accordage](tuning), ainsi que le nombre de cordes.',
-            'Écrivez les notes avec les [chiffres](digits) de votre clavier, sur le pavé numérique ou la rangée au-dessus des lettres : tapez 1 puis 2 pour la case 12.',
-            'Parcourez les temps de la mesure avec les [flèches](arrows) ← et →, et changez de corde avec ↑ et ↓. Plusieurs notes sur un même temps forment un accord.',
+            'Écrivez les notes avec les [chiffres](digits) de votre clavier, sur le pavé numérique ou la rangée au-dessus des lettres : tapez 1 puis 2 pour la case 12. Vous pouvez aussi cliquer une case sur le [manche](neck).',
+            'Parcourez les temps de la mesure avec les [flèches](arrows) ← et →, et changez de corde avec ↑ et ↓. Plusieurs notes sur un même temps forment un accord. **Suppr** efface la note, **Retour arrière** le temps entier.',
             '**+** et **−** raccourcissent ou allongent la note, **Espace** fait écouter ce que vous avez écrit, et **Export .gp** l’enregistre au format Guitar Pro.',
           ],
+          task: 'À vous : cliquez sur **Write a tab**, puis tapez un chiffre au clavier. Vous entendrez la note au moment où elle s’écrit.',
         },
         {
           title: 'Le métronome',

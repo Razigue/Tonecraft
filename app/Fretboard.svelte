@@ -20,16 +20,22 @@
    * note's halo, the scale, the played note's core — so a note played inside
    * the scale reads as a dot inside its ring, one outside it as a dot alone,
    * and neither ever hides the other.
+   *
+   * Given `onpick`, every position is a target: the open string left of the
+   * nut, then each fret's cell, a string's gap tall. They are drawn last and
+   * transparent, so they catch the click without covering what is lit.
    */
   import type { NeckNote } from '../engine/scales.ts';
 
-  let { strings, lit, capo = 0, scale = [] }: {
+  let { strings, lit, capo = 0, scale = [], onpick }: {
     strings: readonly number[];
     /** Frets counted from the capo, as alphaTab reports a played note. */
     lit: readonly { string: number; fret: number }[];
     capo?: number;
     /** The same coordinates as `lit`, so the two land on the same spot. */
     scale?: readonly NeckNote[];
+    /** A position clicked, in the same coordinates as `lit`. */
+    onpick?: (note: { string: number; fret: number }) => void;
   } = $props();
 
   const FRETS = 24;
@@ -106,6 +112,16 @@
     {#each played as note (`c${note.string}:${note.fret}`)}
       <circle class="core" cx={x(note.fret)} cy={y(note.string)} r="6" />
     {/each}
+    {#if onpick}
+      {#each strings as _, i}
+        {#each Array(FRETS + 1 - capo) as _, fret}
+          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+          <rect class="pick" x={fret + capo === 0 ? 0 : NUT + (fret + capo - 1) * width} y={row(i) - GAP / 2}
+            width={fret + capo === 0 ? NUT : width} height={GAP}
+            onclick={() => onpick({ string: strings.length - i, fret })} />
+        {/each}
+      {/each}
+    {/if}
   </svg>
 </div>
 
@@ -128,6 +144,9 @@
   .halo{fill:#a3732040}
   .core{fill:#a37320}
   .halo,.core{transform-box:fill-box;transform-origin:center;animation:strike .13s ease-out}
+  /* The keyboard stays the way to write for anyone not pointing: the neck is a shortcut, not the only path. */
+  .pick{fill:transparent;cursor:pointer}
+  .pick:hover{fill:#a3732018}
   @keyframes strike{from{opacity:0;transform:scale(.55)}to{opacity:1;transform:scale(1)}}
   @media(prefers-reduced-motion:reduce){.halo,.core{animation:none}}
   @media(max-width:760px){.neck{padding:10px 8px 14px;min-height:110px}.number{display:none}.degree{display:none}}

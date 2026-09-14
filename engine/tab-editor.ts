@@ -188,6 +188,16 @@ export function clearString(tab: EditTab, cursor: Cursor): EditTab {
   return mapBeat(tab, cursor, (b) => ({ ...b, notes: b.notes.filter((n) => n.string !== cursor.string) }));
 }
 
+/**
+ * A fret clicked on the neck: written on that string, or taken off when it is
+ * the note already there, so a wrong click is undone by the same click.
+ */
+export function pickFret(tab: EditTab, cursor: Cursor, string: number, fret: number): EditTab {
+  const at = { ...cursor, string };
+  const held = tab.tracks[cursor.track]?.beats[cursor.beat]?.notes.find((n) => n.string === string);
+  return held?.fret === fret ? clearString(tab, at) : setFret(tab, at, fret);
+}
+
 export function makeRest(tab: EditTab, cursor: Cursor): EditTab {
   return mapBeat(tab, cursor, (b) => ({ ...b, notes: [] }));
 }

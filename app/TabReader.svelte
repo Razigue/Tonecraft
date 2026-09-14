@@ -8,11 +8,15 @@
   import { restoreFadedVolume } from '../engine/tab-fades.ts';
   import {
     DURATIONS, SIGNATURES, STRING_COUNTS, TUNINGS, addTrack, barTicks, clearString, deleteBeat, emptyTab, layout as layBeats, makeRest, nudgeDuration,
-    readTab, removeTrack, setDuration, setSignature, setStrings, setTempo, setTuning, stepBeat, stepString, toAlphaTex, toggleDotted, typeDigit,
+    pickFret, readTab, removeTrack, setDuration, setSignature, setStrings, setTempo, setTuning, stepBeat, stepString, toAlphaTex, toggleDotted, typeDigit,
     type Cursor, type EditTab, type PendingDigit,
   } from '../engine/tab-editor.ts';
 
-  let { ontempo }: { ontempo?: (bpm: number) => void } = $props();
+  let { ontempo, onwrite }: {
+    ontempo?: (bpm: number) => void;
+    /** A note written in the editor, from the keys or the neck. */
+    onwrite?: () => void;
+  } = $props();
 
   // Every format alphaTab's own ScoreLoader tries, in its order: Guitar Pro
   // 3-5, 6 (gpx), 7-8 (gp), MusicXML plain and zipped, Capella, alphaTex.
@@ -272,7 +276,7 @@
     // is longer than the window: on a short one it would be paper to nowhere.
     api.postRenderFinished.on(() => {
       rendering = false;
-      if (api === created && editing) { if (redraw) { redraw = false; void renderDraft(); } else placeCursor(); }
+      if (api === created && editing) { if (redraw) { redraw = false; void renderDraft(); } else { placeCursor(); soundWritten(); } }
       if (!viewport || !surface) return;
       fitSurface(created);
       layout++;
@@ -560,6 +564,15 @@
   let draft = $state.raw<EditTab>(emptyTab());
   let cursor = $state.raw<Cursor>({ track: 0, beat: 0, string: 6 });
   let pendingDigit: PendingDigit | null = null;
+  /**
+   * The note just written, to be heard. Played once its layout is finished and
+   * not as it is typed: every layout reloads the player's MIDI, and a reload
+   * stops a note already sounding. The wait is the 40 ms of `commit` plus one
+   * layout, well under what reads as late for a note being placed.
+   */
+  let written: Cursor | null = null;
+  /** The tab the last layout was made from: a layout of an older one would sound the fret before the edit. */
+  let drawn: EditTab | null = null;
   let rendering = false;
   let redraw = false;
   let drawTimer = 0;
@@ -584,6 +597,9 @@
       fresh.playbackSpeed = speed / 100;
       rendering = false; redraw = false;
       await renderDraft();
+      // The button pressed was disabled while the editor loaded, and the focus
+      // went with it: the first digit typed reached nothing.
+      section?.focus({ preventScroll: true });
     } catch (e) {
       console.warn('[tab reader]', e);
       editing = false;
@@ -610,6 +626,7 @@
     if (api !== shown || !editing) return;
     if (rendering) { redraw = true; return; }
     const importer = new alpha.importer.AlphaTexImporter();
+    drawn = draft;
     importer.initFromString(toAlphaTex(draft), new alpha.Settings());
     const parsed = importer.readScore();
     parsed.tracks.forEach((t, i) => { t.playbackInfo.isMute = mutedTracks.has(i); t.playbackInfo.isSolo = soloed.has(i); });
@@ -619,9 +636,11 @@
     for (const [i, level] of trackVolumes) if (parsed.tracks[i]) shown.changeTrackVolume([parsed.tracks[i]], level);
   }
 
-  function commit(next: EditTab, at: Cursor = cursor) {
+  /** `sound`: the edit wrote a note at `at`, to be heard. */
+  function commit(next: EditTab, at: Cursor = cursor, sound = false) {
     const t = next.tracks[Math.min(at.track, next.tracks.length - 1)]!;
     cursor = { track: next.tracks.indexOf(t), beat: Math.max(0, Math.min(at.beat, t.beats.length - 1)), string: Math.max(1, Math.min(t.tuning.length, at.string)) };
+    if (sound) { written = cursor; onwrite?.(); }
     if (next === draft) { placeCursor(); return; }
     draft = next;
     clearTimeout(drawTimer);
@@ -641,10 +660,28 @@
     const track = Math.max(0, gone - 1);
     act(removeTrack(draft, gone), { track, beat: 0, string: draft.tracks[track === gone ? gone + 1 : track]!.tuning.length });
   }
+  /** A position clicked on the neck, written on the beat under the cursor; the cursor moves to its string. */
+  function pickOnNeck(note: { string: number; fret: number }) {
+    pendingDigit = null;
+    const next = pickFret(draft, cursor, note.string, note.fret);
+    const added = next.tracks[cursor.track]?.beats[cursor.beat]?.notes.some(n => n.string === note.string) ?? false;
+    act(next, { ...cursor, string: note.string }, added);
+  }
   /** From a control: the keys go back to the tab. */
-  function act(next: EditTab, at: Cursor = cursor) {
-    commit(next, at);
+  function act(next: EditTab, at: Cursor = cursor, sound = false) {
+    commit(next, at, sound);
     section?.focus({ preventScroll: true });
+  }
+  /** The note written, once laid out: alphaTab plays it alone, on its track's instrument. */
+  function soundWritten() {
+    if (drawn !== draft) return;
+    const at = written, shown = api;
+    written = null;
+    const beats = draft.tracks[at?.track ?? -1]?.beats, staff = score?.tracks[at?.track ?? -1]?.staves[0];
+    if (!at || !shown || !ready || !beats || !staff) return;
+    const [bar, index] = layBeats(beats, barTicks(draft.signature)).at[at.beat] ?? [-1, -1];
+    const note = staff.bars[bar]?.voices[0]?.beats[index]?.notes.find(n => n.string === at.string);
+    if (note) shown.playNote(note);
   }
 
   /** The cursor drawn where the beat being written was laid out: alphaTab's own, the string mark and the neck. */
@@ -687,7 +724,7 @@
     if (digit && e.key.length === 1) {
       const typed = typeDigit(draft, cursor, Number(digit[1]), pendingDigit, performance.now());
       pendingDigit = typed.pending;
-      commit(typed.tab);
+      commit(typed.tab, cursor, true);
     } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
       const moved = stepBeat(draft, cursor, e.key === 'ArrowRight' ? 1 : -1);
       commit(moved.tab, moved.cursor);
@@ -793,6 +830,8 @@
           <button aria-pressed={editBeat?.dotted ?? false} onclick={() => act(toggleDotted(draft, cursor))}>Dotted</button>
           <button aria-pressed={editBeat !== null && editBeat.notes.length === 0} onclick={() => act(makeRest(draft, cursor))}>Rest</button>
         </div>
+        <button title="Delete" disabled={!editBeat?.notes.some(n => n.string === cursor.string)} onclick={() => act(clearString(draft, cursor))}>Delete note</button>
+        <button title="Backspace" disabled={editTrack.beats.length <= 1 && editBeat?.notes.length === 0} onclick={() => { const removed = deleteBeat(draft, cursor); act(removed.tab, removed.cursor); }}>Delete beat</button>
         <label>Strings<select aria-label="String count" value={editTrack.tuning.length}
           onchange={e => { const n = Number(e.currentTarget.value); act(setStrings(draft, cursor.track, n), { ...cursor, string: cursor.string + n - editTrack.tuning.length }); }}>
           {#each STRING_COUNTS as n}<option value={n}>{n}</option>{/each}
@@ -855,7 +894,7 @@
             <span class="legend" aria-hidden="true"><i class="root"></i>Root<i class="tone"></i>Scale<i class="play"></i>Playing</span>
           {/if}
         </div>
-        <Fretboard strings={stave.tuning} {lit} capo={stave.capo} scale={scaleNotes} />
+        <Fretboard strings={stave.tuning} {lit} capo={stave.capo} scale={scaleNotes} onpick={editing && !playing ? pickOnNeck : undefined} />
       {/if}
       </div>
     </div>

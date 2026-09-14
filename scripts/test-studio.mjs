@@ -430,6 +430,14 @@ try {
   assert.equal(await editor.getByRole('button', { name: '1/8', exact: true }).getAttribute('aria-pressed'), 'true', '+ makes the beat shorter');
   // The chord written, 12 and 5, is on the neck whole, not only the string under the cursor.
   await page.waitForFunction(() => document.querySelectorAll('.neck .core').length === 2 && document.querySelector('.string-cursor'), null, { timeout: 10000 });
+  // The neck writes too: fret 7 on the lowest string joins the chord, and Delete note takes it off again.
+  const picks = page.locator('.neck .pick');
+  assert.equal(await picks.count(), 6 * 25, 'every string has a target at the nut and on each of the 24 frets');
+  await picks.nth(5 * 25 + 7).click();
+  await page.waitForFunction(() => document.querySelectorAll('.neck .core').length === 3, null, { timeout: 10000 });
+  await editor.getByRole('button', { name: 'Delete note', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.neck .core').length === 2, null, { timeout: 10000 });
+  assert(await editor.getByRole('button', { name: 'Delete note', exact: true }).isDisabled(), 'nothing left to delete on that string');
   await editor.getByLabel('Tempo', { exact: true }).fill('90');
   await editor.getByLabel('Tempo', { exact: true }).dispatchEvent('change');
   await editor.getByLabel('String count', { exact: true }).selectOption('7');

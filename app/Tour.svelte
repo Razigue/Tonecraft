@@ -12,6 +12,9 @@
     readonly body: readonly string[];
     /** A drawing in the card, for what the page cannot show yet. */
     readonly figure?: TourFigure;
+    /** Something to do on the page; Next waits until `done`. */
+    readonly task?: string;
+    readonly done?: boolean;
   }
 </script>
 
@@ -196,10 +199,13 @@
         onpointerenter={() => show(part.term!)} onpointerleave={() => show(null)}
         onfocus={() => show(part.term!)} onblur={() => show(null)} onclick={() => show(part.term!)}>{part.text}</button>{:else if part.bold}<strong>{part.text}</strong>{:else}{part.text}{/if}{/each}</p>
   {/each}
+  {#if step.task}
+    <p class="tour-task" class:done={step.done} role="status"><span aria-hidden="true">{step.done ? '✓' : '→'}</span> {#each segments(step.task) as part}{#if part.bold}<strong>{part.text}</strong>{:else}{part.text}{/if}{/each}</p>
+  {/if}
   <div class="tour-actions">
     {#if !last}<button class="tour-skip" type="button" onclick={finish}>{labels.skip}</button>{/if}
     {#if index > 0}<button type="button" onclick={() => index--}>{labels.back}</button>{/if}
-    <button class="tour-next" type="button" bind:this={next} onclick={() => (last ? finish() : index++)}>{last ? labels.done : labels.next}</button>
+    <button class="tour-next" type="button" bind:this={next} disabled={step.task !== undefined && !step.done} onclick={() => (last ? finish() : index++)}>{last ? labels.done : labels.next}</button>
   </div>
 </div>
 
@@ -228,6 +234,9 @@
   .tour-skip:hover{color:#e6dcea!important}
   .tour-next{background:#dedbd5!important;color:#222!important;border-color:#dedbd5!important}
   .tour-next:hover{background:#fff!important}
+  .tour-next:disabled{opacity:.4;cursor:default}
+  .tour-task{margin:14px 0 0;padding:10px 12px;border:1px solid #6d5a72;border-radius:6px;background:#27212a;color:#f3e9f6}
+  .tour-task.done{border-color:#5fa39c;background:#1c2626}
 
   .tour-figure{margin:0 0 14px;padding:12px;border:1px solid #3a3340;border-radius:8px;background:#141216}
   .fig-track{display:grid;grid-template-columns:1fr auto auto 70px;align-items:center;gap:6px;padding:6px 4px;font:12px var(--body);color:#ddd}
