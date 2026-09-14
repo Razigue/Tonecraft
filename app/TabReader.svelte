@@ -268,14 +268,15 @@
     api.postRenderFinished.on(() => {
       if (!viewport || !surface) return;
       fitSurface(created);
+      layout++;
       tail = 0;
       const width = surface.scrollWidth;
       if (width > viewport.clientWidth) tail = Math.round(viewport.clientWidth / 2);
     });
     api.playerReady.on(() => { ready = true; });
-    api.playerStateChanged.on(e => { playing = e.state === 1; });
+    api.playerStateChanged.on(e => { playing = e.state === 1; if (playing) stringCursor = null; });
     api.playerPositionChanged.on(e => {
-      position = e.currentTime; duration = e.endTime;
+      position = e.currentTime; duration = e.endTime; currentTick = e.currentTick;
       // Every jump, ours or a click on a note, lands centred. Keyed on the
       // event's own flag rather than on a pending one we set before seeking:
       // a stray position update from the pause that preceded it consumed the
@@ -285,6 +286,7 @@
     // What is sounding, replaced whole on every beat: the previous position
     // goes out as the next comes in, which is the whole point of the neck.
     api.activeBeatsChanged.on(e => {
+      if (!playing && stringCursor !== null) return;
       const held: { string: number; fret: number }[] = [];
       for (const beat of e.activeBeats) {
         if (beat.voice.bar.staff.track.index !== track) continue;
@@ -322,7 +324,7 @@
         const first = parsed.tracks[track]?.staves[0]?.bars[0];
         if (first) scaleRoot = keyOfSignature(first.keySignature, first.keySignatureType === 1);
       }
-      mutedTracks = new Set(); soloed = new Set(); trackVolumes = new Map(); looping = false; selection = false; position = 0; duration = 0; lit = [];
+      mutedTracks = new Set(); soloed = new Set(); trackVolumes = new Map(); stringCursor = null; looping = false; selection = false; position = 0; duration = 0; lit = [];
       const fresh = await reader(alpha);
       fresh.renderScore(parsed, [track]);
       fresh.playbackSpeed = speed / 100;
@@ -342,7 +344,7 @@
 
   function chooseTrack(index: number) {
     if (!score || !api) return;
-    track = index; lit = [];
+    track = index; lit = []; stringCursor = null;
     api.renderTracks([score.tracks[index]!]);
   }
   function toggled(set: ReadonlySet<number>): Set<number> {
@@ -391,6 +393,92 @@
     });
   }
   function togglePlay() { if (ready && !busy) api?.playPause(); }
+
+  /**
+   * The arrows step through the song: a bar at a time while it plays, a beat
+   * at a time while it is paused — the beats with notes on the track being
+   * read, or every beat of a track with none.
+   */
+  const beatTicks = $derived.by(() => {
+    const t = score?.tracks[track];
+    if (!t) return [];
+    const withNotes = new Set<number>(), every = new Set<number>();
+    for (const staff of t.staves) for (const bar of staff.bars) for (const voice of bar.voices) for (const beat of voice.beats) {
+      every.add(beat.absolutePlaybackStart);
+      if (beat.notes.length > 0) withNotes.add(beat.absolutePlaybackStart);
+    }
+    return [...(withNotes.size > 0 ? withNotes : every)].sort((a, b) => a - b);
+  });
+  /** Where the last step went: alphaTab lands a seek a few ticks short, and the next step must not find the same beat. */
+  let stepped = -1;
+  /** The player's position in ticks, as alphaTab last reported it. */
+  let currentTick = $state(0);
+  const positionTick = (): number => (stepped >= 0 && Math.abs(currentTick - stepped) < 60 ? stepped : currentTick);
+
+  /**
+   * A string cursor, while paused: the arrows up and down move it across the
+   * strings at the beat being read, like an editor's cursor, and the neck then
+   * lights only the note on that string. Playing hides it; the neck goes back
+   * to what is sounding.
+   */
+  let stringCursor = $state<number | null>(null);
+  let stringMark = $state<{ x: number; y: number } | null>(null);
+  /** Bumped after every render, so the mark follows a new layout. */
+  let layout = $state(0);
+  const staveBeats = $derived.by(() => {
+    if (!stave) return [];
+    const beats: model.Beat[] = [];
+    for (const bar of stave.bars) for (const voice of bar.voices) beats.push(...voice.beats);
+    return beats.sort((a, b) => a.absolutePlaybackStart - b.absolutePlaybackStart);
+  });
+  function beatAt(tick: number): model.Beat | null {
+    let found: model.Beat | null = null;
+    for (const beat of staveBeats) { if (beat.absolutePlaybackStart > tick) break; found = beat; }
+    return found;
+  }
+  function moveString(direction: 1 | -1) {
+    if (!stave || stave.tuning.length === 0) return;
+    if (stringCursor === null) {
+      const beat = beatAt(positionTick());
+      stringCursor = beat && beat.notes.length > 0 ? Math.max(...beat.notes.map(n => n.string)) : stave.tuning.length;
+      return;
+    }
+    stringCursor = Math.max(1, Math.min(stave.tuning.length, stringCursor + direction));
+  }
+  $effect(() => {
+    void layout;
+    const string = stringCursor, beat = beatAt(currentTick >= 0 ? positionTick() : 0), reader = api;
+    if (playing || string === null || !stave || !beat || !reader) { stringMark = null; return; }
+    const note = beat.notes.find(n => n.string === string);
+    lit = note ? [{ string: note.string, fret: note.fret }] : [];
+    const bounds = reader.boundsLookup?.findBeat(beat);
+    if (!bounds) { stringMark = null; return; }
+    // alphaTab gives bar bounds for the score staff only when both staves are
+    // shown, so the tab's lines are found from the bounds aligned with every
+    // staff's lines: their bottom is the tab's lowest line, string 1, and the
+    // strings above it are tabLineSpacing apart.
+    const lines = bounds.barBounds.masterBarBounds.lineAlignedBounds;
+    const resources = reader.settings.display.resources as unknown as { engravingSettings: { tabLineSpacing: number } };
+    const spacing = resources.engravingSettings.tabLineSpacing * reader.settings.display.scale;
+    stringMark = { x: bounds.onNotesX, y: lines.y + lines.h - (string - 1) * spacing };
+  });
+  function step(direction: 1 | -1) {
+    if (!api || !score || !ready) return;
+    const now = api.tickPosition;
+    const at = stepped >= 0 && Math.abs(now - stepped) < 60 ? stepped : now;
+    let target: number | undefined;
+    if (playing) {
+      const bars = score.masterBars;
+      target = bars[Math.max(0, Math.min(bars.length - 1, barAt(at) + direction))]?.start;
+    } else if (direction > 0) {
+      target = beatTicks.find(t => t > at);
+    } else {
+      for (const t of beatTicks) { if (t >= at) break; target = t; }
+    }
+    if (target === undefined) return;
+    stepped = target;
+    api.tickPosition = target;
+  }
   /**
    * The section holds the key handler, so it has to hold the focus: clicking a
    * score seeks, it does not focus anything, and space then went to the page.
@@ -406,6 +494,19 @@
     if (e.key === 'Escape' && focused) { void setFocused(false); e.stopPropagation(); }
     if (e.code === 'Space' && e.target instanceof Element && !e.target.closest('input,select,button')) {
       e.preventDefault(); e.stopPropagation(); togglePlay();
+    }
+    // Not from a slider or a select, whose arrows are their own.
+    if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !e.altKey && !e.ctrlKey && !e.metaKey
+        && e.target instanceof Element && !e.target.closest('input,select,textarea')) {
+      e.preventDefault(); e.stopPropagation(); step(e.key === 'ArrowRight' ? 1 : -1);
+    }
+    // Up and down: another track while playing, another string while paused.
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.altKey && !e.ctrlKey && !e.metaKey
+        && e.target instanceof Element && !e.target.closest('input,select,textarea') && score) {
+      e.preventDefault(); e.stopPropagation();
+      const up = e.key === 'ArrowUp';
+      if (playing) chooseTrack(Math.max(0, Math.min(score.tracks.length - 1, track + (up ? -1 : 1))));
+      else moveString(up ? 1 : -1);
     }
   }
   onMount(() => {
@@ -485,6 +586,7 @@
           </div>
         {/if}
         <div class="score-paper" class:hidden={!score} bind:this={surface}></div>
+        {#if stringMark}<span class="string-cursor" aria-hidden="true" style:transform={`translate(${stringMark.x}px, ${stringMark.y}px)`}></span>{/if}
         {#if tail > 0}<div class="score-tail" style:width={`${tail}px`}></div>{/if}
       </div>
       {#if score && stave}
@@ -514,7 +616,7 @@
   button,select{font:12px var(--body);color:#ddd;background:#303030;border:1px solid #4b4b4b;border-radius:4px;min-height:34px;padding:6px 12px;cursor:pointer}button:hover{background:#414141}button:disabled{opacity:.45;cursor:wait}.primary{background:#dedbd5;color:#222;border-color:#dedbd5}.primary:hover{background:#fff}.reader-heading>input{display:none}.error,.storage-note{padding:0 24px 15px;margin:0;font-size:13px}.error{color:var(--ember)}.storage-note{color:#bbb}
   .drop-surface{border-top:1px solid #393939}.dragging{outline:2px dashed #dedbd5;outline-offset:-5px}.transport{display:flex;align-items:center;gap:12px;padding:12px 18px;flex-wrap:wrap;background:#242424;border-bottom:1px solid #404040}.playback{display:flex;align-items:center;gap:6px}.play{width:38px}.clock{font:11px var(--mono);margin:0 8px;white-space:nowrap}.clock span{color:#999}.transport label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa}.transport select{padding:5px}.volume input{width:65px;accent-color:#ddd}.scrub{flex:1 1 160px;min-width:110px;accent-color:#ddd;min-height:34px}.scrub:disabled{opacity:.4}.view-select{margin-left:auto}.active,.active:hover{background:#dedbd5;color:#222}
   .reader-body{display:grid;grid-template-columns:185px minmax(0,1fr)}.stage{display:flex;flex-direction:column;min-width:0;min-height:0}.reader-body.empty{display:block}aside{padding:22px 12px;background:#202020;min-width:0;border-right:1px solid #414141}.tracks{display:grid;gap:5px;margin-top:15px;max-height:360px;overflow:auto}.track-row{display:grid;min-width:0}.track-volume{width:calc(100% - 16px);height:18px;margin:0 8px 4px;accent-color:#bdb7ae;cursor:pointer}.tracks button{display:flex;align-items:baseline;gap:10px;text-align:left;border-color:transparent;background:none;padding:10px 8px;overflow-wrap:anywhere;line-height:1.5}.tracks .selected{background:#363636;border-color:#555}.track-number{flex-shrink:0;font:10px var(--mono);color:#9e9e9e}.track-name{min-width:0}.track-bars{flex-shrink:0;margin-left:auto;font:10px var(--mono);color:#8b8b8b}.tracks .selected .track-bars{color:#c8c8c8}.flag{flex-shrink:0;margin-left:auto;align-self:center;font:9px/1 var(--mono);padding:3px 5px;border-radius:3px}.flag+.flag,.flag~.track-bars{margin-left:0}.flag.mute{background:#8a4436;color:#f6ddd6}.flag.solo{background:#dedbd5;color:#222}.tracks .muted .track-name,.tracks .silenced .track-name{opacity:.45}.tracks .muted .track-name{text-decoration:line-through}.track-tools{display:flex;gap:6px;margin:16px 8px}.track-tools button{flex:1}aside p{font:11px var(--mono);line-height:1.7;padding:0 8px;color:#ccc}aside p span{color:#999}.plays{font:11px/1.7 var(--body)!important;color:#b6b6b6;margin:16px 0 0}.plays b{color:#e4e4e4;font-weight:500}.jump{display:block;margin-top:9px;padding:5px 9px;font-size:11px;min-height:30px}
-  .score-viewport{overflow-x:auto;overflow-y:hidden;min-width:0;position:relative;scrollbar-color:#777 #dedbd5}.has-score{display:flex;align-items:stretch}.score-tail{flex:0 0 auto}.has-score{background:#faf8f3;color:#222}.score-paper{flex:0 0 auto;min-width:100%;min-height:120px;background:#faf8f3;color:#171717}.hidden{display:none}.empty-state{padding:48px 24px;text-align:center;background:radial-gradient(ellipse at top,#303030,#1c1c1c 75%)}.formats{display:block;margin-top:22px;font:10px var(--mono);letter-spacing:1px;color:#c5c1ba}.tab-mark{width:124px;position:relative;margin:auto;padding:4px 0}.tab-mark i{display:block;height:1px;background:#696762;margin:7px 0}.tab-mark span{position:absolute;inset:0;display:grid;place-items:center;font:600 17px var(--mono);letter-spacing:3px;color:#dedbd5;text-shadow:0 0 6px #222;background:linear-gradient(90deg,transparent,#282828 32%,#282828 68%,transparent)}
+  .score-viewport{overflow-x:auto;overflow-y:hidden;min-width:0;position:relative;scrollbar-color:#777 #dedbd5}.has-score{display:flex;align-items:stretch}.score-tail{flex:0 0 auto}.has-score{background:#faf8f3;color:#222}.score-paper{flex:0 0 auto;min-width:100%;min-height:120px;background:#faf8f3;color:#171717}.hidden{display:none}.string-cursor{position:absolute;left:-10px;top:-8px;width:20px;height:16px;box-sizing:border-box;border:1.5px solid #a37320;border-radius:3px;background:#a373201f;pointer-events:none;z-index:2;will-change:transform}.empty-state{padding:48px 24px;text-align:center;background:radial-gradient(ellipse at top,#303030,#1c1c1c 75%)}.formats{display:block;margin-top:22px;font:10px var(--mono);letter-spacing:1px;color:#c5c1ba}.tab-mark{width:124px;position:relative;margin:auto;padding:4px 0}.tab-mark i{display:block;height:1px;background:#696762;margin:7px 0}.tab-mark span{position:absolute;inset:0;display:grid;place-items:center;font:600 17px var(--mono);letter-spacing:3px;color:#dedbd5;text-shadow:0 0 6px #222;background:linear-gradient(90deg,transparent,#282828 32%,#282828 68%,transparent)}
   .reader-footer{display:flex;justify-content:space-between;gap:16px;padding:12px 18px;border-top:1px solid #404040;font:10px var(--mono);color:#aaa}.reader-footer>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.focused{position:fixed;inset:16px;z-index:50;margin:0;display:flex;flex-direction:column;box-shadow:0 0 0 30px #080808e8}.focused .drop-surface{flex:1;min-height:0;display:flex;flex-direction:column}.focused .reader-body{flex:1;min-height:0}.focused .stage{justify-content:center}.focused aside{overflow:auto}
   .scale-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 18px;background:#242424;border-top:1px solid #404040}.scale-bar label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa}.scale-bar select{padding:5px}.scale-notes{font:11px var(--mono);color:#dedbd5;letter-spacing:.5px}.legend{margin-left:auto;display:flex;align-items:center;gap:6px;font:10px var(--mono);color:#999}.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:8px}.legend .root{background:#2f6f6a}.legend .tone{border:1.5px solid #5fa39c;box-sizing:border-box}.legend .play{background:#c08a32}
   :global(.at-cursor-bar){background:#bda77230}:global(.at-cursor-beat){background:#866329;width:3px}:global(.at-selection div){background:#bda77244}:global(.at-highlight *){fill:#a37320!important;stroke:#a37320!important}

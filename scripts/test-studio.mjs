@@ -202,6 +202,89 @@ try {
   assert.equal(await page.locator('.reader .error').count(), 0, 'zooming shows no error');
   console.log('ok zooming keeps the line exactly as long as the score');
 
+  // The arrows: a beat at a time while paused, a bar at a time while playing.
+  await page.getByRole('button', { name: /^01 Guitar/ }).click();
+  await page.getByRole('button', { name: 'Stop tablature', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
+  const cursorAt = selector => page.evaluate(s => {
+    const el = document.querySelector(s)?.getBoundingClientRect();
+    const view = document.querySelector('.score-viewport');
+    return el ? { x: Math.round(el.left - view.getBoundingClientRect().left + view.scrollLeft), width: Math.round(el.width) } : null;
+  }, selector);
+  await page.locator('.reader').focus();
+  const paused = [];
+  for (const key of ['ArrowRight', 'ArrowRight', 'ArrowLeft']) {
+    await page.keyboard.press(key);
+    await page.waitForTimeout(400);
+    paused.push((await cursorAt('.at-cursor-beat')).x);
+  }
+  const bar = await cursorAt('.at-cursor-bar');
+  assert(paused[1] > paused[0] && paused[0] > 0, `paused, the right arrow steps beat by beat (${paused})`);
+  assert(paused[1] - paused[0] < bar.width / 2, `one beat, not a bar (${paused[1] - paused[0]}px of a ${bar.width}px bar)`);
+  assert(Math.abs(paused[2] - paused[0]) <= 3, `and the left arrow steps back (${paused})`);
+  await page.getByRole('button', { name: 'Play tablature', exact: true }).click();
+  await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor({ timeout: 10000 });
+  await page.waitForTimeout(300);
+  const barBefore = await cursorAt('.at-cursor-bar');
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(250);
+  const barAfter = await cursorAt('.at-cursor-bar');
+  await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
+  assert(barAfter.x - barBefore.x >= barBefore.width * 0.9, `playing, the right arrow goes to the next bar (${barBefore.x} → ${barAfter.x}, bar ${barBefore.width}px)`);
+  console.log('ok the arrows step a beat while paused and a bar while playing');
+
+  // Up and down: a string cursor while paused, drawn on the tab's own lines,
+  // lighting only that string's note; another track while playing.
+  await page.getByRole('button', { name: 'Stop tablature', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
+  await page.locator('.reader').focus();
+  const stringMark = () => page.evaluate(() => {
+    const m = document.querySelector('.string-cursor')?.getBoundingClientRect();
+    return m ? Math.round(m.top + m.height / 2) : null;
+  });
+  const tabLinesNow = () => page.evaluate(() => {
+    const svg = document.querySelector('.score-paper svg');
+    return [...new Set([...svg.querySelectorAll('rect')].map(r => r.getBoundingClientRect())
+      .filter(r => r.height > 0 && r.height < 3 && r.width > 40).map(r => Math.round(r.top + r.height / 2)))].sort((a, b) => a - b);
+  });
+  // In both views: score and tab, where the tab is the lower staff, and tab alone.
+  for (const view of ['both', 'tab']) {
+    await page.getByRole('combobox', { name: 'Notation view', exact: true }).selectOption(view);
+    await page.waitForTimeout(2500);
+    await page.locator('.reader').focus();
+    const tabLines = await tabLinesNow();
+    // The first beat of Guitar is one note, on its lowest string: the first press
+    // puts the cursor there, the next two move it up to strings with no note.
+    const stringMarks = [], stringCores = [];
+    for (const key of ['ArrowUp', 'ArrowUp', 'ArrowUp']) {
+      await page.keyboard.press(key);
+      await page.waitForTimeout(250);
+      stringMarks.push(await stringMark());
+      stringCores.push(await page.locator('.neck .core').count());
+    }
+    const lowest = tabLines[tabLines.length - 1];
+    assert(stringMarks.every(m => m !== null), `${view}: the string cursor is drawn (${stringMarks})`);
+    assert(Math.abs(stringMarks[0] - lowest) <= 3, `${view}: on the lowest tab line for the lowest string (${stringMarks} against ${tabLines})`);
+    assert(stringMarks.every(m => tabLines.some(l => Math.abs(l - m) <= 3)), `${view}: on the tab's own lines (${stringMarks} against ${tabLines})`);
+    assert(stringMarks[1] < stringMarks[0] && stringMarks[2] < stringMarks[1], `${view}: up moves it up a string (${stringMarks})`);
+    assert.deepEqual(stringCores, [1, 0, 0], `${view}: the neck lights the note on that string, and nothing on a string with none`);
+    // Down, back to the lowest string, so the next view starts from the same place.
+    await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown');
+    await page.getByRole('button', { name: /^01 Guitar/ }).click();
+    await page.locator('.reader').focus();
+  }
+  await page.getByRole('button', { name: 'Play tablature', exact: true }).click();
+  await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor({ timeout: 10000 });
+  assert.equal(await page.locator('.string-cursor').count(), 0, 'playing hides the string cursor');
+  const before = await page.locator('.tracks button[aria-pressed="true"]').innerText();
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(200);
+  const after = await page.locator('.tracks button[aria-pressed="true"]').innerText();
+  await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
+  assert.notEqual(after, before, `playing, the down arrow chooses the next track (${before.split(/\s+/)[1]} → ${after.split(/\s+/)[1]})`);
+  await page.getByRole('button', { name: /^01 Guitar/ }).click();
+  console.log('ok up and down move a string cursor while paused and change track while playing');
+
   // The neck under the tab is the track's own: a four-string bass draws four.
   assert.equal(await page.locator('.neck .fret').count(), 24);
   assert.equal(await page.locator('.neck .string').count(), 6);
