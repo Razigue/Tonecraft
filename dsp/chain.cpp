@@ -131,6 +131,8 @@ struct Chain {
   tc::Player backing;
   tc::Smoother backingGain;
   bool backingArmed = false;
+  /* Echoed in the meter frame: see `file_request` in schema/chain.ts. */
+  int fileRequest = 0, backingRequest = 0;
 
   // Read once per block, as the worklet's k-rate AudioParams were.
   tc::Smoother inGain, gate, boost, tone;
@@ -222,6 +224,8 @@ void meterFrame(Chain& c) {
   m[TC_M_PITCH_DELAY_MS] = static_cast<float>(c.pitch.delayFrames() * 1000.0 / c.sr);
   m[TC_M_BACKING_SECONDS] = static_cast<float>(static_cast<double>(c.backing.position()) / c.sr);
   m[TC_M_BACKING_PLAYING] = c.backing.playing() ? 1.0f : 0.0f;
+  m[TC_M_FILE_REQUEST] = static_cast<float>(c.fileRequest);
+  m[TC_M_BACKING_REQUEST] = static_cast<float>(c.backingRequest);
   for (int s = 0; s < TC_SLOT_COUNT; s++) {
     m[TC_M_STAGE_RMS + s] = static_cast<float>(std::sqrt(c.stageSum[s] / frames));
     c.stageSum[s] = 0.0;
@@ -539,6 +543,8 @@ TC_EXPORT int tc_file_load(const float* data, int bytes, int channels) {
   return g->player.load(data, bytes / 4 / channels, channels) ? 1 : 0;
 }
 TC_EXPORT void tc_file_play(int fromFrame) { if (g) g->player.play(fromFrame); }
+/* Sent before a play; the meter frame carries it back. */
+TC_EXPORT void tc_file_request(int id) { if (g) g->fileRequest = id; }
 TC_EXPORT void tc_file_stop() { if (g) g->player.stop(); }
 TC_EXPORT void tc_file_loop(int on) { if (g) g->player.setLoop(on != 0); }
 
@@ -552,6 +558,8 @@ TC_EXPORT int tc_backing_load(const float* data, int bytes, int channels) {
 }
 TC_EXPORT void tc_backing_clear() { if (g) g->backing.clear(); }
 TC_EXPORT void tc_backing_play(int fromFrame) { if (g) g->backing.play(fromFrame); }
+/* Sent before a play, or before the recorder starts an armed track. */
+TC_EXPORT void tc_backing_request(int id) { if (g) g->backingRequest = id; }
 TC_EXPORT void tc_backing_stop() { if (g) g->backing.stop(); }
 /* How loud the track sits under the playing, 0..1. Session, never tone. */
 TC_EXPORT void tc_backing_level(float level) {

@@ -63,6 +63,16 @@ export const METERS = [
   /** Where the backing track is, in seconds, and whether it is playing. */
   'backing_seconds',
   'backing_playing',
+  /**
+   * The number the engine sent with its last play of the file and of the
+   * backing track (`tc_file_request`, `tc_backing_request`). A frame is
+   * computed after the calls sent before it, but can reach the page after
+   * later ones were sent: stopped and started again at once, the take was
+   * reported stopped by a frame from between the two. A frame carrying an
+   * older number says nothing about the play just asked for.
+   */
+  'file_request',
+  'backing_request',
 ] as const;
 
 export type MeterField = (typeof METERS)[number];

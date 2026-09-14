@@ -126,6 +126,10 @@ const M_LOOP_LENGTH = meterIndex('loop_length');
 const M_PITCH_DELAY = meterIndex('pitch_delay_ms');
 const M_BACKING_SECONDS = meterIndex('backing_seconds');
 const M_BACKING_PLAYING = meterIndex('backing_playing');
+const M_FILE_REQUEST = meterIndex('file_request');
+const M_BACKING_REQUEST = meterIndex('backing_request');
+/** Request numbers wrap well inside the integers a float32 meter holds exactly. */
+const nextRequest = (n: number): number => (n % 1_000_000) + 1;
 
 const LOOP_BY_CODE = Object.fromEntries(
   Object.entries(LOOP_STATES).map(([name, code]) => [code, name as LoopState]),
@@ -183,8 +187,8 @@ export class Engine {
   #fileLoop = true;
   #fileCursor = 0;
   #playAskedAt = 0;
-  /** The chain has reported the take playing since it was last asked to. */
-  #fileHeard = false;
+  /** The number sent with the last play, echoed by the frames computed after it. */
+  #fileRequest = 0;
 
   #backingBytes: ArrayBuffer | null = null;
   #backing: AudioBuffer | null = null;
@@ -192,7 +196,7 @@ export class Engine {
   #backingPlaying = false;
   #backingCursor = 0;
   #backingAskedAt = 0;
-  #backingHeard = false;
+  #backingRequest = 0;
 
   #startedAt = 0;
   #firstAudioAt: number | null = null;
@@ -404,18 +408,18 @@ export class Engine {
     if (this.#firstAudioAt === null && frame[M_INPUT]! > 0.01) this.#firstAudioAt = now;
 
     /* The chain reports where the take is. A frame computed before the chain
-       saw a play request can arrive after it — well after, on a loaded
-       machine: a fixed 150 ms grace let a stale frame stop a take that had
-       just started. "Stopped" is believed once the chain has said "playing"
-       since the request, or when it never has within a second: a take shorter
-       than one meter frame. */
-    if (this.#backingPlaying && frame[M_BACKING_PLAYING]! >= 0.5) this.#backingHeard = true;
-    if (this.#backingPlaying && (this.#backingHeard || now - this.#backingAskedAt > 1000)) {
+       saw a play request can arrive after it: a fixed grace after asking let
+       a late frame stop a take that had just started, and "playing" seen
+       since asking was no better — stopped and started again at once, the
+       frames from before the stop said "playing" and the next one "stopped".
+       Only a frame carrying the number sent with this play is believed; one
+       from a chain that does not echo it (a restarted one, whose state the
+       page sends again) is believed after a second. */
+    if (this.#backingPlaying && (frame[M_BACKING_REQUEST] === this.#backingRequest || now - this.#backingAskedAt > 1000)) {
       this.#backingCursor = frame[M_BACKING_SECONDS]!;
       if (frame[M_BACKING_PLAYING]! < 0.5) this.#backingPlaying = false;
     }
-    if (this.#filePlaying && frame[M_FILE_PLAYING]! >= 0.5) this.#fileHeard = true;
-    if (this.#filePlaying && (this.#fileHeard || now - this.#playAskedAt > 1000)) {
+    if (this.#filePlaying && (frame[M_FILE_REQUEST] === this.#fileRequest || now - this.#playAskedAt > 1000)) {
       this.#fileCursor = frame[M_FILE_SECONDS]!;
       if (frame[M_FILE_PLAYING]! < 0.5) {
         this.#filePlaying = false;
@@ -661,6 +665,10 @@ export class Engine {
     const probe = await host.call('tc_read_recording', [0], new Uint8Array(4));
     if (!probe.data) throw new Error(host.kind === 'native'
       ? 'Update Tonecraft Engine to record, or select the browser audio engine.' : 'The recording engine could not be loaded. Reload the page.');
+    if (this.#backing !== null) {
+      this.#backingRequest = nextRequest(this.#backingRequest);
+      host.send('tc_backing_request', [this.#backingRequest]);
+    }
     const result = await host.call('tc_record_start', [300]);
     if (result.error || result.value !== 1) throw new Error(result.error ?? 'Recording could not start.');
     this.#recorded = null;
@@ -669,7 +677,7 @@ export class Engine {
     if (this.#backing !== null) {
       this.#backingPlaying = true;
       this.#backingCursor = 0;
-      this.#backingAskedAt = performance.now(); this.#backingHeard = false;
+      this.#backingAskedAt = performance.now();
     }
     this.#syncLive();
     host.resume();
@@ -762,10 +770,12 @@ export class Engine {
     if (host === null || buffer === null) return;
     host.resume();
     const at = clamp(from, 0, buffer.duration);
+    this.#backingRequest = nextRequest(this.#backingRequest);
+    host.send('tc_backing_request', [this.#backingRequest]);
     host.send('tc_backing_play', [Math.round(at * buffer.sampleRate)]);
     this.#backingPlaying = true;
     this.#backingCursor = at;
-    this.#backingAskedAt = performance.now(); this.#backingHeard = false;
+    this.#backingAskedAt = performance.now();
   }
 
   stopBacking(): void {
@@ -838,11 +848,12 @@ export class Engine {
     let at = clamp(from ?? this.#fileCursor, 0, buffer.duration);
     if (at >= buffer.duration - 1e-3) at = 0;   // restarting from the end starts over
     host.send('tc_file_loop', [this.#fileLoop ? 1 : 0]);
+    this.#fileRequest = nextRequest(this.#fileRequest);
+    host.send('tc_file_request', [this.#fileRequest]);
     host.send('tc_file_play', [Math.round(at * buffer.sampleRate)]);
     this.#filePlaying = true;
     this.#fileCursor = at;
     this.#playAskedAt = performance.now();
-    this.#fileHeard = false;
   }
 
   stopFile(): void { this.#stopFile(); }
