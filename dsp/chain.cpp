@@ -122,6 +122,14 @@ struct Chain {
   tc::Recorder recorder;
   tc::Click click;
   tc::Looper looper;
+  /* The backing track: a file to play along to, heard with the rig and never
+     part of it. It joins where the loop's playback does, so the output fader
+     and the limiter apply to it, and it is in neither the DI take nor a loop.
+     Armed, it starts from its first sample on the block the recorder starts
+     on, and stops with it: a take and its backing line up to the sample. */
+  tc::Player backing;
+  tc::Smoother backingGain;
+  bool backingArmed = false;
 
   // Read once per block, as the worklet's k-rate AudioParams were.
   tc::Smoother inGain, gate, boost, tone;
@@ -132,6 +140,7 @@ struct Chain {
   float a[BLOCK] = {}, b[BLOCK] = {}, zeros[BLOCK] = {};
   float fe[BLOCK] = {}, amp[BLOCK] = {}, cabbed[BLOCK] = {}, toned[BLOCK] = {};
   float chained[BLOCK] = {}, wetted[BLOCK] = {};
+  float backingA[BLOCK] = {}, backingB[BLOCK] = {};
 
   int meterFrames = 0;
   double outPeak = 0.0, outSum = 0.0;
@@ -210,6 +219,8 @@ void meterFrame(Chain& c) {
   m[TC_M_LOOP_SECONDS] = static_cast<float>(c.looper.positionSeconds());
   m[TC_M_LOOP_LENGTH] = static_cast<float>(c.looper.lengthSeconds());
   m[TC_M_PITCH_DELAY_MS] = static_cast<float>(c.pitch.delayFrames() * 1000.0 / c.sr);
+  m[TC_M_BACKING_SECONDS] = static_cast<float>(static_cast<double>(c.backing.position()) / c.sr);
+  m[TC_M_BACKING_PLAYING] = c.backing.playing() ? 1.0f : 0.0f;
   for (int s = 0; s < TC_SLOT_COUNT; s++) {
     m[TC_M_STAGE_RMS + s] = static_cast<float>(std::sqrt(c.stageSum[s] / frames));
     c.stageSum[s] = 0.0;
@@ -285,6 +296,7 @@ int processBlock(Chain& c, int off, int n, int inChannels) {
     std::memset(c.wetted, 0, sizeof(float) * static_cast<size_t>(n));
   }
 
+  const int backingChannels = c.backing.playing() ? c.backing.render(c.backingA, c.backingB, n) : 0;
   float* out = c.out.data() + off;
   for (int i = 0; i < n; i++) {
     const float d = static_cast<float>(c.dry.tick());
@@ -298,9 +310,13 @@ int processBlock(Chain& c, int off, int n, int inChannels) {
     /* What the rig produces, before the master: this is what the looper
        records, and what it plays back joins it here — so the output fader and
        the limiter apply to both, and the metronome, added after the limiter,
-       is never printed into a loop. */
+       is never printed into a loop. The backing track joins here too, after
+       the looper has read the rig: heard, limited, never recorded. */
     const float rig = c.chained[i] * d + c.wetted[i] * w + tunerTap[i] * dg;
-    const float mixed = (rig + c.looper.tick(rig)) * mg;
+    const float backingLevel = static_cast<float>(c.backingGain.tick());
+    const float backingSample = backingChannels == 0 ? 0.0f
+        : backingLevel * (backingChannels > 1 ? 0.5f * (c.backingA[i] + c.backingB[i]) : c.backingA[i]);
+    const float mixed = (rig + c.looper.tick(rig) + backingSample) * mg;
     const float y = c.limiter.tick(mixed);
 
     const double ay = y < 0 ? -y : y;
@@ -374,6 +390,7 @@ TC_EXPORT int tc_init(float sampleRate, int maxFrames) {
   c.pitch.init(c.sr);
   c.click.init(c.sr);
   c.looper.init(c.sr);
+  c.backing.setLoop(false);
   // Post-cabinet correction: the classic four-band layout, fixed frequencies,
   // only the gains move.
   c.bass.setup(tc::Biquad::LowShelf, 110.0, 1.0);
@@ -389,6 +406,7 @@ TC_EXPORT int tc_init(float sampleRate, int maxFrames) {
   for (tc::Smoother* s : {&c.chainGain, &c.directGain, &c.dry, &c.wet, &c.master}) s->init(FADER_TAU, c.sr, 0.0);
   for (tc::Smoother& s : c.eq) s.init(FADER_TAU, c.sr, 0.0);
   c.trim.init(TRIM_TAU, c.sr, 1.0);
+  c.backingGain.init(FADER_TAU, c.sr, 0.8);
   apply(c);
   // Start where the controls are, not gliding towards them.
   for (tc::Smoother* s : {&c.inGain, &c.gate, &c.boost, &c.tone, &c.chainGain, &c.directGain,
@@ -523,6 +541,24 @@ TC_EXPORT void tc_file_play(int fromFrame) { if (g) g->player.play(fromFrame); }
 TC_EXPORT void tc_file_stop() { if (g) g->player.stop(); }
 TC_EXPORT void tc_file_loop(int on) { if (g) g->player.setLoop(on != 0); }
 
+/* ---------------------------- backing track ---------------------------- */
+
+/* `channels` runs of float32, already at the chain's sample rate. Replaces the
+   track, stopped. */
+TC_EXPORT int tc_backing_load(const float* data, int bytes, int channels) {
+  if (g == nullptr || data == nullptr || channels < 1) return 0;
+  return g->backing.load(data, bytes / 4 / channels, channels) ? 1 : 0;
+}
+TC_EXPORT void tc_backing_clear() { if (g) g->backing.clear(); }
+TC_EXPORT void tc_backing_play(int fromFrame) { if (g) g->backing.play(fromFrame); }
+TC_EXPORT void tc_backing_stop() { if (g) g->backing.stop(); }
+/* How loud the track sits under the playing, 0..1. Session, never tone. */
+TC_EXPORT void tc_backing_level(float level) {
+  if (g) g->backingGain.set(level < 0.0f ? 0.0 : level > 1.0f ? 1.0 : level);
+}
+/* Armed, the track starts from its first sample when the recorder starts. */
+TC_EXPORT void tc_backing_arm(int on) { if (g) g->backingArmed = on != 0; }
+
 /* ------------------------------ metronome ------------------------------ */
 
 TC_EXPORT void tc_click_voice(int beat, int wave, float frequency, float level, float duration) {
@@ -545,11 +581,14 @@ TC_EXPORT void tc_loop_level(float level) { if (g) g->looper.setLevel(level); }
 
 // Five minutes maximum; payload reads are bounded and happen after stopping.
 TC_EXPORT int tc_record_start(int seconds) {
-  return g && seconds > 0 && seconds <= 300 && g->recorder.start(static_cast<int>(g->sr * seconds));
+  if (!g || seconds <= 0 || seconds > 300 || !g->recorder.start(static_cast<int>(g->sr * seconds))) return 0;
+  if (g->backingArmed) g->backing.play(0);
+  return 1;
 }
 TC_EXPORT int tc_record_stop() {
   if (!g) return 0;
   g->recorder.stop();
+  if (g->backingArmed) g->backing.stop();
   return g->recorder.frames();
 }
 TC_EXPORT int tc_record_frames() { return g ? g->recorder.frames() : 0; }

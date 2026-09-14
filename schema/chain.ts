@@ -60,6 +60,9 @@ export const METERS = [
    * delay the player blames on the product.
    */
   'pitch_delay_ms',
+  /** Where the backing track is, in seconds, and whether it is playing. */
+  'backing_seconds',
+  'backing_playing',
 ] as const;
 
 export type MeterField = (typeof METERS)[number];

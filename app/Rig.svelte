@@ -1238,7 +1238,7 @@
       </section>
     {/if}
 
-    <Recorder engine={engineState === 'running' ? engine : null} powered={engineState === 'running' && !poweredOff} sinkId={engine?.outputId ?? outputId}
+    <Recorder engine={engineState === 'running' ? engine : null} sinkId={engine?.outputId ?? outputId}
       tone={{ values, capture: captures.find(c => c.file === captureFile) ?? null, cab }} />
     <TabReader ontempo={takeScoreTempo} />
   </main>

@@ -39,6 +39,8 @@ class Player {
   }
 
   void stop() { playing_ = false; }
+  /* Real-time safe: forgets the file without freeing it, so a later load reuses the memory. */
+  void clear() { frames_ = 0; pos_ = 0; playing_ = false; }
   void setLoop(bool loop) { loop_ = loop; }
 
   bool playing() const { return playing_; }

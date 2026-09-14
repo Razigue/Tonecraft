@@ -1,6 +1,11 @@
 import type { Capture } from './catalog.ts';
 
-export interface Recording { samples: Float32Array<ArrayBuffer>; sampleRate: number }
+export interface Recording {
+  samples: Float32Array<ArrayBuffer>;
+  sampleRate: number;
+  /** The round trip it was recorded with, in frames: how late the guitar reached the DI behind a backing track it was played to. */
+  latencyFrames?: number;
+}
 export interface RecordingTone { values: Record<string, number>; capture: Capture | null; cab: string }
 
 /** Reload only our own float WAV; retaining its native rate avoids resampling DI. */
@@ -42,8 +47,78 @@ export function encodeWav(take: Recording): ArrayBuffer {
   return bytes;
 }
 
+/** What an export contains: the guitar and the backing track together, or either alone. */
+export type ExportContent = 'mix' | 'guitar' | 'backing';
+
+/**
+ * A take and its backing track on one timeline. The backing track started at
+ * 0 with the recorder; the guitar played to it reached the DI a round trip
+ * later, so on the timeline it is moved that much earlier and sounds as it was
+ * played. Without a backing track there is nothing to line up with, and the
+ * guitar stays where it was recorded.
+ */
+export interface Timeline {
+  guitar: Float32Array | null;
+  backing: Float32Array | null;
+  backingLevel: number;
+  latencyFrames: number;
+}
+
+const shift = (t: Timeline): number => (t.backing ? t.latencyFrames : 0);
+
+/** How long each lane is on the timeline, in frames. */
+export function laneFrames(t: Timeline): { guitar: number; backing: number } {
+  return { guitar: t.guitar ? Math.max(0, t.guitar.length - shift(t)) : 0, backing: t.backing?.length ?? 0 };
+}
+
+/** Without a selection: from the first sample to the end of the longer of the lanes exported. */
+export function defaultRange(t: Timeline, content: ExportContent): [number, number] {
+  const lanes = laneFrames(t);
+  const guitar = content === 'backing' ? 0 : lanes.guitar;
+  const backing = content === 'guitar' ? 0 : lanes.backing;
+  return [0, Math.max(guitar, backing)];
+}
+
+/** The frames of `range` (default: `defaultRange`) of what `content` names, summed. */
+export function mixTimeline(t: Timeline, content: ExportContent, range?: readonly [number, number]): Float32Array<ArrayBuffer> {
+  const [start, end] = range ?? defaultRange(t, content);
+  const from = Math.max(0, Math.floor(start));
+  const out = new Float32Array(Math.max(0, Math.floor(end) - from));
+  if (content !== 'backing' && t.guitar) {
+    const g = t.guitar, offset = from + shift(t);
+    const n = Math.min(out.length, g.length - offset);
+    for (let i = Math.max(0, -offset); i < n; i++) out[i]! += g[offset + i]!;
+  }
+  if (content !== 'guitar' && t.backing) {
+    const b = t.backing, level = t.backingLevel;
+    const n = Math.min(out.length, b.length - from);
+    for (let i = 0; i < n; i++) out[i]! += b[from + i]! * level;
+  }
+  return out;
+}
+
+/** A backing file as the chain plays it: at the take's rate, its two channels averaged. */
+export async function decodeBacking(file: Blob, sampleRate: number): Promise<Float32Array<ArrayBuffer>> {
+  const buffer = await new OfflineAudioContext(1, 1, sampleRate).decodeAudioData(await file.arrayBuffer());
+  const out = new Float32Array(buffer.length);
+  const channels = Math.min(2, buffer.numberOfChannels);
+  for (let c = 0; c < channels; c++) {
+    const data = buffer.getChannelData(c);
+    for (let i = 0; i < out.length; i++) out[i]! += data[i]! / channels;
+  }
+  return out;
+}
+
+export interface ExportOptions {
+  content?: ExportContent;
+  backing?: Float32Array<ArrayBuffer> | null;
+  backingLevel?: number;
+  /** Frames on the timeline; the default range when absent. */
+  range?: readonly [number, number];
+}
+
 /** Runs on a separate worker so exporting cannot freeze the rig or its audio. */
-export function exportRecording(take: Recording, tone: RecordingTone | null, progress: (value: number) => void, signal?: AbortSignal): Promise<ArrayBuffer> {
+export function exportRecording(take: Recording, tone: RecordingTone | null, progress: (value: number) => void, signal?: AbortSignal, options: ExportOptions = {}): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./recording-worker.ts', import.meta.url), { type: 'module' });
     const cleanup = () => { worker.terminate(); signal?.removeEventListener('abort', cancel); };
@@ -57,6 +132,10 @@ export function exportRecording(take: Recording, tone: RecordingTone | null, pro
     };
     worker.onerror = () => { cleanup(); reject(new Error('Audio export failed. Please try again.')); };
     const samples = take.samples.slice();
-    worker.postMessage({ take: { samples, sampleRate: take.sampleRate }, tone, base: new URL(import.meta.env.BASE_URL, location.href).href }, [samples.buffer]);
+    const backing = options.backing ? options.backing.slice() : null;
+    worker.postMessage({
+      take: { samples, sampleRate: take.sampleRate, latencyFrames: take.latencyFrames ?? 0 }, tone,
+      options: { ...options, backing }, base: new URL(import.meta.env.BASE_URL, location.href).href,
+    }, backing ? [samples.buffer, backing.buffer] : [samples.buffer]);
   });
 }

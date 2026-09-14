@@ -41,16 +41,19 @@ try {
   await page.waitForTimeout(3000); // capture a real fake-device stream
   await page.getByRole('button', { name: '■ Stop recording', exact: true }).click();
   await page.getByText('Take saved on this device.').waitFor();
-  await page.getByRole('button', { name: 'Amplifier power', exact: true }).click();
-  const download = async name => {
+  const download = async item => {
     const pending = page.waitForEvent('download', { timeout: 60000 });
-    await page.getByRole('button', { name, exact: true }).click();
+    await page.getByRole('button', { name: 'Export WAV ▾', exact: true }).click();
+    await page.getByRole('menuitem', { name: new RegExp(`^${item.replace('+', '\\+')}`) }).click();
     const result = await pending;
     const target = path.join(artifacts, result.suggestedFilename());
     await result.saveAs(target);
     return fs.readFileSync(target);
   };
-  const dry = await download('Export DI · WAV');
+  const frames = wav => (wav.length - 56) / 4;
+  // DI or processed is chosen on the recorder itself, not by the amplifier's power.
+  await page.getByRole('radio', { name: 'DI', exact: true }).click();
+  const dry = await download('Guitar only');
   assert.equal(dry.toString('ascii', 0, 4), 'RIFF');
   assert(dry.length > 100000);
   // The take is heard before it is exported.
@@ -58,10 +61,53 @@ try {
   await page.getByRole('button', { name: 'Pause take', exact: true }).waitFor({ timeout: 30000 });
   await page.getByRole('button', { name: 'Pause take', exact: true }).click();
   await page.getByRole('button', { name: 'Listen to take', exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Amplifier power', exact: true }).click();
-  const wet = await download('Export amp · WAV');
+  await page.getByRole('radio', { name: 'Processed', exact: true }).click();
+  const wet = await download('Guitar only');
   assert.notDeepEqual(dry, wet);
+  // Without a backing track, the list offers only the guitar.
+  await page.getByRole('button', { name: 'Export WAV ▾', exact: true }).click();
+  assert(await page.getByRole('menuitem', { name: /^Guitar \+ backing/ }).isDisabled(), 'no mix without a backing track');
+  assert(await page.getByRole('menuitem', { name: /^Backing only/ }).isDisabled(), 'no backing export without one');
+  await page.locator('.recorder .record-title').click();
+  assert.equal(await page.getByRole('menu').count(), 0, 'the list closes on a click elsewhere');
   console.log('ok live recording, persistent DI, dry and processed WAV downloads');
+
+  // A backing track: dropped in its lane, played along to while recording, and
+  // exported with the take, alone, or cut to a selection.
+  const songRate = 48000, songFrames = songRate * 2;
+  const song = Buffer.alloc(44 + songFrames * 2);
+  song.write('RIFF', 0); song.writeUInt32LE(36 + songFrames * 2, 4); song.write('WAVEfmt ', 8); song.writeUInt32LE(16, 16);
+  song.writeUInt16LE(1, 20); song.writeUInt16LE(1, 22); song.writeUInt32LE(songRate, 24); song.writeUInt32LE(songRate * 2, 28);
+  song.writeUInt16LE(2, 32); song.writeUInt16LE(16, 34); song.write('data', 36); song.writeUInt32LE(songFrames * 2, 40);
+  for (let i = 0; i < songFrames; i++) song.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 220 * i / songRate) * 9000), 44 + i * 2);
+  await page.getByLabel('Backing track file', { exact: true }).setInputFiles({ name: 'song.wav', mimeType: 'audio/wav', buffer: song });
+  await page.getByLabel('Backing track waveform', { exact: true }).waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: '● New take', exact: true }).click();
+  await page.getByRole('button', { name: '■ Stop recording', exact: true }).waitFor();
+  await page.waitForTimeout(1200);
+  await page.getByRole('button', { name: '■ Stop recording', exact: true }).click();
+  await page.getByText('Take saved on this device.').waitFor();
+  await page.getByRole('radio', { name: 'DI', exact: true }).click();
+  const cover = await download('Guitar + backing');
+  const guitarOnly = await download('Guitar only');
+  const backingOnly = await download('Backing only');
+  const takeRate = cover.readUInt32LE(24);
+  // Resampled from 48 kHz to the take's rate: the decoder may round one frame off.
+  assert(Math.abs(frames(backingOnly) - 2 * takeRate) <= 2, `the backing track alone is the whole song (${frames(backingOnly)} frames at ${takeRate} Hz)`);
+  assert.equal(frames(cover), Math.max(frames(guitarOnly), frames(backingOnly)), 'the longer lane sets the end of the mix');
+  const lanes = await page.locator('.recorder .lanes').boundingBox();
+  await page.mouse.move(lanes.x + lanes.width * 0.25, lanes.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(lanes.x + lanes.width * 0.5, lanes.y + 20, { steps: 5 });
+  await page.mouse.move(lanes.x + lanes.width * 0.75, lanes.y + 20, { steps: 5 });
+  await page.mouse.up();
+  await page.getByText(/^Selection /).waitFor();
+  const part = await download('Guitar + backing');
+  assert(Math.abs(frames(part) - frames(cover) / 2) < takeRate * 0.05, `a selection exports its span (${frames(part)} of ${frames(cover)})`);
+  await page.getByRole('button', { name: 'Clear selection', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove backing track', exact: true }).click();
+  await page.getByLabel('Backing track file', { exact: true }).waitFor({ state: 'attached' });
+  console.log('ok a backing track is recorded over, and exported with the take, alone, or cut to a selection');
 
   const importer = new alpha.importer.AlphaTexImporter();
   // Long enough to lay out several systems, so the scroll has somewhere to go.

@@ -124,6 +124,8 @@ const M_LOOP_STATE = meterIndex('loop_state');
 const M_LOOP_SECONDS = meterIndex('loop_seconds');
 const M_LOOP_LENGTH = meterIndex('loop_length');
 const M_PITCH_DELAY = meterIndex('pitch_delay_ms');
+const M_BACKING_SECONDS = meterIndex('backing_seconds');
+const M_BACKING_PLAYING = meterIndex('backing_playing');
 
 const LOOP_BY_CODE = Object.fromEntries(
   Object.entries(LOOP_STATES).map(([name, code]) => [code, name as LoopState]),
@@ -181,6 +183,13 @@ export class Engine {
   #fileLoop = true;
   #fileCursor = 0;
   #playAskedAt = 0;
+
+  #backingBytes: ArrayBuffer | null = null;
+  #backing: AudioBuffer | null = null;
+  #backingLevel = 0.8;
+  #backingPlaying = false;
+  #backingCursor = 0;
+  #backingAskedAt = 0;
 
   #startedAt = 0;
   #firstAudioAt: number | null = null;
@@ -346,6 +355,11 @@ export class Engine {
       this.#buffer = await decodeAt(this.#fileBytes, host.sampleRate);
       host.send('tc_file_load', [Math.min(2, this.#buffer.numberOfChannels)], planar(this.#buffer));
     }
+    host.send('tc_backing_level', [this.#backingLevel]);
+    if (this.#backingBytes !== null) {
+      this.#backing = await decodeAt(this.#backingBytes, host.sampleRate);
+      this.#sendBacking(host, this.#backing);
+    }
     if (this.#click !== null) this.clickTransport?.play(this.#click.bpm, this.#click.gain, this.#click.voices);
     const capture = this.#capture ?? this.#catalog.models[0] ?? null;
     if (capture !== null) await this.setCapture(capture.file);
@@ -361,6 +375,7 @@ export class Engine {
     this.#web = null;
     this.#native = null;
     this.#filePlaying = false;
+    this.#backingPlaying = false;
     this.#tuning = false;
     this.#dropouts = 0;
     this.#meterArrivals = [];
@@ -388,6 +403,10 @@ export class Engine {
     /* The chain reports where the take is. A frame computed before the chain
        saw a play request can arrive after it, so the first few after asking
        are not allowed to say "stopped". */
+    if (this.#backingPlaying && now - this.#backingAskedAt > 150) {
+      this.#backingCursor = frame[M_BACKING_SECONDS]!;
+      if (frame[M_BACKING_PLAYING]! < 0.5) this.#backingPlaying = false;
+    }
     if (this.#filePlaying && now - this.#playAskedAt > 150) {
       this.#fileCursor = frame[M_FILE_SECONDS]!;
       if (frame[M_FILE_PLAYING]! < 0.5) {
@@ -638,6 +657,12 @@ export class Engine {
     if (result.error || result.value !== 1) throw new Error(result.error ?? 'Recording could not start.');
     this.#recorded = null;
     this.#recording = true;
+    // The chain starts an armed backing track with the recorder, on the same block.
+    if (this.#backing !== null) {
+      this.#backingPlaying = true;
+      this.#backingCursor = 0;
+      this.#backingAskedAt = performance.now();
+    }
     this.#syncLive();
     host.resume();
   }
@@ -656,6 +681,7 @@ export class Engine {
     if (!host) throw new Error('The audio engine stopped before the take could be saved.');
     const result = await host.call('tc_record_stop');
     this.#recording = false;
+    this.#backingPlaying = false;
     this.#syncLive();
     if (result.error) throw new Error(result.error);
     if (result.value <= 0) throw new Error('The recording is empty.');
@@ -667,8 +693,75 @@ export class Engine {
       const view = new DataView(chunk.data.buffer, chunk.data.byteOffset, chunk.data.byteLength);
       for (let i = 0; i < count; i++) samples[offset + i] = view.getFloat32(i * 4, true);
     }
-    this.#recorded = { samples, sampleRate: host.sampleRate };
+    // The guitar reached the DI a round trip after the backing it was played to.
+    const latencyFrames = Math.max(0, Math.round(((this.roundTripMs ?? 0) / 1000) * host.sampleRate));
+    this.#recorded = { samples, sampleRate: host.sampleRate, latencyFrames };
     return this.#recorded;
+  }
+
+  // -------------------------------------------------------------------------
+  // The backing track
+  //
+  // A file to play along to. The chain plays it where the loop plays back, so
+  // it is heard and limited but never recorded, and starts it with the
+  // recorder on the same block. Audio, not tone: it outlives a host, never a
+  // tone link.
+
+  /** Decodes a backing track. Works before the engine is started. */
+  async loadBacking(file: Blob): Promise<AudioBuffer> {
+    this.stopBacking();
+    const bytes = await file.arrayBuffer();
+    const host = this.#host;
+    const buffer = await decodeAt(bytes, host?.sampleRate ?? 48_000);
+    this.#backingBytes = bytes;
+    this.#backing = buffer;
+    this.#backingCursor = 0;
+    if (host !== null && this.#host === host) this.#sendBacking(host, buffer);
+    return buffer;
+  }
+
+  #sendBacking(host: ChainHost, buffer: AudioBuffer): void {
+    host.send('tc_backing_load', [Math.min(2, buffer.numberOfChannels)], planar(buffer));
+    host.send('tc_backing_arm', [1]);
+  }
+
+  clearBacking(): void {
+    this.stopBacking();
+    this.#backingBytes = null;
+    this.#backing = null;
+    this.#backingCursor = 0;
+    this.#host?.send('tc_backing_arm', [0]);
+    this.#host?.send('tc_backing_clear');
+  }
+
+  get backingLoaded(): boolean { return this.#backing !== null; }
+  get backingDuration(): number { return this.#backing?.duration ?? 0; }
+  get backingPlaying(): boolean { return this.#backingPlaying; }
+  get backingPosition(): number { return clamp(this.#backingCursor, 0, this.backingDuration); }
+  get backingLevel(): number { return this.#backingLevel; }
+
+  setBackingLevel(level: number): void {
+    this.#backingLevel = clamp(level, 0, 1);
+    this.#host?.send('tc_backing_level', [this.#backingLevel]);
+  }
+
+  /** Plays the track on its own, to set its level before recording. */
+  playBacking(from = 0): void {
+    const host = this.#host;
+    const buffer = this.#backing;
+    if (host === null || buffer === null) return;
+    host.resume();
+    const at = clamp(from, 0, buffer.duration);
+    host.send('tc_backing_play', [Math.round(at * buffer.sampleRate)]);
+    this.#backingPlaying = true;
+    this.#backingCursor = at;
+    this.#backingAskedAt = performance.now();
+  }
+
+  stopBacking(): void {
+    if (!this.#backingPlaying) return;
+    this.#backingPlaying = false;
+    this.#host?.send('tc_backing_stop');
   }
 
   // -------------------------------------------------------------------------
