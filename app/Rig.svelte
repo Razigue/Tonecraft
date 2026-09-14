@@ -289,7 +289,7 @@
    * is in their hands, and settings come first.
    */
   const TOUR_TARGETS: readonly (readonly string[])[] = [
-    ['.global-controls'], ['.amp-head'], ['.demo-panel'], ['.reader'], ['.metronome-launch', '.metronome-toggle'], [],
+    ['.global-controls'], ['.amp-head'], ['.demo-panel'], ['.reader'], ['.write-tab'], ['.metronome-launch', '.metronome-toggle'], [],
   ];
   let touring = $state(false);
 

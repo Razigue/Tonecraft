@@ -428,7 +428,8 @@ try {
     return ['3', '12', '5'].every(f => texts.includes(f));
   }, null, { timeout: 15000 });
   assert.equal(await editor.getByRole('button', { name: '1/8', exact: true }).getAttribute('aria-pressed'), 'true', '+ makes the beat shorter');
-  await page.waitForFunction(() => document.querySelectorAll('.neck .core').length === 1 && document.querySelector('.string-cursor'), null, { timeout: 10000 });
+  // The chord written, 12 and 5, is on the neck whole, not only the string under the cursor.
+  await page.waitForFunction(() => document.querySelectorAll('.neck .core').length === 2 && document.querySelector('.string-cursor'), null, { timeout: 10000 });
   await editor.getByLabel('Tempo', { exact: true }).fill('90');
   await editor.getByLabel('Tempo', { exact: true }).dispatchEvent('change');
   await editor.getByLabel('String count', { exact: true }).selectOption('7');

@@ -663,7 +663,7 @@ await demoPage.getByRole('button', { name: 'Tester' }).click();
 // A tester is walked through the page one window at a time, the rest in the
 // dark, each window lit where it is and explained beside it.
 check('a tester starts with the tutorial', await demoPage.locator('.tour-card').isVisible());
-const tourTargets = ['.global-controls', '.amp-head', '.demo-panel', '.reader', '.metronome-launch', null];
+const tourTargets = ['.global-controls', '.amp-head', '.demo-panel', '.reader', '.write-tab', '.metronome-launch', null];
 const tourSeen = [];
 for (const target of tourTargets) {
   await demoPage.waitForTimeout(900);
@@ -693,7 +693,7 @@ check('the tutorial lights each window in turn, the page dark around it, the exp
 check('and gives the page back as it was',
   (await demoPage.locator('.tour-shade, .tour-lit').count()) === 0
     && (await demoPage.evaluate(() => document.querySelector('.global-controls').style.zIndex === '' && document.querySelector('.metronome-launch').style.zIndex === '')));
-check('in English for an English browser', tourSeen[0]?.title === 'Input, amp and preset' && tourSeen[5]?.title === 'Your turn',
+check('in English for an English browser', tourSeen[0]?.title === 'Input, amp and preset' && tourSeen[4]?.title === 'Compose your own tabs' && tourSeen[6]?.title === 'Your turn',
   tourSeen.map((s) => s.title).join(' · '));
 await demoPage.getByRole('button', { name: 'FR', exact: true }).click();
 await demoPage.getByRole('button', { name: 'Tutoriel', exact: true }).click();

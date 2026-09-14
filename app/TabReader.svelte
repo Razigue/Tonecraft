@@ -478,7 +478,10 @@
     const tick = currentTick >= 0 ? positionTick() : 0;
     const string = stringCursor, beat = beatAt(tick), reader = api;
     if (playing || !stave) { stringMark = null; return; }
-    const held = beatsAt(tick).flatMap(b => b.notes).filter(n => n.string > 0 && (string === null || n.string === string));
+    // Reading, the string cursor picks one note out of the beat. Writing, it is
+    // where the next fret goes, and the neck shows the whole beat: a chord
+    // written one string at a time used to show only its last note.
+    const held = beatsAt(tick).flatMap(b => b.notes).filter(n => n.string > 0 && (string === null || editing || n.string === string));
     lit = held.map(n => ({ string: n.string, fret: n.fret }));
     if (string === null || !beat || !reader) { stringMark = null; return; }
     const bounds = reader.boundsLookup?.findBeat(beat);
@@ -745,7 +748,7 @@
     <div><span class="eyebrow">PRACTICE</span><h2>Tab reader</h2></div>
     <div class="heading-actions">
       {#if score}<button aria-pressed={focused} onclick={() => setFocused(!focused)}> {focused ? 'Exit focus' : 'Focus view'} </button>{/if}
-      <button aria-pressed={editing} disabled={busy} onclick={() => (editing ? stopEditing() : startEditing())}>{editing ? 'Close editor' : 'Write a tab'}</button>
+      <button class="write-tab" aria-pressed={editing} disabled={busy} onclick={() => (editing ? stopEditing() : startEditing())}>{editing ? 'Close editor' : 'Write a tab'}</button>
       <button class="primary" disabled={busy} onclick={() => picker.click()}>{busy ? 'Opening…' : score ? 'Open another tab' : 'Import tab'}</button>
     </div>
     <input bind:this={picker} type="file" accept={ACCEPT} aria-label="Import tablature" onchange={e => { const f = e.currentTarget.files?.[0]; if (f) void open(f); e.currentTarget.value = ''; }} />

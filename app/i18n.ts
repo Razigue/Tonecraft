@@ -45,7 +45,7 @@ export interface Messages {
     readonly next: string;
     readonly done: string;
     /** In the order of the windows the tutorial lights. */
-    readonly steps: readonly [TourText, TourText, TourText, TourText, TourText, TourText];
+    readonly steps: readonly [TourText, TourText, TourText, TourText, TourText, TourText, TourText];
   };
 }
 
@@ -94,7 +94,14 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
           body: [
             'Import or drop a Guitar Pro, MusicXML, Capella or alphaTex file: the tab scrolls and plays with its own instruments.',
             'Each track has its own solo, mute and volume; the neck shows the notes being played, and a scale can be laid over it.',
-            'Write a tab opens an empty tab to write your own and export it to Guitar Pro.',
+          ],
+        },
+        {
+          title: 'Compose your own tabs',
+          body: [
+            'Write a tab turns the reader into an editor: compose from an empty tab in 4/4, and press Space at any moment to hear what you have written.',
+            'Type a fret with the number keys, on the string chosen with ↑ and ↓; ← and → move from beat to beat. Several frets on the same beat make a chord, and the neck shows all of it.',
+            'Pick durations from the bar or with + and −, a dot with ., a rest with R. Set the tempo, the number of strings and the tuning, add or delete tracks, then export it to Guitar Pro.',
           ],
         },
         {
@@ -158,7 +165,14 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
           body: [
             'Importez ou déposez un fichier Guitar Pro, MusicXML, Capella ou alphaTex : la tablature défile et se joue avec ses propres instruments.',
             'Chaque piste a son solo, son mute et son volume ; le manche montre les notes jouées, et une gamme peut s’y superposer.',
-            'Write a tab ouvre une tablature vide pour écrire la vôtre et l’exporter en Guitar Pro.',
+          ],
+        },
+        {
+          title: 'Composez vos tablatures',
+          body: [
+            'Write a tab transforme le lecteur en éditeur : composez à partir d’une tablature vide en 4/4, et appuyez sur Espace à tout moment pour entendre ce que vous avez écrit.',
+            'Tapez une case avec les chiffres, sur la corde choisie avec ↑ et ↓ ; ← et → passent d’un temps à l’autre. Plusieurs cases sur le même temps forment un accord, et le manche l’affiche en entier.',
+            'Choisissez les durées dans la barre ou avec + et −, un point avec ., un silence avec R. Réglez le tempo, le nombre de cordes et l’accordage, ajoutez ou supprimez des pistes, puis exportez en Guitar Pro.',
           ],
         },
         {
