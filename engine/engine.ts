@@ -821,7 +821,21 @@ export class Engine {
     return buffer;
   }
 
-  async setSource(source: Source): Promise<void> {
+  /**
+   * One change of source at a time, in the order asked. Going live opens the
+   * microphone and takes its time; going back to a file releases it at once.
+   * A take stopped and started again asked for "live" then "file", the file
+   * landed first, and the live that finished after it left the chain on the
+   * microphone while the take played unheard.
+   */
+  setSource(source: Source): Promise<void> {
+    const change = this.#sourceChange.then(() => this.#applySource(source));
+    this.#sourceChange = change.catch(() => {});
+    return change;
+  }
+  #sourceChange: Promise<void> = Promise.resolve();
+
+  async #applySource(source: Source): Promise<void> {
     if (source === this.#source) return;
     this.#source = source;
     const host = this.#host;
