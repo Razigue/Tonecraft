@@ -112,14 +112,25 @@ await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
 
 check('the page renders the rig', await page.locator('.amp-head').isVisible());
 check('the welcome offers musician and tester paths',
-  await page.getByRole('button', { name: 'Musicien' }).isVisible() && await page.getByRole('button', { name: 'Testeur' }).isVisible());
+  await page.getByRole('button', { name: 'Musician' }).isVisible() && await page.getByRole('button', { name: 'Tester' }).isVisible());
+// French and English, chosen on the page: the browser's language first —
+// English here — and the other one a click away, the page saying which it is.
+const welcome = page.locator('dialog.welcome');
+check('the welcome speaks the browser’s language, English here',
+  await welcome.getByRole('heading', { name: 'Welcome to Tonecraft' }).isVisible() && (await page.evaluate(() => document.documentElement.lang)) === 'en');
+await welcome.getByRole('button', { name: 'FR', exact: true }).click();
+check('and French when asked, the page saying so',
+  await welcome.getByRole('button', { name: 'Musicien' }).isVisible() && (await page.evaluate(() => document.documentElement.lang)) === 'fr');
+await page.reload({ waitUntil: 'networkidle' });
+check('and the choice is kept', await page.locator('dialog.welcome').getByRole('heading', { name: 'Bienvenue sur Tonecraft' }).isVisible());
+await page.locator('dialog.welcome').getByRole('button', { name: 'EN', exact: true }).click();
 check('the capture catalogue is read before starting',
   (await page.locator('select').first().locator('option').count()) > 0);
 
 // Start, from the opening sheet. A failure here must be reported as a failure
 // and not as a 30 second stack trace, so whatever the page said about it is
 // read back — the product's whole voice is that it names the cause.
-await page.getByRole('button', { name: 'Musicien' }).click();
+await page.getByRole('button', { name: 'Musician' }).click();
 check('musician opens audio settings immediately', await page.getByRole('dialog', { name: 'Audio settings' }).isVisible());
 await page.getByRole('button', { name: 'Done', exact: true }).click();
 let started = true;
@@ -648,7 +659,7 @@ demoPage.on('request', (request) => {
   if (request.url().includes('/di/demo-di.wav')) demoRequests.push(request.url());
 });
 await demoPage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
-await demoPage.getByRole('button', { name: 'Testeur' }).click();
+await demoPage.getByRole('button', { name: 'Tester' }).click();
 // A tester is walked through the page one window at a time, the rest in the
 // dark, each window lit where it is and explained beside it.
 check('a tester starts with the tutorial', await demoPage.locator('.tour-card').isVisible());
@@ -682,9 +693,16 @@ check('the tutorial lights each window in turn, the page dark around it, the exp
 check('and gives the page back as it was',
   (await demoPage.locator('.tour-shade, .tour-lit').count()) === 0
     && (await demoPage.evaluate(() => document.querySelector('.global-controls').style.zIndex === '' && document.querySelector('.metronome-launch').style.zIndex === '')));
+check('in English for an English browser', tourSeen[0]?.title === 'Input, amp and preset' && tourSeen[5]?.title === 'Your turn',
+  tourSeen.map((s) => s.title).join(' · '));
+await demoPage.getByRole('button', { name: 'FR', exact: true }).click();
 await demoPage.getByRole('button', { name: 'Tutoriel', exact: true }).click();
 await demoPage.locator('.tour-card').waitFor();
+check('and in French once French is chosen',
+  (await demoPage.locator('#tour-title').innerText()) === 'Entrée, ampli et preset'
+    && (await demoPage.locator('.tour-card .tour-next').innerText()) === 'Suivant');
 await demoPage.keyboard.press('Escape');
+await demoPage.locator('.bar').getByRole('button', { name: 'EN', exact: true }).click();
 check('it can be started again from the page, and left with Escape',
   (await demoPage.locator('.tour-card').count()) === 0 || !(await demoPage.locator('.tour-card').isVisible()));
 await demoPage.locator('.capture-info[data-capture="loaded"]').waitFor({ state: 'attached', timeout: 40_000 });
@@ -736,7 +754,7 @@ check('nothing threw on the demo path', demoErrors.length === 0, demoErrors[0]);
  */
 const nativePage = await browser.newPage();
 await nativePage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
-await nativePage.getByRole('button', { name: 'Musicien' }).click();
+await nativePage.getByRole('button', { name: 'Musician' }).click();
 const engines = nativePage.getByRole('radiogroup', { name: 'Audio engine' }).getByRole('radio');
 await engines.nth(1).click();
 const download = nativePage.locator('.audio-settings a.download');
@@ -773,7 +791,7 @@ await nativePage.evaluate(async () => {
   });
 });
 await nativePage.reload({ waitUntil: 'networkidle' });
-await nativePage.getByRole('button', { name: 'Musicien' }).click();
+await nativePage.getByRole('button', { name: 'Musician' }).click();
 await nativePage.getByRole('button', { name: 'Done', exact: true }).click();
 let fellBack = false;
 try {
@@ -814,7 +832,7 @@ await updatePage.route('https://api.github.com/**', (route) => route.fulfill({
   body: JSON.stringify([{ tag_name: 'engine-v0.1.2', draft: false, prerelease: false }, { tag_name: 'engine-v0.1.1', draft: false, prerelease: false }]),
 }));
 await updatePage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
-await updatePage.getByRole('button', { name: 'Musicien' }).click();
+await updatePage.getByRole('button', { name: 'Musician' }).click();
 await updatePage.getByRole('radiogroup', { name: 'Audio engine' }).getByRole('radio').nth(1).click();
 let updateOffered = false;
 try {

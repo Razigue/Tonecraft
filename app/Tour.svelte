@@ -10,7 +10,11 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
 
-  let { steps, onclose }: { steps: readonly TourStep[]; onclose: () => void } = $props();
+  let { steps, labels, onclose }: {
+    steps: readonly TourStep[];
+    labels: { readonly skip: string; readonly back: string; readonly next: string; readonly done: string };
+    onclose: () => void;
+  } = $props();
 
   /**
    * One window at a time, the rest of the page in the dark. The windows are
@@ -107,9 +111,9 @@
   <h2 id="tour-title">{step.title}</h2>
   {#each step.body as line}<p>{line}</p>{/each}
   <div class="tour-actions">
-    {#if !last}<button class="tour-skip" type="button" onclick={finish}>Passer le tutoriel</button>{/if}
-    {#if index > 0}<button type="button" onclick={() => index--}>Précédent</button>{/if}
-    <button class="tour-next" type="button" bind:this={next} onclick={() => (last ? finish() : index++)}>{last ? 'Terminer' : 'Suivant'}</button>
+    {#if !last}<button class="tour-skip" type="button" onclick={finish}>{labels.skip}</button>{/if}
+    {#if index > 0}<button type="button" onclick={() => index--}>{labels.back}</button>{/if}
+    <button class="tour-next" type="button" bind:this={next} onclick={() => (last ? finish() : index++)}>{last ? labels.done : labels.next}</button>
   </div>
 </div>
 

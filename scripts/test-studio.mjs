@@ -33,7 +33,7 @@ const soundFonts = [];
 page.on('response', r => { if (r.url().endsWith('/MuseScore_General.sf3')) soundFonts.push(r.status()); });
 try {
   await page.goto(`http://127.0.0.1:${server.address().port}${base}`);
-  await page.getByRole('button', { name: 'Musicien' }).click();
+  await page.getByRole('button', { name: 'Musician' }).click();
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await page.locator('.capture-info[data-capture="loaded"]').waitFor({ state: 'attached', timeout: 30000 });
   await page.getByRole('button', { name: '● Record', exact: true }).click();
@@ -471,7 +471,7 @@ try {
   await page.locator('.reader .error').waitFor();
   assert(await page.locator('.score-paper svg').count() > 0, 'A bad import must preserve the current score');
   await page.reload();
-  await page.getByRole('button', { name: 'Explorer d’abord' }).click();
+  await page.getByRole('button', { name: 'Explore first' }).click();
   await page.getByRole('button', { name: 'Play tablature', exact: true }).waitFor({ timeout: 30000 });
   assert.equal(await page.locator('.recorder polyline').count(), 1);
   await page.setViewportSize({ width: 390, height: 844 });

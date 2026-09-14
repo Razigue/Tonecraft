@@ -22,6 +22,7 @@
   import TabReader from './TabReader.svelte';
   import Recorder from './Recorder.svelte';
   import Tour, { type TourStep } from './Tour.svelte';
+  import { LOCALES, MESSAGES, detectLocale, saveLocale, type Locale } from './i18n.ts';
   import { NativeLink, detectPlatform, downloadUrl, releasesUrl } from '../engine/native-host.ts';
   import { engineUpdate } from '../engine/engine-update.ts';
   import './tokens.css';
@@ -287,59 +288,19 @@
    * what it does. The musician is not walked through anything — their guitar
    * is in their hands, and settings come first.
    */
-  const TESTER_TOUR: readonly TourStep[] = [
-    {
-      targets: ['.global-controls'],
-      title: 'Entrée, ampli et preset',
-      body: [
-        'Input règle le niveau de la guitare à l’entrée de la chaîne ; son vumètre montre ce qui arrive. Gate coupe le souffle entre les notes.',
-        'Amplifier choisit l’ampli capturé, Cabinet le baffle qui le suit.',
-        'Tone preset rappelle un son complet d’un coup, ‹ et › passent au suivant. Output règle le volume final.',
-      ],
-    },
-    {
-      targets: ['.amp-head'],
-      title: 'L’ampli',
-      body: [
-        'Tone : graves, médiums, aigus et présence. Pitch transpose la guitare. Boost pousse l’ampli pour plus de saturation. Reverb ajoute l’espace d’une pièce.',
-        'Cliquer le nom d’un bloc l’allume ou l’éteint. Power coupe toute la chaîne pour entendre la guitare brute.',
-      ],
-    },
-    {
-      targets: ['.demo-panel'],
-      title: 'La démo',
-      body: [
-        'Une guitare enregistrée sans effet, jouée en direct à travers l’ampli : chaque réglage touché s’entend aussitôt.',
-        'Cliquez la forme d’onde pour vous y déplacer, Loop pour la répéter.',
-      ],
-    },
-    {
-      targets: ['.reader'],
-      title: 'Le lecteur de tablatures',
-      body: [
-        'Importez ou déposez un fichier Guitar Pro, MusicXML, Capella ou alphaTex : la tablature défile et se joue avec ses propres instruments.',
-        'Chaque piste a son solo, son mute et son volume ; le manche montre les notes jouées, et une gamme peut s’y superposer.',
-        'Write a tab ouvre une tablature vide pour écrire la vôtre et l’exporter en Guitar Pro.',
-      ],
-    },
-    {
-      targets: ['.metronome-launch', '.metronome-toggle'],
-      title: 'Le métronome',
-      body: [
-        'Ouvrez-le pour régler un tempo, ou tapez-le au rythme voulu ; le bouton lecture à côté le lance et l’arrête.',
-        'Ouvrir une tablature le cale sur son tempo.',
-      ],
-    },
-    {
-      targets: [],
-      title: 'À vous de jouer',
-      body: [
-        'Une guitare sous la main ? Rechargez la page et choisissez Musicien : vous jouerez à travers la même chaîne, avec l’accordeur, le looper et l’enregistreur.',
-        'Ce tutoriel se relance depuis le bouton Tutoriel, en haut de la page.',
-      ],
-    },
+  const TOUR_TARGETS: readonly (readonly string[])[] = [
+    ['.global-controls'], ['.amp-head'], ['.demo-panel'], ['.reader'], ['.metronome-launch', '.metronome-toggle'], [],
   ];
   let touring = $state(false);
+
+  let locale = $state<Locale>(detectLocale());
+  const text = $derived(MESSAGES[locale]);
+  const testerTour = $derived<readonly TourStep[]>(text.tour.steps.map((step, i) => ({ ...step, targets: TOUR_TARGETS[i]! })));
+  $effect(() => { document.documentElement.lang = locale; });
+  function chooseLocale(next: Locale): void {
+    locale = next;
+    saveLocale(next);
+  }
 
   async function chooseTester(): Promise<void> {
     mode = 'tester';
@@ -1095,6 +1056,12 @@
 
 <svelte:window onkeydown={onWindowKey} />
 
+{#snippet languages()}
+  <div class="languages" role="group" aria-label={text.language}>
+    {#each LOCALES as l}<button type="button" aria-pressed={locale === l} onclick={() => chooseLocale(l)}>{l.toUpperCase()}</button>{/each}
+  </div>
+{/snippet}
+
 <div class="page">
   <header class="bar">
     <span class="t-wordmark">tonecraft</span>
@@ -1108,8 +1075,9 @@
              informing. -->
         <span class="latency" title={latencyDetail}>{latencyMs.toFixed(1)} ms</span>
       {/if}
+      {@render languages()}
       {#if mode === 'tester'}
-      <button class="tour-button" type="button" onclick={() => (touring = true)} disabled={touring}>Tutoriel</button>
+      <button class="tour-button" type="button" onclick={() => (touring = true)} disabled={touring}>{text.tour.open}</button>
       {/if}
       {#if mode === 'musician'}
       <button class="settings-button" type="button" aria-label="Audio settings" title="Audio settings" onclick={openSettings} disabled={engineState === 'starting'}>
@@ -1303,7 +1271,8 @@
   {/if}
 
   <dialog class="sheet welcome" bind:this={welcomeDialog} aria-labelledby="welcome-title" oncancel={() => (asking = false)}>
-        <h2 id="welcome-title">Bienvenue sur Tonecraft</h2>
+        {@render languages()}
+        <h2 id="welcome-title">{text.welcome.title}</h2>
         <div class="choices">
           <button
             class="choice"
@@ -1311,8 +1280,8 @@
             onclick={chooseMusician}
             disabled={engineState === 'starting'}
           >
-            <span class="t-module">Musicien</span>
-            <span class="t-small">Branchez votre guitare et sélectionnez votre entrée audio.</span>
+            <span class="t-module">{text.welcome.musician}</span>
+            <span class="t-small">{text.welcome.musicianBody}</span>
           </button>
           <button
             class="choice"
@@ -1320,12 +1289,12 @@
             onclick={chooseTester}
             disabled={engineState === 'starting'}
           >
-            <span class="t-module">Testeur</span>
-            <span class="t-small">Explorez les sons avec une démo, sans guitare ni accès au micro.</span>
+            <span class="t-module">{text.welcome.tester}</span>
+            <span class="t-small">{text.welcome.testerBody}</span>
           </button>
         </div>
         <button class="quiet" type="button" onclick={() => (asking = false)}>
-          Explorer d’abord
+          {text.welcome.explore}
         </button>
 
         {#if problem !== null}
@@ -1338,7 +1307,7 @@
         {/if}
   </dialog>
 
-  {#if touring}<Tour steps={TESTER_TOUR} onclose={() => (touring = false)} />{/if}
+  {#if touring}<Tour steps={testerTour} labels={text.tour} onclose={() => (touring = false)} />{/if}
 </div>
 
 <style>
@@ -1652,7 +1621,7 @@
   }
   select:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
-  .page{display:flex;flex-direction:column;gap:0;padding:0 48px 28px;max-width:1600px;margin:auto;min-height:100svh}.bar{height:94px;align-items:center}.t-wordmark{font-size:22px;text-transform:lowercase;letter-spacing:-1px;font-weight:600}.workspace{width:100%;max-width:var(--column);margin:36px auto 0}.workspace-heading,.amp-caption,.capture-info,.page-footer{display:flex;justify-content:space-between;gap:16px;font:9px var(--mono);letter-spacing:1.5px;color:#8f8f8f}.workspace-heading{margin-bottom:20px}.edition{color:#c1c1c1}.edition span{color:#6f6f6f}.global-controls{display:grid;grid-template-columns:100px 90px minmax(180px,1fr) minmax(210px,1.2fr) 110px;align-items:center;gap:24px;padding:26px 24px;background:#242424;border:1px solid #3b3b3b;border-radius:8px}.io-control{display:flex;align-items:center;gap:12px}.gate-control{position:relative}.gate-control .enable{bottom:-15px;right:calc(50% - 14px);padding:3px 8px}.enable{position:absolute;right:-2px;bottom:0;background:none;border:0;color:#b7b7b7;font:8px var(--mono);cursor:pointer}.rig-selectors{border-left:1px solid #404040;padding-left:26px;display:grid;gap:16px}.selector{display:flex;flex-direction:column;gap:3px;min-width:0}.selector>span,.eyebrow{font:9px var(--mono);letter-spacing:1.6px;color:#999999}.selector select{width:100%;max-width:100%;min-height:26px;border:0;font-size:12px}.tone-selector{padding:0 20px;border-right:1px solid #404040;text-align:center}.preset-picker{display:flex;align-items:center;gap:8px;margin:10px 0}.preset-picker select{width:100%;max-width:none;text-align:center;background:#323232;border:1px solid #4f4f4f;border-radius:4px;padding:0 8px;font-size:14px;min-height:38px}.preset-picker button{background:none;border:0;font-size:28px;color:#b4b4b4;cursor:pointer;padding:0 3px}.preset-note{font-size:10px;color:#969696}.amp-caption{margin:28px 2px 13px;font-size:8px;letter-spacing:1.4px}.amp-caption>span:first-child{display:flex;align-items:center;gap:7px}.status-dot{width:5px;height:5px;background:#717171;border-radius:50%}.status-dot.live{background:#c0c0c0}.amp-head{margin-top:28px;position:relative;padding:17px;border:1px solid #53534f;border-radius:9px;background:repeating-linear-gradient(32deg,#262626 0 1px,#2a2a2a 1px 3px);box-shadow:0 14px 30px #0005,inset 0 1px 1px #85817a55;--knob-accent:#c5c5c5;--control-label:#b4b4b4}.amp-head.guilt{--knob-material:linear-gradient(135deg,#827187,#39333d 50%,#201d24);--knob-accent:#d2badb;--control-label:#b9adbd}.glass-window{position:relative;height:260px;background:#101010;overflow:hidden;border:2px solid #0e0e10;box-shadow:0 0 0 1px #55505b}.glass-window img{width:100%;height:100%;object-fit:cover;filter:brightness(1.67)}.glass-window .veil{position:absolute;inset:0;background:#000;pointer-events:none;will-change:opacity}.glass-window:after{content:'';position:absolute;inset:0;box-shadow:inset 0 0 35px 12px #08080bd9;background:linear-gradient(0deg,#09080bb0,transparent 65%);pointer-events:none}.amp-brand{position:absolute;z-index:1;bottom:24px;left:0;right:0;text-align:center;display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;color:#e4d4e8;text-shadow:0 2px 8px #000}.amp-brand h1{font:38px Georgia,serif;letter-spacing:12px;margin:0 -12px 0 0}.brand-rule{height:1px;width:42px;background:#ad96b777}.amp-brand p{flex-basis:100%;font:7px var(--mono);letter-spacing:4px;margin:-6px 0 0}.amp-panel{display:flex;align-items:center;justify-content:space-around;gap:20px;padding:22px 20px 20px;background:linear-gradient(110deg,#313131,#232323);border:1px solid #565656;border-top:1px solid #777269}.guilt .amp-panel{background:linear-gradient(110deg,#322f34,#29262d 60%,#252329);border-color:#514852;border-top-color:#7b687e}.control-group{position:relative;border-left:1px solid #69616a55;padding-left:20px}.group-label{display:block;margin:0 auto 14px;font:8px var(--mono);letter-spacing:2px;color:#bcb2c0;background:none;border:0;cursor:pointer}.group-label span{font-size:7px;margin-left:5px;color:var(--knob-accent)}.group-label[aria-pressed=false]{opacity:.45}.knob-row{display:flex;gap:16px}.amp-signature{display:flex;flex-direction:column;align-items:center;gap:8px;min-width:110px;color:#c6b9cb}.amp-signature>span:not(.sig-symbol){font:italic 25px Georgia,serif}.sig-symbol{font-size:32px}.amp-signature small{font:6px var(--mono);letter-spacing:2px}.power-indicator{display:flex;flex-direction:column;align-items:center;gap:15px}.power-indicator>span{width:8px;height:8px;border-radius:50%;background:#5f5163;border:3px solid #252227;box-shadow:0 0 0 1px #75677b}.power-indicator>span.lit{background:#ddbae9;box-shadow:0 0 12px #c47adf}.power-indicator small{font:7px var(--mono);color:#b2aab7;letter-spacing:1px}.screw{position:absolute;width:5px;height:5px;background:linear-gradient(135deg,#777,#222 45%,#999 50%,#333 60%);border-radius:50%}.tl{top:6px;left:7px}.tr{top:6px;right:7px}.bl{bottom:6px;left:7px}.br{bottom:6px;right:7px}.amp-foot{display:flex;justify-content:space-between;margin:0 50px}.amp-foot span{width:65px;height:9px;background:#0f0f0f;border-radius:0 0 3px 3px}.capture-info{margin:0 0 24px;font-size:8px;letter-spacing:.4px}.capture-info>span:last-child{color:#7b7b7b;font-size:7px;letter-spacing:1px}.session-bar{display:flex;align-items:center;gap:24px;border:1px solid #3c3c3c;border-radius:6px;padding:19px 22px;background:#252525}.looper{flex:1;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto auto;gap:9px 16px;align-items:center}.looper-head{grid-column:1/3;display:flex;align-items:baseline;justify-content:space-between;gap:12px}.loop-status{display:flex;align-items:center;gap:7px;font:10px var(--mono);letter-spacing:1px;color:#9c9c9c}.loop-dot{width:6px;height:6px;border-radius:50%;background:#5c5c5c}.loop-status[data-state=recording] .loop-dot,.loop-status[data-state=overdubbing] .loop-dot{background:var(--ember)}.loop-status[data-state=playing] .loop-dot{background:#d8c2dd}.looper-controls{grid-column:1/3;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.loop-main{min-width:104px;padding:9px 16px;background:#323232;border:1px solid #565656;border-radius:4px;color:#ededed;font-size:13px;cursor:pointer}.loop-main:hover:not(:disabled){background:#3b3b3b;border-color:#7c7c7c}.loop-main[data-state=recording],.loop-main[data-state=overdubbing]{border-color:#8a4436;color:#f0d5cf}.loop-small{padding:8px 12px;background:none;border:1px solid #4a4a4a;border-radius:4px;color:#b7b7b7;font-size:12px;cursor:pointer}.loop-small:hover:not(:disabled){color:#ededed;border-color:#7c7c7c}.loop-main:disabled,.loop-small:disabled{opacity:.4;cursor:default}.loop-level{display:flex;align-items:center;gap:8px;margin-left:auto}.loop-level input{width:96px;min-height:40px;accent-color:#c2a9c8}.loop-track{height:2px;background:#3a3a3a;overflow:hidden}.loop-fill{display:block;height:100%;background:#6d6d6d;transform-origin:left;transform:scaleX(0)}.loop-fill[data-state=recording],.loop-fill[data-state=overdubbing]{background:var(--ember)}.loop-fill[data-state=playing]{background:#c2a9c8}.loop-clock{font:10px var(--mono);color:#9c9c9c;white-space:nowrap}.tour-button{padding:8px 14px;border:1px solid #6d5a72;border-radius:4px;background:#221d24;color:#ece2ef;font:12px var(--body);cursor:pointer}.tour-button:hover:not(:disabled){background:#2b2430;border-color:#9a82a0}.tour-button:disabled{opacity:.5;cursor:default}.demo-panel{margin-bottom:16px}.demo-launch{display:flex;align-items:center;gap:14px;width:100%;padding:16px 20px;border:1px solid #6d5a72;border-radius:6px;background:#221d24;color:#ece2ef;font:15px var(--body);text-align:left;cursor:pointer}.demo-launch:hover:not(:disabled){background:#2b2430;border-color:#9a82a0}.demo-launch:disabled{opacity:.5;cursor:default}.demo-play{margin-left:auto;display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#dedbd5;color:#222;font-size:13px}.demo-panel .file{padding:16px 18px;border:1px solid #3c3c3c;border-radius:6px;background:#252525}.session-message{display:flex;flex:1;flex-direction:column;gap:6px;border-left:1px solid #414141;padding-left:24px}.session-message strong{font-size:13px;font-weight:500}.session-message>span{font-size:11px;color:#9c9c9c}.connect{align-self:flex-end;padding:12px 18px;background:#c5c5c5;border:1px solid #d0d0d0;border-radius:4px;font-size:12px;color:#272727;cursor:pointer}.audio-settings .start.small{align-self:flex-start}.connect:disabled{opacity:.5}.session-bar .demo{margin-left:auto;border:0;font-size:11px}.device-controls{display:flex;gap:24px;margin-top:18px;flex-wrap:wrap}.device-controls .levels{width:80px;align-items:center}.page-footer{margin-top:auto;padding:28px 0 22px;font-size:8px;letter-spacing:1px}.page-footer>span:last-child{color:#a5a5a5}.page-footer>span:last-child span{padding:0 8px;color:#636363}.file{margin:0}.wash{background:#0f0f0fcc;z-index:10}.sheet{border:1px solid #555555;border-radius:8px}.notice{min-height:0;color:var(--ember);margin:10px 0}.engine-update{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:0 0 16px;padding:12px 16px;border:1px solid #6d5a72;border-radius:6px;background:#221d24;font-size:13px;line-height:1.5;color:#e6dcea}.update-button{padding:9px 14px;border-radius:4px;background:#dedbd5;color:#222;font-size:12px;text-decoration:none;white-space:nowrap}.update-button:hover{background:#fff}.alert{color:var(--ember);font-size:13px}.neutral-art{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:repeating-linear-gradient(0deg,#1b1b1b 0 2px,#2e2e2e 2px 3px);color:#848484}.neutral-art>span{font-size:80px;letter-spacing:-15px;font-weight:800;opacity:.35}.neutral-art small{font-size:8px;letter-spacing:6px}.neutral-art+.amp-brand h1{font:22px var(--body);letter-spacing:7px}.bypassed .glass-window{opacity:.5}:global(select option){background:#2c2c2c;color:#e4e4e4}:global(button:focus-visible){outline:2px solid var(--iris);outline-offset:4px}
+  .page{display:flex;flex-direction:column;gap:0;padding:0 48px 28px;max-width:1600px;margin:auto;min-height:100svh}.bar{height:94px;align-items:center}.t-wordmark{font-size:22px;text-transform:lowercase;letter-spacing:-1px;font-weight:600}.workspace{width:100%;max-width:var(--column);margin:36px auto 0}.workspace-heading,.amp-caption,.capture-info,.page-footer{display:flex;justify-content:space-between;gap:16px;font:9px var(--mono);letter-spacing:1.5px;color:#8f8f8f}.workspace-heading{margin-bottom:20px}.edition{color:#c1c1c1}.edition span{color:#6f6f6f}.global-controls{display:grid;grid-template-columns:100px 90px minmax(180px,1fr) minmax(210px,1.2fr) 110px;align-items:center;gap:24px;padding:26px 24px;background:#242424;border:1px solid #3b3b3b;border-radius:8px}.io-control{display:flex;align-items:center;gap:12px}.gate-control{position:relative}.gate-control .enable{bottom:-15px;right:calc(50% - 14px);padding:3px 8px}.enable{position:absolute;right:-2px;bottom:0;background:none;border:0;color:#b7b7b7;font:8px var(--mono);cursor:pointer}.rig-selectors{border-left:1px solid #404040;padding-left:26px;display:grid;gap:16px}.selector{display:flex;flex-direction:column;gap:3px;min-width:0}.selector>span,.eyebrow{font:9px var(--mono);letter-spacing:1.6px;color:#999999}.selector select{width:100%;max-width:100%;min-height:26px;border:0;font-size:12px}.tone-selector{padding:0 20px;border-right:1px solid #404040;text-align:center}.preset-picker{display:flex;align-items:center;gap:8px;margin:10px 0}.preset-picker select{width:100%;max-width:none;text-align:center;background:#323232;border:1px solid #4f4f4f;border-radius:4px;padding:0 8px;font-size:14px;min-height:38px}.preset-picker button{background:none;border:0;font-size:28px;color:#b4b4b4;cursor:pointer;padding:0 3px}.preset-note{font-size:10px;color:#969696}.amp-caption{margin:28px 2px 13px;font-size:8px;letter-spacing:1.4px}.amp-caption>span:first-child{display:flex;align-items:center;gap:7px}.status-dot{width:5px;height:5px;background:#717171;border-radius:50%}.status-dot.live{background:#c0c0c0}.amp-head{margin-top:28px;position:relative;padding:17px;border:1px solid #53534f;border-radius:9px;background:repeating-linear-gradient(32deg,#262626 0 1px,#2a2a2a 1px 3px);box-shadow:0 14px 30px #0005,inset 0 1px 1px #85817a55;--knob-accent:#c5c5c5;--control-label:#b4b4b4}.amp-head.guilt{--knob-material:linear-gradient(135deg,#827187,#39333d 50%,#201d24);--knob-accent:#d2badb;--control-label:#b9adbd}.glass-window{position:relative;height:260px;background:#101010;overflow:hidden;border:2px solid #0e0e10;box-shadow:0 0 0 1px #55505b}.glass-window img{width:100%;height:100%;object-fit:cover;filter:brightness(1.67)}.glass-window .veil{position:absolute;inset:0;background:#000;pointer-events:none;will-change:opacity}.glass-window:after{content:'';position:absolute;inset:0;box-shadow:inset 0 0 35px 12px #08080bd9;background:linear-gradient(0deg,#09080bb0,transparent 65%);pointer-events:none}.amp-brand{position:absolute;z-index:1;bottom:24px;left:0;right:0;text-align:center;display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;color:#e4d4e8;text-shadow:0 2px 8px #000}.amp-brand h1{font:38px Georgia,serif;letter-spacing:12px;margin:0 -12px 0 0}.brand-rule{height:1px;width:42px;background:#ad96b777}.amp-brand p{flex-basis:100%;font:7px var(--mono);letter-spacing:4px;margin:-6px 0 0}.amp-panel{display:flex;align-items:center;justify-content:space-around;gap:20px;padding:22px 20px 20px;background:linear-gradient(110deg,#313131,#232323);border:1px solid #565656;border-top:1px solid #777269}.guilt .amp-panel{background:linear-gradient(110deg,#322f34,#29262d 60%,#252329);border-color:#514852;border-top-color:#7b687e}.control-group{position:relative;border-left:1px solid #69616a55;padding-left:20px}.group-label{display:block;margin:0 auto 14px;font:8px var(--mono);letter-spacing:2px;color:#bcb2c0;background:none;border:0;cursor:pointer}.group-label span{font-size:7px;margin-left:5px;color:var(--knob-accent)}.group-label[aria-pressed=false]{opacity:.45}.knob-row{display:flex;gap:16px}.amp-signature{display:flex;flex-direction:column;align-items:center;gap:8px;min-width:110px;color:#c6b9cb}.amp-signature>span:not(.sig-symbol){font:italic 25px Georgia,serif}.sig-symbol{font-size:32px}.amp-signature small{font:6px var(--mono);letter-spacing:2px}.power-indicator{display:flex;flex-direction:column;align-items:center;gap:15px}.power-indicator>span{width:8px;height:8px;border-radius:50%;background:#5f5163;border:3px solid #252227;box-shadow:0 0 0 1px #75677b}.power-indicator>span.lit{background:#ddbae9;box-shadow:0 0 12px #c47adf}.power-indicator small{font:7px var(--mono);color:#b2aab7;letter-spacing:1px}.screw{position:absolute;width:5px;height:5px;background:linear-gradient(135deg,#777,#222 45%,#999 50%,#333 60%);border-radius:50%}.tl{top:6px;left:7px}.tr{top:6px;right:7px}.bl{bottom:6px;left:7px}.br{bottom:6px;right:7px}.amp-foot{display:flex;justify-content:space-between;margin:0 50px}.amp-foot span{width:65px;height:9px;background:#0f0f0f;border-radius:0 0 3px 3px}.capture-info{margin:0 0 24px;font-size:8px;letter-spacing:.4px}.capture-info>span:last-child{color:#7b7b7b;font-size:7px;letter-spacing:1px}.session-bar{display:flex;align-items:center;gap:24px;border:1px solid #3c3c3c;border-radius:6px;padding:19px 22px;background:#252525}.looper{flex:1;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto auto;gap:9px 16px;align-items:center}.looper-head{grid-column:1/3;display:flex;align-items:baseline;justify-content:space-between;gap:12px}.loop-status{display:flex;align-items:center;gap:7px;font:10px var(--mono);letter-spacing:1px;color:#9c9c9c}.loop-dot{width:6px;height:6px;border-radius:50%;background:#5c5c5c}.loop-status[data-state=recording] .loop-dot,.loop-status[data-state=overdubbing] .loop-dot{background:var(--ember)}.loop-status[data-state=playing] .loop-dot{background:#d8c2dd}.looper-controls{grid-column:1/3;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.loop-main{min-width:104px;padding:9px 16px;background:#323232;border:1px solid #565656;border-radius:4px;color:#ededed;font-size:13px;cursor:pointer}.loop-main:hover:not(:disabled){background:#3b3b3b;border-color:#7c7c7c}.loop-main[data-state=recording],.loop-main[data-state=overdubbing]{border-color:#8a4436;color:#f0d5cf}.loop-small{padding:8px 12px;background:none;border:1px solid #4a4a4a;border-radius:4px;color:#b7b7b7;font-size:12px;cursor:pointer}.loop-small:hover:not(:disabled){color:#ededed;border-color:#7c7c7c}.loop-main:disabled,.loop-small:disabled{opacity:.4;cursor:default}.loop-level{display:flex;align-items:center;gap:8px;margin-left:auto}.loop-level input{width:96px;min-height:40px;accent-color:#c2a9c8}.loop-track{height:2px;background:#3a3a3a;overflow:hidden}.loop-fill{display:block;height:100%;background:#6d6d6d;transform-origin:left;transform:scaleX(0)}.loop-fill[data-state=recording],.loop-fill[data-state=overdubbing]{background:var(--ember)}.loop-fill[data-state=playing]{background:#c2a9c8}.loop-clock{font:10px var(--mono);color:#9c9c9c;white-space:nowrap}.languages{display:flex;gap:2px}.languages button{min-width:34px;padding:6px 8px;border:1px solid transparent;border-radius:4px;background:none;color:#8f8f8f;font:10px var(--mono);letter-spacing:1px;cursor:pointer}.languages button:hover{color:#e4e4e4}.languages button[aria-pressed=true]{color:#e4e4e4;border-color:#4b4b4b}.welcome .languages{position:absolute;top:14px;right:14px}.tour-button{padding:8px 14px;border:1px solid #6d5a72;border-radius:4px;background:#221d24;color:#ece2ef;font:12px var(--body);cursor:pointer}.tour-button:hover:not(:disabled){background:#2b2430;border-color:#9a82a0}.tour-button:disabled{opacity:.5;cursor:default}.demo-panel{margin-bottom:16px}.demo-launch{display:flex;align-items:center;gap:14px;width:100%;padding:16px 20px;border:1px solid #6d5a72;border-radius:6px;background:#221d24;color:#ece2ef;font:15px var(--body);text-align:left;cursor:pointer}.demo-launch:hover:not(:disabled){background:#2b2430;border-color:#9a82a0}.demo-launch:disabled{opacity:.5;cursor:default}.demo-play{margin-left:auto;display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#dedbd5;color:#222;font-size:13px}.demo-panel .file{padding:16px 18px;border:1px solid #3c3c3c;border-radius:6px;background:#252525}.session-message{display:flex;flex:1;flex-direction:column;gap:6px;border-left:1px solid #414141;padding-left:24px}.session-message strong{font-size:13px;font-weight:500}.session-message>span{font-size:11px;color:#9c9c9c}.connect{align-self:flex-end;padding:12px 18px;background:#c5c5c5;border:1px solid #d0d0d0;border-radius:4px;font-size:12px;color:#272727;cursor:pointer}.audio-settings .start.small{align-self:flex-start}.connect:disabled{opacity:.5}.session-bar .demo{margin-left:auto;border:0;font-size:11px}.device-controls{display:flex;gap:24px;margin-top:18px;flex-wrap:wrap}.device-controls .levels{width:80px;align-items:center}.page-footer{margin-top:auto;padding:28px 0 22px;font-size:8px;letter-spacing:1px}.page-footer>span:last-child{color:#a5a5a5}.page-footer>span:last-child span{padding:0 8px;color:#636363}.file{margin:0}.wash{background:#0f0f0fcc;z-index:10}.sheet{border:1px solid #555555;border-radius:8px}.notice{min-height:0;color:var(--ember);margin:10px 0}.engine-update{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:0 0 16px;padding:12px 16px;border:1px solid #6d5a72;border-radius:6px;background:#221d24;font-size:13px;line-height:1.5;color:#e6dcea}.update-button{padding:9px 14px;border-radius:4px;background:#dedbd5;color:#222;font-size:12px;text-decoration:none;white-space:nowrap}.update-button:hover{background:#fff}.alert{color:var(--ember);font-size:13px}.neutral-art{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:repeating-linear-gradient(0deg,#1b1b1b 0 2px,#2e2e2e 2px 3px);color:#848484}.neutral-art>span{font-size:80px;letter-spacing:-15px;font-weight:800;opacity:.35}.neutral-art small{font-size:8px;letter-spacing:6px}.neutral-art+.amp-brand h1{font:22px var(--body);letter-spacing:7px}.bypassed .glass-window{opacity:.5}:global(select option){background:#2c2c2c;color:#e4e4e4}:global(button:focus-visible){outline:2px solid var(--iris);outline-offset:4px}
   @media(min-width:1500px){.glass-window{height:310px}.workspace{margin-top:48px}}
   @media(max-width:1100px){.page{padding:0 24px}.global-controls{gap:14px;padding:22px 16px;grid-template-columns:85px 65px 1fr 1fr 90px}.rig-selectors{padding-left:16px}.tone-selector{padding:0 10px}.amp-panel{flex-wrap:wrap;gap:18px 10px;padding:20px 12px}.amp-signature{min-width:70px}.control-group{padding-left:12px}.knob-row{gap:5px}.tone-group{flex-basis:100%;border-left:0;padding-left:0}.tone-group .knob-row{justify-content:center;gap:14px}.power-indicator{display:flex}.session-bar{gap:15px}.session-message{padding-left:15px}}
   @media(max-width:760px){.page{padding:0 16px}.bar{height:76px}.t-wordmark{font-size:20px}.bar-right{gap:10px}.workspace{margin-top:24px}.edition{display:none}.global-controls{grid-template-columns:1fr 1fr 1fr;gap:22px}.io-control{justify-content:center}.output-control{grid-column:3;grid-row:1}.gate-control{display:flex;justify-content:center}.enable{right:5px}.rig-selectors{grid-column:1/3;grid-row:2;padding:0;border:0}.tone-selector{grid-column:3;grid-row:2;padding:0;border:0;min-width:0}.preset-picker{gap:0}.preset-picker select{font-size:12px;min-width:0}.preset-note{display:none}.glass-window{height:210px}.amp-head{padding:12px}.amp-panel{flex-wrap:wrap;padding:18px 10px;gap:22px 12px}.amp-signature{display:none}.tone-group{flex-basis:100%;border:0;padding:0}.knob-row{justify-content:space-evenly;gap:15px}.control-group{border:0;padding:0}.amp-brand h1{font-size:30px}.capture-info{line-height:1.6}.capture-info>span:last-child{display:none}.session-bar{flex-wrap:wrap;padding:16px}.looper{flex-basis:100%}.source-panel{padding:16px}.loop-level{margin-left:0}.session-message{flex:1;min-width:130px}.session-message>span{line-height:1.6}.page-footer{font-size:6px}.amp-caption{font-size:7px;letter-spacing:.6px}.chain-label{letter-spacing:0;font-size:9px}.bar .start{font-size:11px;padding:0 10px}}
