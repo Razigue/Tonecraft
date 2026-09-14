@@ -486,7 +486,7 @@
         {#if guitarPath}
           <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label="Recorded guitar"><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="#4e4e4e"/><polyline points={guitarPath} fill="none" stroke="#c7c0b5" stroke-width="1" /></svg>
         {:else}
-          <button type="button" class="drop-hint" disabled={recording} onclick={() => diInput?.click()}>Drop a DI, or <u>choose a file</u></button>
+          <button type="button" class="drop-hint" disabled={recording} onclick={() => diInput?.click()}><span>Press ● Record to record your guitar, or drop a DI (a dry guitar recording, no amp), or <u>choose a file</u></span></button>
         {/if}
         <input class="hidden-file" bind:this={diInput} type="file" accept="audio/*" aria-label="Guitar DI file" onchange={e => { void useDi(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} />
       </div>
@@ -496,7 +496,7 @@
         {#if backingPath}
           <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label="Backing track waveform"><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="#4e4e4e"/><polyline points={backingPath} fill="none" stroke="#b9a3bf" stroke-width="1" /></svg>
         {:else}
-          <label class="drop-hint">Drop a song to play along to, or <u>choose a file</u>
+          <label class="drop-hint"><span>Drop a song to play along to, or <u>choose a file</u></span>
             <input type="file" accept="audio/*" aria-label="Backing track file" onchange={e => { void useBacking(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} /></label>
         {/if}
       </div>
@@ -535,7 +535,7 @@
   .export-menu{position:relative}.menu{position:absolute;right:0;top:calc(100% + 6px);z-index:5;display:grid;min-width:210px;padding:6px;background:#262626;border:1px solid #4a4a4a;border-radius:6px;box-shadow:0 10px 24px #0008}.menu button{display:flex;justify-content:space-between;gap:16px;border:0;background:none;text-align:left;min-height:34px}.menu button:hover:not(:disabled){background:#353535}.menu small{font:10px var(--mono);color:#9c9c9c}
   .timeline{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;margin-top:16px}.lane-names{display:grid;grid-template-rows:48px 48px;gap:6px;font:9px var(--mono);letter-spacing:1.4px;color:#8f8f8f}.lane-head{display:flex;flex-direction:column;justify-content:center;gap:6px}.lane-head input{width:100%;height:16px;margin:0;accent-color:#c2a9c8;cursor:pointer}
   .lanes{position:relative;display:grid;grid-template-rows:48px 48px;gap:6px;touch-action:none;cursor:crosshair}.lane{position:relative;overflow:hidden;background:#181818;border:1px solid #373737;border-radius:3px}.lane svg{display:block;width:100%;height:100%}
-  .backing-lane.over,.guitar-lane.over{border-color:#d8c2dd}.drop-hint,.drop-hint:hover{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:4px;min-height:0;padding:0;border:0;border-radius:0;background:none;font-size:11px;color:#9c9c9c;cursor:pointer}.drop-hint u{color:#dedbd5}.drop-hint input,.hidden-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+  .backing-lane.over,.guitar-lane.over{border-color:#d8c2dd}.drop-hint,.drop-hint:hover{position:absolute;inset:0;display:grid;place-items:center;min-height:0;padding:0 12px;text-align:center;line-height:1.4;border:0;border-radius:0;background:none;font-size:11px;color:#9c9c9c;cursor:pointer}.drop-hint>span{min-width:0;max-width:100%;white-space:normal}.drop-hint u{color:#dedbd5}.drop-hint input,.hidden-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
   .selection{position:absolute;top:0;bottom:0;background:#d8c2dd22;border-left:1px solid #d8c2dd;border-right:1px solid #d8c2dd;pointer-events:none}
   .playhead-track{position:absolute;inset:0;pointer-events:none}.playhead{position:absolute;inset:0;will-change:transform}.playhead::before{content:'';position:absolute;left:0;top:0;bottom:0;width:1px;background:#e8dfd0}
   .record-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px;min-height:0}.record-tools:empty{display:none}.small{min-height:30px;padding:5px 10px;font-size:11px}.record-tools{position:relative}.backing-name{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px var(--mono);color:#cfcfcf}.level{display:flex;align-items:center;gap:8px;font-size:10px;color:#aaa}.level input{width:110px;accent-color:#c2a9c8}.sync output{min-width:48px;font:11px var(--mono);color:#cfcfcf;font-variant-numeric:tabular-nums}.selection-info{font:11px var(--mono);color:#d8c2dd;margin-left:auto}
