@@ -14,7 +14,7 @@ fn chain() -> Chain {
     Chain::new(compiler.engine(), &module, RATE, BLOCK).unwrap()
 }
 
-fn call(chain: &mut Chain, name: &str, args: &[f64], payload: Option<&[u8]>) -> f64 {
+fn call(chain: &mut Chain, name: &str, args: &[f64], payload: Option<&mut [u8]>) -> f64 {
     let index = chain
         .export_index(name)
         .unwrap_or_else(|| panic!("no export {name}"));
@@ -48,7 +48,7 @@ fn abi_and_zero_latency() {
     ] {
         call(&mut c, "tc_set_param", &[index, value], None);
     }
-    call(&mut c, "tc_set_ir", &[0.0], Some(&1.0f32.to_le_bytes()));
+    call(&mut c, "tc_set_ir", &[0.0], Some(&mut 1.0f32.to_le_bytes()[..]));
     // Every parameter glides where it is sent; half a second to arrive.
     run(&mut c, &vec![0.0; RATE as usize / 2]);
 
