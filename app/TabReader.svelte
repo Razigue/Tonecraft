@@ -281,12 +281,12 @@
       // event's own flag rather than on a pending one we set before seeking:
       // a stray position update from the pause that preceded it consumed the
       // flag, and the seek that followed then scrolled nowhere.
-      if (e.isSeek) { lit = []; showBar(barAt(e.currentTick)); }
+      if (e.isSeek) { if (playing) lit = []; showBar(barAt(e.currentTick)); }
     });
     // What is sounding, replaced whole on every beat: the previous position
     // goes out as the next comes in, which is the whole point of the neck.
     api.activeBeatsChanged.on(e => {
-      if (!playing && stringCursor !== null) return;
+      if (!playing) return;
       const held: { string: number; fret: number }[] = [];
       for (const beat of e.activeBeats) {
         if (beat.voice.bar.staff.track.index !== track) continue;
@@ -436,6 +436,15 @@
     for (const beat of staveBeats) { if (beat.absolutePlaybackStart > tick) break; found = beat; }
     return found;
   }
+  /** Every beat of the stave sounding at a tick, across its voices. */
+  function beatsAt(tick: number): model.Beat[] {
+    const sounding: model.Beat[] = [];
+    for (const beat of staveBeats) {
+      if (beat.absolutePlaybackStart > tick) break;
+      if (tick < beat.absolutePlaybackStart + beat.playbackDuration) sounding.push(beat);
+    }
+    return sounding;
+  }
   function moveString(direction: 1 | -1) {
     if (!stave || stave.tuning.length === 0) return;
     if (stringCursor === null) {
@@ -445,12 +454,16 @@
     }
     stringCursor = Math.max(1, Math.min(stave.tuning.length, stringCursor + direction));
   }
+  // Paused, the neck is lit from the position: alphaTab reports the notes
+  // sounding only while it plays, and a seek had left the neck dark.
   $effect(() => {
     void layout;
-    const string = stringCursor, beat = beatAt(currentTick >= 0 ? positionTick() : 0), reader = api;
-    if (playing || string === null || !stave || !beat || !reader) { stringMark = null; return; }
-    const note = beat.notes.find(n => n.string === string);
-    lit = note ? [{ string: note.string, fret: note.fret }] : [];
+    const tick = currentTick >= 0 ? positionTick() : 0;
+    const string = stringCursor, beat = beatAt(tick), reader = api;
+    if (playing || !stave) { stringMark = null; return; }
+    const held = beatsAt(tick).flatMap(b => b.notes).filter(n => n.string > 0 && (string === null || n.string === string));
+    lit = held.map(n => ({ string: n.string, fret: n.fret }));
+    if (string === null || !beat || !reader) { stringMark = null; return; }
     const bounds = reader.boundsLookup?.findBeat(beat);
     if (!bounds) { stringMark = null; return; }
     // alphaTab gives bar bounds for the score staff only when both staves are

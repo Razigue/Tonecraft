@@ -222,6 +222,7 @@ try {
   assert(paused[1] > paused[0] && paused[0] > 0, `paused, the right arrow steps beat by beat (${paused})`);
   assert(paused[1] - paused[0] < bar.width / 2, `one beat, not a bar (${paused[1] - paused[0]}px of a ${bar.width}px bar)`);
   assert(Math.abs(paused[2] - paused[0]) <= 3, `and the left arrow steps back (${paused})`);
+  assert.equal(await page.locator('.neck .core').count(), 1, 'paused, the neck lights the note under the cursor');
   await page.getByRole('button', { name: 'Play tablature', exact: true }).click();
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor({ timeout: 10000 });
   await page.waitForTimeout(300);
