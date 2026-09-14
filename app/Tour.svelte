@@ -66,7 +66,12 @@
     else first.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
 
-  /** Beside the lit windows: under them, else over them, else at the foot of the screen. */
+  /**
+   * Beside the lit windows: under them, else over them, else to their left or
+   * right, else at the foot of the screen. The sides are for a small window
+   * near the end of the page, which cannot scroll up far enough to leave room
+   * above or below: the card had nowhere to go but over it.
+   */
   function position(): void {
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(() => {
@@ -76,10 +81,13 @@
       if (rects.length === 0) { place = { x: Math.round((innerWidth - w) / 2), y: Math.round((innerHeight - h) / 2) }; return; }
       const top = Math.min(...rects.map(r => r.top)), bottom = Math.max(...rects.map(r => r.bottom));
       const left = Math.min(...rects.map(r => r.left)), right = Math.max(...rects.map(r => r.right));
-      const x = Math.min(Math.max(GAP, (left + right) / 2 - w / 2), innerWidth - w - GAP);
+      let x = Math.min(Math.max(GAP, (left + right) / 2 - w / 2), innerWidth - w - GAP);
       let y = innerHeight - h - GAP;
+      const besideY = Math.min(Math.max(GAP, (top + bottom) / 2 - h / 2), innerHeight - h - GAP);
       if (innerHeight - bottom >= h + GAP * 2) y = bottom + GAP;
       else if (top >= h + GAP * 2) y = top - h - GAP;
+      else if (left >= w + GAP * 2) { x = left - w - GAP; y = besideY; }
+      else if (innerWidth - right >= w + GAP * 2) { x = right + GAP; y = besideY; }
       place = { x: Math.round(Math.max(GAP, x)), y: Math.round(Math.max(GAP, y)) };
     });
   }

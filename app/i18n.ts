@@ -100,7 +100,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
           title: 'Compose your own tabs',
           body: [
             'Write a tab turns the reader into an editor: compose from an empty tab in 4/4, and press Space at any moment to hear what you have written.',
-            'Type a fret with the number keys, on the string chosen with ↑ and ↓; ← and → move from beat to beat. Several frets on the same beat make a chord, and the neck shows all of it.',
+            'Write frets with the numeric keypad or the number keys above the letters: 1 then 2 is fret 12.',
+            'Move with the arrows: ← and → go from beat to beat, ↑ and ↓ from string to string. Several frets on the same beat make a chord, and the neck shows all of it.',
             'Pick durations from the bar or with + and −, a dot with ., a rest with R. Set the tempo, the number of strings and the tuning, add or delete tracks, then export it to Guitar Pro.',
           ],
         },
@@ -171,7 +172,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
           title: 'Composez vos tablatures',
           body: [
             'Write a tab transforme le lecteur en éditeur : composez à partir d’une tablature vide en 4/4, et appuyez sur Espace à tout moment pour entendre ce que vous avez écrit.',
-            'Tapez une case avec les chiffres, sur la corde choisie avec ↑ et ↓ ; ← et → passent d’un temps à l’autre. Plusieurs cases sur le même temps forment un accord, et le manche l’affiche en entier.',
+            'Écrivez les cases avec le pavé numérique ou les chiffres au-dessus des lettres : 1 puis 2 donne la case 12.',
+            'Naviguez avec les flèches : ← et → passent d’un temps à l’autre, ↑ et ↓ d’une corde à l’autre. Plusieurs cases sur le même temps forment un accord, et le manche l’affiche en entier.',
             'Choisissez les durées dans la barre ou avec + et −, un point avec ., un silence avec R. Réglez le tempo, le nombre de cordes et l’accordage, ajoutez ou supprimez des pistes, puis exportez en Guitar Pro.',
           ],
         },
