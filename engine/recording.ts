@@ -60,6 +60,8 @@ export type ExportContent = 'mix' | 'guitar' | 'backing';
 export interface Timeline {
   guitar: Float32Array | null;
   backing: Float32Array | null;
+  /** Each lane's level in the mix, 0 to 1. */
+  guitarLevel: number;
   backingLevel: number;
   latencyFrames: number;
 }
@@ -85,9 +87,9 @@ export function mixTimeline(t: Timeline, content: ExportContent, range?: readonl
   const from = Math.max(0, Math.floor(start));
   const out = new Float32Array(Math.max(0, Math.floor(end) - from));
   if (content !== 'backing' && t.guitar) {
-    const g = t.guitar, offset = from + shift(t);
+    const g = t.guitar, offset = from + shift(t), level = t.guitarLevel;
     const n = Math.min(out.length, g.length - offset);
-    for (let i = Math.max(0, -offset); i < n; i++) out[i]! += g[offset + i]!;
+    for (let i = Math.max(0, -offset); i < n; i++) out[i]! += g[offset + i]! * level;
   }
   if (content !== 'guitar' && t.backing) {
     const b = t.backing, level = t.backingLevel;
@@ -112,6 +114,7 @@ export async function decodeBacking(file: Blob, sampleRate: number): Promise<Flo
 export interface ExportOptions {
   content?: ExportContent;
   backing?: Float32Array<ArrayBuffer> | null;
+  guitarLevel?: number;
   backingLevel?: number;
   /** Frames on the timeline; the default range when absent. */
   range?: readonly [number, number];

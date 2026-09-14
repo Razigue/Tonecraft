@@ -123,8 +123,9 @@ struct Chain {
   tc::Click click;
   tc::Looper looper;
   /* The backing track: a file to play along to, heard with the rig and never
-     part of it. It joins where the loop's playback does, so the output fader
-     and the limiter apply to it, and it is in neither the DI take nor a loop.
+     part of it. It joins after the output fader — which is the guitar's, and
+     never the track's, whose level is its own — and before the limiter, which
+     still guards the headphones; it is in neither the DI take nor a loop.
      Armed, it starts from its first sample on the block the recorder starts
      on, and stops with it: a take and its backing line up to the sample. */
   tc::Player backing;
@@ -310,13 +311,13 @@ int processBlock(Chain& c, int off, int n, int inChannels) {
     /* What the rig produces, before the master: this is what the looper
        records, and what it plays back joins it here — so the output fader and
        the limiter apply to both, and the metronome, added after the limiter,
-       is never printed into a loop. The backing track joins here too, after
-       the looper has read the rig: heard, limited, never recorded. */
+       is never printed into a loop. The backing track joins after the
+       master, at its own level: heard, limited, never recorded. */
     const float rig = c.chained[i] * d + c.wetted[i] * w + tunerTap[i] * dg;
     const float backingLevel = static_cast<float>(c.backingGain.tick());
     const float backingSample = backingChannels == 0 ? 0.0f
         : backingLevel * (backingChannels > 1 ? 0.5f * (c.backingA[i] + c.backingB[i]) : c.backingA[i]);
-    const float mixed = (rig + c.looper.tick(rig) + backingSample) * mg;
+    const float mixed = (rig + c.looper.tick(rig)) * mg + backingSample;
     const float y = c.limiter.tick(mixed);
 
     const double ay = y < 0 ? -y : y;

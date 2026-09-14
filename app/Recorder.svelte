@@ -32,6 +32,7 @@
   /** The rate `backing` was decoded at: a take restored at another rate needs it again. */
   let backingDecodedAt = 0;
   let backingLevel = $state(0.8);
+  let guitarLevel = $state(1);
   let previewing = $state(false);
   let dragOver = $state(false);
   /** Seconds on the timeline, start before end. */
@@ -55,7 +56,7 @@
   const rate = $derived(take?.sampleRate ?? engine?.sampleRate ?? 48_000);
   const measuredMs = $derived(take ? Math.round(((take.latencyFrames ?? 0) / take.sampleRate) * 1000) : 0);
   const alignFrames = $derived(take ? (syncMs === null ? take.latencyFrames ?? 0 : Math.round((syncMs / 1000) * take.sampleRate)) : 0);
-  const timeline = $derived<Timeline>({ guitar: take?.samples ?? null, backing, backingLevel, latencyFrames: alignFrames });
+  const timeline = $derived<Timeline>({ guitar: take?.samples ?? null, backing, guitarLevel, backingLevel, latencyFrames: alignFrames });
   const lanes = $derived(laneFrames(timeline));
   const totalFrames = $derived(Math.max(lanes.guitar, lanes.backing));
   const duration = $derived(totalFrames / rate);
@@ -98,7 +99,7 @@
   let listenFrom = 0;
 
   function persist() {
-    void dbPut(STORES.state, { mode, backingLevel, latencyFrames: take?.latencyFrames ?? 0, syncMs }, STATE_KEY);
+    void dbPut(STORES.state, { mode, guitarLevel, backingLevel, latencyFrames: take?.latencyFrames ?? 0, syncMs }, STATE_KEY);
   }
   function forgetRender() {
     stopListening();
@@ -117,7 +118,7 @@
     if (!available(content)) return null;
     const guitarTone = content === 'backing' || mode === 'di' ? null : tone;
     const range = selectionFrames();
-    const key = [takeId, backingId, content, guitarTone ? JSON.stringify(guitarTone) : 'dry', range?.join('-') ?? 'all', content === 'guitar' ? '' : backingLevel, alignFrames].join('|');
+    const key = [takeId, backingId, content, guitarTone ? JSON.stringify(guitarTone) : 'dry', range?.join('-') ?? 'all', content === 'guitar' ? '' : backingLevel, content === 'backing' ? '' : guitarLevel, alignFrames].join('|');
     if (rendered?.key === key) return rendered;
     progress = 0;
     abort = new AbortController();
@@ -126,7 +127,7 @@
       const snapshot = guitarTone ? { values: { ...guitarTone.values }, capture: guitarTone.capture ? { ...guitarTone.capture } : null, cab: guitarTone.cab } : null;
       const source = take ? { ...take, latencyFrames: alignFrames } : { samples: new Float32Array(0), sampleRate: rate };
       const wav = await exportRecording(source, snapshot, value => { progress = value; }, abort.signal,
-        { content, backing, backingLevel, range });
+        { content, backing, guitarLevel, backingLevel, range });
       if (disposed) return null;
       if (rendered) URL.revokeObjectURL(rendered.url);
       const blob = new Blob([wav], { type: 'audio/wav' });
@@ -236,6 +237,11 @@
     forgetRender();
     persist();
   }
+  function setGuitarLevel(level: number) {
+    guitarLevel = level;
+    forgetRender();
+    persist();
+  }
   function setBackingLevel(level: number) {
     backingLevel = level;
     engine?.setBackingLevel(level);
@@ -328,10 +334,11 @@
 
   onMount(() => {
     void (async () => {
-      const saved = await dbGet<{ mode?: unknown; backingLevel?: unknown; latencyFrames?: unknown; syncMs?: unknown }>(STORES.state, STATE_KEY).catch(() => null);
+      const saved = await dbGet<{ mode?: unknown; guitarLevel?: unknown; backingLevel?: unknown; latencyFrames?: unknown; syncMs?: unknown }>(STORES.state, STATE_KEY).catch(() => null);
       if (disposed) return;
       if (saved?.mode === 'di' || saved?.mode === 'processed') mode = saved.mode;
       if (typeof saved?.backingLevel === 'number' && saved.backingLevel >= 0 && saved.backingLevel <= 1) backingLevel = saved.backingLevel;
+      if (typeof saved?.guitarLevel === 'number' && saved.guitarLevel >= 0 && saved.guitarLevel <= 1) guitarLevel = saved.guitarLevel;
       if (typeof saved?.syncMs === 'number' && saved.syncMs >= 0 && saved.syncMs <= 300) syncMs = saved.syncMs;
       const latencyFrames = typeof saved?.latencyFrames === 'number' && saved.latencyFrames >= 0 ? saved.latencyFrames : 0;
       const file = await loadMedia('last-recording').catch(() => null);
@@ -380,7 +387,10 @@
   </div>
 
   <div class="timeline">
-    <div class="lane-names" aria-hidden="true"><span>GUITAR</span><span>BACKING</span></div>
+    <div class="lane-names">
+      <label class="lane-head"><span>GUITAR</span><input type="range" min="0" max="1" step="0.01" value={guitarLevel} aria-label="Guitar level" oninput={e => setGuitarLevel(Number(e.currentTarget.value))} /></label>
+      <label class="lane-head"><span>BACKING</span><input type="range" min="0" max="1" step="0.01" value={backingLevel} aria-label="Backing track level" oninput={e => setBackingLevel(Number(e.currentTarget.value))} /></label>
+    </div>
     <div class="lanes" role="group" aria-label="Recording timeline"
       onpointerdown={selectStart} onpointermove={selectMove} onpointerup={selectEnd} onpointercancel={selectEnd}>
       <div class="lane">
@@ -404,7 +414,6 @@
   <div class="record-tools">
     {#if backingFile}
       <span class="backing-name" title={backingFile.name}>{backingFile.name}</span>
-      <label class="level">Level<input type="range" min="0" max="1" step="0.01" value={backingLevel} aria-label="Backing track level" oninput={e => setBackingLevel(Number(e.currentTarget.value))} /></label>
       <button class="small" disabled={!engine || recording} onclick={preview}>{previewing ? '■ Stop' : '▶ Preview'}</button>
       <button class="small" disabled={recording} onclick={() => replaceInput?.click()}>Replace</button>
       <input class="hidden-file" bind:this={replaceInput} type="file" accept="audio/*" aria-label="Replace backing track" onchange={e => { void useBacking(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} />
@@ -430,12 +439,12 @@
   .actions{display:flex;align-items:center;gap:10px;margin-left:auto}
   button,.small{font:12px var(--body);color:#ddd;background:#303030;border:1px solid #505050;border-radius:4px;min-height:38px;padding:8px 14px;cursor:pointer;white-space:nowrap}button:hover{background:#414141}button:disabled{opacity:.45;cursor:default}.listen{min-width:46px;font-variant-numeric:tabular-nums}.recording{color:#ffc6b7;border-color:#ae7666}.export{background:#dedbd5;color:#222;border-color:#dedbd5}.export:hover{background:#f3f0ea}
   .export-menu{position:relative}.menu{position:absolute;right:0;top:calc(100% + 6px);z-index:5;display:grid;min-width:210px;padding:6px;background:#262626;border:1px solid #4a4a4a;border-radius:6px;box-shadow:0 10px 24px #0008}.menu button{display:flex;justify-content:space-between;gap:16px;border:0;background:none;text-align:left;min-height:34px}.menu button:hover:not(:disabled){background:#353535}.menu small{font:10px var(--mono);color:#9c9c9c}
-  .timeline{display:grid;grid-template-columns:62px minmax(0,1fr);gap:12px;margin-top:16px}.lane-names{display:grid;grid-template-rows:48px 48px;gap:6px;font:9px var(--mono);letter-spacing:1.4px;color:#8f8f8f}.lane-names span{align-self:center}
+  .timeline{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;margin-top:16px}.lane-names{display:grid;grid-template-rows:48px 48px;gap:6px;font:9px var(--mono);letter-spacing:1.4px;color:#8f8f8f}.lane-head{display:flex;flex-direction:column;justify-content:center;gap:6px}.lane-head input{width:100%;height:16px;margin:0;accent-color:#c2a9c8;cursor:pointer}
   .lanes{position:relative;display:grid;grid-template-rows:48px 48px;gap:6px;touch-action:none;cursor:crosshair}.lane{position:relative;overflow:hidden;background:#181818;border:1px solid #373737;border-radius:3px}.lane svg{display:block;width:100%;height:100%}
   .backing-lane.over{border-color:#d8c2dd}.drop-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:4px;font-size:11px;color:#9c9c9c;cursor:pointer}.drop-hint u{color:#dedbd5}.drop-hint input,.hidden-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
   .selection{position:absolute;top:0;bottom:0;background:#d8c2dd22;border-left:1px solid #d8c2dd;border-right:1px solid #d8c2dd;pointer-events:none}
   .playhead-track{position:absolute;inset:0;pointer-events:none}.playhead{position:absolute;inset:0;will-change:transform}.playhead::before{content:'';position:absolute;left:0;top:0;bottom:0;width:1px;background:#e8dfd0}
   .record-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px;min-height:0}.record-tools:empty{display:none}.small{min-height:30px;padding:5px 10px;font-size:11px}.record-tools{position:relative}.backing-name{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px var(--mono);color:#cfcfcf}.level{display:flex;align-items:center;gap:8px;font-size:10px;color:#aaa}.level input{width:110px;accent-color:#c2a9c8}.sync output{min-width:48px;font:11px var(--mono);color:#cfcfcf;font-variant-numeric:tabular-nums}.selection-info{font:11px var(--mono);color:#d8c2dd;margin-left:auto}
   p{font-size:12px;color:var(--ember);margin:12px 0 0}
-  @media(max-width:760px){.recorder{padding:18px 14px}.record-head{gap:12px}.actions{margin-left:0;flex-wrap:wrap}.timeline{grid-template-columns:minmax(0,1fr)}.lane-names{display:none}.selection-info{margin-left:0}}
+  @media(max-width:760px){.recorder{padding:18px 14px}.record-head{gap:12px}.actions{margin-left:0;flex-wrap:wrap}.timeline{grid-template-columns:minmax(0,1fr)}.lane-names{grid-template-rows:auto;grid-template-columns:1fr 1fr;gap:12px}.selection-info{margin-left:0}}
 </style>

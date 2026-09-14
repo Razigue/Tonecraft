@@ -16,8 +16,9 @@ self.onmessage = async (event: MessageEvent<{ take: Recording; tone: RecordingTo
       guitar = await renderRecording(guitar, tone, await wasm.arrayBuffer(), new Uint8Array(await model.arrayBuffer()),
         progress => self.postMessage({ progress }));
     }
-    const samples = backing || options.range
-      ? mixTimeline({ guitar: guitar?.samples ?? null, backing, backingLevel: options.backingLevel ?? 1, latencyFrames: take.latencyFrames ?? 0 },
+    const guitarLevel = options.guitarLevel ?? 1;
+    const samples = backing || options.range || guitarLevel !== 1
+      ? mixTimeline({ guitar: guitar?.samples ?? null, backing, guitarLevel, backingLevel: options.backingLevel ?? 1, latencyFrames: take.latencyFrames ?? 0 },
         content, options.range)
       : guitar!.samples;
     if (samples.length === 0) throw new Error('There is nothing to export in this selection.');
