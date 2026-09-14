@@ -435,6 +435,7 @@ try {
   await editor.getByLabel('String count', { exact: true }).selectOption('7');
   await page.waitForFunction(() => document.querySelectorAll('.neck .string').length === 7, null, { timeout: 15000 });
   await editor.getByLabel('Tuning', { exact: true }).selectOption({ label: 'Drop A' });
+  await editor.getByLabel('Time signature', { exact: true }).selectOption('6/8');
   assert(await editor.getByRole('button', { name: 'Delete track', exact: true }).isDisabled(), 'the last track cannot be deleted');
   await editor.getByRole('button', { name: '+ Track', exact: true }).click();
   await page.waitForFunction(() => document.querySelectorAll('.tracks button').length === 2, null, { timeout: 15000 });
@@ -457,6 +458,7 @@ try {
     `the export keeps the tracks, the tempo and the tuning (${written.tracks.length} tracks, ${written.tempo} BPM, ${writtenStaff.tuning})`);
   assert.deepEqual(writtenBeats.slice(0, 2).map(b => b.notes.map(n => n.fret).sort((a, b) => a - b)), [[3], [5, 12]], 'and the notes written');
   assert.equal(writtenBeats[1].duration, 8, 'at the duration chosen');
+  assert.equal(`${written.masterBars[0].timeSignatureNumerator}/${written.masterBars[0].timeSignatureDenominator}`, '6/8', 'in the time signature chosen');
   console.log('ok a tab written from the keyboard, on seven strings with a second track, exported as Guitar Pro');
 
   // The accepted extensions must be the ones the loader actually reads.

@@ -7,8 +7,8 @@
   import { STORES, dbGet, dbPut } from '../store/db.ts';
   import { restoreFadedVolume } from '../engine/tab-fades.ts';
   import {
-    DURATIONS, STRING_COUNTS, TUNINGS, addTrack, clearString, deleteBeat, emptyTab, layout as layBeats, makeRest, nudgeDuration,
-    readTab, removeTrack, setDuration, setStrings, setTempo, setTuning, stepBeat, stepString, toAlphaTex, toggleDotted, typeDigit,
+    DURATIONS, SIGNATURES, STRING_COUNTS, TUNINGS, addTrack, barTicks, clearString, deleteBeat, emptyTab, layout as layBeats, makeRest, nudgeDuration,
+    readTab, removeTrack, setDuration, setSignature, setStrings, setTempo, setTuning, stepBeat, stepString, toAlphaTex, toggleDotted, typeDigit,
     type Cursor, type EditTab, type PendingDigit,
   } from '../engine/tab-editor.ts';
 
@@ -283,9 +283,13 @@
     api.renderStarted.on(() => { rendering = true; });
     api.playerReady.on(() => { ready = true; });
     api.playerStateChanged.on(e => {
+      const was = playing;
       playing = e.state === 1;
       if (playing) stringCursor = null;
-      else if (editing) cursorAtTick(currentTick);
+      // Only a pause moves the cursor to where playback stopped: every new
+      // layout reloads the player, which reports "stopped" at tick 0, and
+      // typing fast sent the cursor back to the first beat mid-chord.
+      else if (was && editing) cursorAtTick(currentTick);
     });
     api.playerPositionChanged.on(e => {
       position = e.currentTime; duration = e.endTime; currentTick = e.currentTick;
@@ -647,7 +651,7 @@
   function placeCursor() {
     const shown = api, beats = draft.tracks[cursor.track]?.beats, staff = score?.tracks[cursor.track]?.staves[0];
     if (!editing || !shown || !beats || !staff) return;
-    const [bar, index] = layBeats(beats).at[cursor.beat] ?? [0, 0];
+    const [bar, index] = layBeats(beats, barTicks(draft.signature)).at[cursor.beat] ?? [0, 0];
     const beat = staff.bars[bar]?.voices[0]?.beats[index];
     if (!beat) return;
     stringCursor = cursor.string;
@@ -662,7 +666,7 @@
     const beats = draft.tracks[cursor.track]?.beats, staff = score?.tracks[cursor.track]?.staves[0];
     if (!beats || !staff) return;
     let found = 0;
-    layBeats(beats).at.forEach(([bar, index], i) => {
+    layBeats(beats, barTicks(draft.signature)).at.forEach(([bar, index], i) => {
       const beat = staff.bars[bar]?.voices[0]?.beats[index];
       if (beat && beat.absolutePlaybackStart <= at + 1) found = i;
     });
@@ -780,6 +784,10 @@
       <div class="editor-bar" role="toolbar" aria-label="Tab editor">
         <label>BPM<input class="tempo" type="number" aria-label="Tempo" min="30" max="300" step="1" value={draft.tempo}
           onchange={e => act(setTempo(draft, Number(e.currentTarget.value)))} /></label>
+        <label>Time<select aria-label="Time signature" value={`${draft.signature.numerator}/${draft.signature.denominator}`}
+          onchange={e => { const [n, d] = e.currentTarget.value.split('/').map(Number); act(setSignature(draft, n!, d!)); }}>
+          {#each SIGNATURES as s}<option value={`${s.numerator}/${s.denominator}`}>{s.numerator}/{s.denominator}</option>{/each}
+        </select></label>
         <div class="durations" role="group" aria-label="Duration">
           {#each DURATIONS as d}<button aria-pressed={editBeat?.duration === d} onclick={() => act(setDuration(draft, cursor, d))}>1/{d}</button>{/each}
           <button aria-pressed={editBeat?.dotted ?? false} onclick={() => act(toggleDotted(draft, cursor))}>Dotted</button>

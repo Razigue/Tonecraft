@@ -21,7 +21,8 @@ export interface EditNote { readonly string: number; readonly fret: number }
 /** A beat with no notes is a rest. */
 export interface EditBeat { readonly duration: Duration; readonly dotted: boolean; readonly notes: readonly EditNote[] }
 export interface EditTrack { readonly name: string; readonly tuning: readonly number[]; readonly beats: readonly EditBeat[] }
-export interface EditTab { readonly tempo: number; readonly tracks: readonly EditTrack[] }
+export interface TimeSignature { readonly numerator: number; readonly denominator: 2 | 4 | 8 }
+export interface EditTab { readonly tempo: number; readonly signature: TimeSignature; readonly tracks: readonly EditTrack[] }
 export interface Cursor { readonly track: number; readonly beat: number; readonly string: number }
 
 export interface TuningPreset { readonly name: string; readonly notes: readonly number[] }
@@ -55,6 +56,14 @@ export const TUNINGS: Readonly<Record<number, readonly TuningPreset[]>> = {
 };
 export const STRING_COUNTS: readonly number[] = [4, 5, 6, 7, 8];
 
+/** The time signatures offered; 4/4 is the one a new tab starts in. */
+export const SIGNATURES: readonly TimeSignature[] = [
+  { numerator: 2, denominator: 4 }, { numerator: 3, denominator: 4 }, { numerator: 4, denominator: 4 },
+  { numerator: 5, denominator: 4 }, { numerator: 6, denominator: 8 }, { numerator: 7, denominator: 8 },
+  { numerator: 12, denominator: 8 },
+];
+const FOUR_FOUR = SIGNATURES[2]!;
+
 /** The highest fret a digit can reach. */
 export const MAX_FRET = 30;
 /** Two digits typed this close together on one string are one fret: 1 then 2 is 12. */
@@ -63,14 +72,16 @@ const WHOLE = 3840;
 const MIN_TEMPO = 30;
 const MAX_TEMPO = 300;
 
-export const beatTicks = (beat: EditBeat): number => (WHOLE / beat.duration) * (beat.dotted ? 1.5 : 1);
+export const beatTicks = (beat: Pick<EditBeat, 'duration' | 'dotted'>): number => (WHOLE / beat.duration) * (beat.dotted ? 1.5 : 1);
+/** How long a bar is, in the same ticks. */
+export const barTicks = (signature: TimeSignature): number => (WHOLE * signature.numerator) / signature.denominator;
 const rest = (duration: Duration, dotted = false): EditBeat => ({ duration, dotted, notes: [] });
 
 export function newTrack(strings = 6, name = strings <= 5 ? 'Bass' : 'Guitar'): EditTrack {
   return { name, tuning: (TUNINGS[strings] ?? TUNINGS[6]!)[0]!.notes, beats: [rest(4)] };
 }
 export function emptyTab(tempo = 120): EditTab {
-  return { tempo, tracks: [newTrack()] };
+  return { tempo, signature: FOUR_FOUR, tracks: [newTrack()] };
 }
 
 /** Rests that fill `ticks`, longest first. */
@@ -89,29 +100,29 @@ export interface Laid {
   readonly at: readonly (readonly [number, number])[];
 }
 
-/** The bars a run of beats falls into at 4/4, rests closing each one. */
-export function layout(beats: readonly EditBeat[]): Laid {
+/** The bars a run of beats falls into, `bar` ticks each (4/4 by default), rests closing each one. */
+export function layout(beats: readonly EditBeat[], bar = WHOLE): Laid {
   const bars: EditBeat[][] = [[]];
   const at: [number, number][] = [];
   let used = 0;
   for (const beat of beats) {
     const ticks = beatTicks(beat);
-    if (used > 0 && used + ticks > WHOLE) {
-      bars[bars.length - 1]!.push(...restsFor(WHOLE - used));
+    if (used > 0 && used + ticks > bar) {
+      bars[bars.length - 1]!.push(...restsFor(bar - used));
       bars.push([]);
       used = 0;
     }
-    const bar = bars[bars.length - 1]!;
-    at.push([bars.length - 1, bar.length]);
-    bar.push(beat);
+    const current = bars[bars.length - 1]!;
+    at.push([bars.length - 1, current.length]);
+    current.push(beat);
     used += ticks;
-    if (used >= WHOLE) { bars.push([]); used = 0; }
+    if (used >= bar) { bars.push([]); used = 0; }
   }
   const last = bars[bars.length - 1]!;
-  if (used > 0) last.push(...restsFor(WHOLE - used));
+  if (used > 0) last.push(...restsFor(bar - used));
   else if (last.length === 0) {
     if (bars.length > 1) bars.pop();
-    else last.push(rest(1));
+    else last.push(...restsFor(bar));
   }
   return { bars, at };
 }
@@ -132,14 +143,17 @@ function beatTex(beat: EditBeat, strings: number): string {
 
 /** The tab as alphaTex, every track padded to the same number of bars. */
 export function toAlphaTex(tab: EditTab): string {
-  const laid = tab.tracks.map((t) => layout(t.beats));
+  const ticks = barTicks(tab.signature);
+  const laid = tab.tracks.map((t) => layout(t.beats, ticks));
   const barCount = Math.max(...laid.map((l) => l.bars.length));
   const parts = [`\\title "Untitled" \\tempo ${tab.tempo} .`];
+  const { numerator, denominator } = tab.signature;
   tab.tracks.forEach((track, i) => {
     const bars = laid[i]!.bars.map((bar) => bar.map((b) => beatTex(b, track.tuning.length)).join(' '));
-    while (bars.length < barCount) bars.push('r.1');
+    const silent = restsFor(ticks).map((b) => beatTex(b, track.tuning.length)).join(' ');
+    while (bars.length < barCount) bars.push(silent);
     const name = track.name.replace(/["\\]/g, '');
-    parts.push(`\\track "${name}" \\tuning ${track.tuning.map(noteName).join(' ')} \\instrument ${programFor(track.tuning.length)} ${i === 0 ? '\\ts 4 4 ' : ''}${bars.join(' | ')}`);
+    parts.push(`\\track "${name}" \\tuning ${track.tuning.map(noteName).join(' ')} \\instrument ${programFor(track.tuning.length)} ${i === 0 ? `\\ts ${numerator} ${denominator} ` : ''}${bars.join(' | ')}`);
   });
   return parts.join(' ');
 }
@@ -178,9 +192,17 @@ export function makeRest(tab: EditTab, cursor: Cursor): EditTab {
   return mapBeat(tab, cursor, (b) => ({ ...b, notes: [] }));
 }
 
-/** A whole note cannot be dotted: it would not fit a 4/4 bar. */
+/**
+ * A beat never outlasts its bar: a dot that would not fit is dropped (a dotted
+ * whole in 4/4), and a duration that would not fit even undotted is refused
+ * (a whole note in 3/4).
+ */
 export function setDuration(tab: EditTab, cursor: Cursor, duration: Duration): EditTab {
-  return mapBeat(tab, cursor, (b) => ({ ...b, duration, dotted: duration === 1 ? false : b.dotted }));
+  const bar = barTicks(tab.signature);
+  return mapBeat(tab, cursor, (b) => {
+    if (beatTicks({ duration, dotted: false }) > bar) return b;
+    return { ...b, duration, dotted: b.dotted && beatTicks({ duration, dotted: true }) <= bar };
+  });
 }
 
 /** One step longer (-1) or shorter (+1) along `DURATIONS`. */
@@ -193,7 +215,21 @@ export function nudgeDuration(tab: EditTab, cursor: Cursor, shorter: boolean): E
 }
 
 export function toggleDotted(tab: EditTab, cursor: Cursor): EditTab {
-  return mapBeat(tab, cursor, (b) => (b.duration === 1 ? b : { ...b, dotted: !b.dotted }));
+  const bar = barTicks(tab.signature);
+  return mapBeat(tab, cursor, (b) => (b.dotted ? { ...b, dotted: false } : beatTicks({ ...b, dotted: true }) <= bar ? { ...b, dotted: true } : b));
+}
+
+/** Another time signature; a beat longer than the new bar is shortened to the longest that fits. */
+export function setSignature(tab: EditTab, numerator: number, denominator: number): EditTab {
+  const signature = SIGNATURES.find((s) => s.numerator === numerator && s.denominator === denominator);
+  if (!signature) return tab;
+  const bar = barTicks(signature);
+  const fit = (b: EditBeat): EditBeat => {
+    if (beatTicks(b) <= bar) return b;
+    if (beatTicks({ ...b, dotted: false }) <= bar) return { ...b, dotted: false };
+    return { ...b, duration: DURATIONS.find((d) => WHOLE / d <= bar)!, dotted: false };
+  };
+  return { ...tab, signature, tracks: tab.tracks.map((t) => ({ ...t, beats: t.beats.map(fit) })) };
 }
 
 /**
@@ -304,7 +340,12 @@ export function readTab(value: unknown): EditTab | null {
     }
     tracks.push({ name: t.name, tuning: tuning as number[], beats });
   }
-  return setTempo({ tempo: 120, tracks }, v.tempo);
+  // A draft from before time signatures is in 4/4.
+  const signature = (v as { signature?: Partial<TimeSignature> }).signature;
+  const tab = setTempo({ tempo: 120, signature: FOUR_FOUR, tracks }, v.tempo);
+  if (signature === undefined) return tab;
+  const read = setSignature(tab, Number(signature.numerator), Number(signature.denominator));
+  return read === tab && !(signature.numerator === 4 && signature.denominator === 4) ? null : read;
 }
 
 /** The pitch a note sounds, in MIDI: its string's tuning plus the fret. */

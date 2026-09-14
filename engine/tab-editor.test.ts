@@ -8,7 +8,7 @@
 import * as alpha from '@coderline/alphatab';
 
 import {
-  addTrack, clearString, deleteBeat, emptyTab, layout, nudgeDuration, pitchOf, readTab, removeTrack, setDuration, setFret, setStrings,
+  addTrack, clearString, deleteBeat, emptyTab, layout, nudgeDuration, pitchOf, readTab, removeTrack, setDuration, setSignature, setFret, setStrings,
   setTempo, stepBeat, stepString, toAlphaTex, toggleDotted, typeDigit, type Cursor, type EditTab,
 } from './tab-editor.ts';
 
@@ -133,6 +133,27 @@ const beatsOf = (score: alpha.model.Score, track = 0) =>
   check('a draft kept by the browser reads back as it was written', JSON.stringify(back) === JSON.stringify(tab));
   check('and one that does not fit the model is dropped',
     readTab({ tempo: 120, tracks: [{ name: 'x', tuning: [1, 2], beats: [] }] }) === null && readTab(null) === null && readTab('tab') === null);
+}
+
+{
+  // Other time signatures: 3/4 closes a bar after three quarters, 6/8 after six eighths.
+  let tab = setSignature(emptyTab(), 3, 4);
+  let c: Cursor = { track: 0, beat: 0, string: 1 };
+  for (let i = 0; i < 4; i++) {
+    const stepped = stepBeat(setFret(tab, c, i), c, 1);
+    tab = stepped.tab; c = stepped.cursor;
+  }
+  const score = read(tab);
+  check('3/4 is read back as 3/4, three quarters to a bar',
+    score.masterBars[0]!.timeSignatureNumerator === 3 && score.masterBars[0]!.timeSignatureDenominator === 4
+      && beatsOf(score)[0]!.length === 3 && beatsOf(score).length === 2, JSON.stringify(beatsOf(score)));
+  check('a whole note does not fit a bar of 3/4', setDuration(tab, { track: 0, beat: 0, string: 1 }, 1).tracks[0]!.beats[0]!.duration === 4);
+  const six = setSignature(setDuration(emptyTab(), { track: 0, beat: 0, string: 1 }, 1), 6, 8);
+  check('changing to 6/8 shortens a note that no longer fits, and the score says 6/8',
+    six.tracks[0]!.beats[0]!.duration === 2 && read(six).masterBars[0]!.timeSignatureDenominator === 8);
+  check('a draft kept before time signatures reads as 4/4',
+    readTab({ tempo: 100, tracks: [{ name: 'Guitar', tuning: [64, 59, 55, 50, 45, 40], beats: [{ duration: 4, dotted: false, notes: [] }] }] })?.signature.numerator === 4
+      && readTab(JSON.parse(JSON.stringify(six)))?.signature.denominator === 8);
 }
 
 console.log(failures === 0 ? '\nall checks passed\n' : `\n${failures} check(s) failed\n`);
