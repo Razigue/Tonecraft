@@ -45,6 +45,17 @@
    */
   let syncMs = $state<number | null>(null);
   let replaceInput = $state<HTMLInputElement | null>(null);
+  let diInput = $state<HTMLInputElement | null>(null);
+  let diOver = $state(false);
+  /**
+   * The take was dropped as a DI, not recorded. In Processed it plays live,
+   * through the chain, the way the old file source did: every change to the
+   * amp is heard at once, and the looper can loop it. The export stays the
+   * offline render.
+   */
+  let takeFromFile = $state(false);
+  let live = $state(false);
+  let liveLoaded: { engine: Engine; takeId: number } | null = null;
   let recordingEngine: Engine | null = null;
   let poll: ReturnType<typeof setTimeout> | undefined;
   let previewPoll: ReturnType<typeof setInterval> | undefined;
@@ -62,6 +73,7 @@
   const duration = $derived(totalFrames / rate);
   /** What listening plays, and what the export list starts from. */
   const defaultContent = $derived<ExportContent>(take && backing ? 'mix' : take ? 'guitar' : 'backing');
+  const canPlayLive = $derived(engine !== null && takeFromFile && mode === 'processed');
   const available = (content: ExportContent) => (content === 'mix' ? !!take && !!backing : content === 'guitar' ? !!take : !!backing);
 
   /* One waveform column per 480th of the timeline, so both lanes share a scale
@@ -99,7 +111,7 @@
   let listenFrom = 0;
 
   function persist() {
-    void dbPut(STORES.state, { mode, guitarLevel, backingLevel, latencyFrames: take?.latencyFrames ?? 0, syncMs }, STATE_KEY);
+    void dbPut(STORES.state, { mode, guitarLevel, backingLevel, latencyFrames: take?.latencyFrames ?? 0, syncMs, fromFile: takeFromFile }, STATE_KEY);
   }
   function forgetRender() {
     stopListening();
@@ -107,6 +119,7 @@
     rendered = null;
   }
   function setTake(next: Recording | null) {
+    void stopLive();
     forgetRender();
     takeId++;
     take = next;
@@ -147,8 +160,54 @@
     listening = false;
     playheadAt = -1;
   }
+  async function playLive() {
+    const e = engine, t = take;
+    if (!e || !t || working) return;
+    stopPreview();
+    working = 'listen'; error = '';
+    try {
+      if (liveLoaded?.engine !== e || liveLoaded.takeId !== takeId) {
+        await e.loadFile(new File([encodeWav(t)], 'take.wav', { type: 'audio/wav' }));
+        liveLoaded = { engine: e, takeId };
+      }
+      await e.setSource('file');
+      e.setLoop(false);
+      const from = selection?.[0] ?? 0;
+      // The guitar is heard where the timeline draws it against the backing track.
+      const lead = backing ? alignFrames / t.sampleRate : 0;
+      e.playFile(from + lead);
+      if (backing) e.playBacking(from);
+      listenFrom = from;
+      live = true;
+      listening = true;
+      frame = requestAnimationFrame(followLive);
+    } catch (err) { if (!disposed) error = err instanceof Error ? err.message : 'Playback failed.'; }
+    finally { working = null; }
+  }
+  function followLive() {
+    const e = engine;
+    if (!e || !live || !take) { void stopLive(); return; }
+    const lead = backing ? alignFrames / take.sampleRate : 0;
+    playheadAt = Math.max(0, e.filePosition - lead);
+    const end = selection?.[1];
+    if (!e.filePlaying || (end !== undefined && playheadAt >= end)) { void stopLive(); return; }
+    frame = requestAnimationFrame(followLive);
+  }
+  async function stopLive() {
+    if (!live) return;
+    cancelAnimationFrame(frame);
+    live = false;
+    listening = false;
+    playheadAt = -1;
+    engine?.stopFile();
+    engine?.stopBacking();
+    await engine?.setSource('live');
+  }
+
   async function listen() {
+    if (live) { void stopLive(); return; }
     if (listening) { audio?.pause(); return; }
+    if (canPlayLive) { void playLive(); return; }
     if ((!take && !backing) || working) return;
     working = 'listen'; error = '';
     try {
@@ -172,6 +231,7 @@
 
   function chooseMode(next: Mode) {
     if (next === mode) return;
+    void stopLive();
     mode = next;
     forgetRender();
     persist();
@@ -198,15 +258,39 @@
     if (!dragFrom) return;
     if (Math.abs(e.clientX - dragFrom.x) < 4) selection = null;
     dragFrom = null;
+    void stopLive();
     forgetRender();
   }
   function clearSelection() { selection = null; forgetRender(); }
+
+  const isAudio = (file: File) => file.type.startsWith('audio/') || /\.(wav|mp3|ogg|oga|flac|m4a|aac|webm)$/i.test(file.name);
+
+  /** A DI dropped on the guitar lane: the take, as if it had been recorded, with no latency to line up. */
+  async function useDi(file: File | undefined) {
+    if (!file || recording) return;
+    error = '';
+    if (!isAudio(file)) { error = 'Choose an audio file for the guitar.'; return; }
+    try {
+      const sampleRate = engine?.sampleRate ?? 48_000;
+      const samples = await decodeBacking(file, sampleRate);
+      if (disposed) return;
+      const next: Recording = { samples, sampleRate, latencyFrames: 0 };
+      changed = true;
+      setTake(next);
+      takeFromFile = true;
+      seconds = samples.length / sampleRate;
+      selection = null;
+      syncMs = null;
+      persist();
+      await saveMedia(new File([encodeWav(next)], 'last-recording.wav', { type: 'audio/wav' }), 'take', 'last-recording');
+    } catch { if (!disposed) error = 'That file could not be decoded.'; }
+  }
 
   async function useBacking(file: File | undefined) {
     // The second lane only takes a file: nothing is recorded into it, and nothing replaces it mid-take.
     if (!file || recording) return;
     error = '';
-    if (!file.type.startsWith('audio/') && !/\.(wav|mp3|ogg|oga|flac|m4a|aac|webm)$/i.test(file.name)) {
+    if (!isAudio(file)) {
       error = 'Choose an audio file for the backing track.';
       return;
     }
@@ -289,6 +373,7 @@
   async function start() {
     if (!engine || busy || recording) return;
     busy = true; error = ''; changed = true;
+    await stopLive();
     stopListening();
     stopPreview();
     try {
@@ -306,6 +391,7 @@
       const captured = await recordingEngine.stopRecording();
       if (disposed) return;
       setTake(captured); seconds = captured.samples.length / captured.sampleRate;
+      takeFromFile = false;
       selection = null;
       syncMs = null;
       persist();
@@ -334,7 +420,7 @@
 
   onMount(() => {
     void (async () => {
-      const saved = await dbGet<{ mode?: unknown; guitarLevel?: unknown; backingLevel?: unknown; latencyFrames?: unknown; syncMs?: unknown }>(STORES.state, STATE_KEY).catch(() => null);
+      const saved = await dbGet<{ mode?: unknown; guitarLevel?: unknown; backingLevel?: unknown; latencyFrames?: unknown; syncMs?: unknown; fromFile?: unknown }>(STORES.state, STATE_KEY).catch(() => null);
       if (disposed) return;
       if (saved?.mode === 'di' || saved?.mode === 'processed') mode = saved.mode;
       if (typeof saved?.backingLevel === 'number' && saved.backingLevel >= 0 && saved.backingLevel <= 1) backingLevel = saved.backingLevel;
@@ -344,7 +430,7 @@
       const file = await loadMedia('last-recording').catch(() => null);
       if (file && !disposed && !changed) {
         const restored = await decodeRecording(file).catch(() => null);
-        if (restored && !disposed && !changed) { setTake({ ...restored, latencyFrames }); seconds = restored.samples.length / restored.sampleRate; }
+        if (restored && !disposed && !changed) { setTake({ ...restored, latencyFrames }); takeFromFile = saved?.fromFile === true; seconds = restored.samples.length / restored.sampleRate; }
       }
       const backingSaved = await loadMedia('last-backing').catch(() => null);
       if (backingSaved && !disposed && !backingFile) await useBacking(backingSaved);
@@ -352,6 +438,7 @@
   });
   onDestroy(() => {
     disposed = true; clearTimeout(poll); abort?.abort();
+    void stopLive();
     stopListening();
     stopPreview();
     if (rendered) URL.revokeObjectURL(rendered.url);
@@ -393,8 +480,15 @@
     </div>
     <div class="lanes" role="group" aria-label="Recording timeline"
       onpointerdown={selectStart} onpointermove={selectMove} onpointerup={selectEnd} onpointercancel={selectEnd}>
-      <div class="lane">
-        <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label="Recorded guitar"><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="#4e4e4e"/>{#if guitarPath}<polyline points={guitarPath} fill="none" stroke="#c7c0b5" stroke-width="1" />{/if}</svg>
+      <div class="lane guitar-lane" class:over={diOver} role="region" aria-label="Guitar"
+        ondragover={e => { e.preventDefault(); diOver = true; }} ondragleave={() => { diOver = false; }}
+        ondrop={e => { e.preventDefault(); diOver = false; void useDi(e.dataTransfer?.files[0]); }}>
+        {#if guitarPath}
+          <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label="Recorded guitar"><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="#4e4e4e"/><polyline points={guitarPath} fill="none" stroke="#c7c0b5" stroke-width="1" /></svg>
+        {:else}
+          <button type="button" class="drop-hint" disabled={recording} onclick={() => diInput?.click()}>Drop a DI, or <u>choose a file</u></button>
+        {/if}
+        <input class="hidden-file" bind:this={diInput} type="file" accept="audio/*" aria-label="Guitar DI file" onchange={e => { void useDi(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} />
       </div>
       <div class="lane backing-lane" class:over={dragOver} role="region" aria-label="Backing track"
         ondragover={e => { e.preventDefault(); dragOver = true; }} ondragleave={() => { dragOver = false; }}
@@ -441,7 +535,7 @@
   .export-menu{position:relative}.menu{position:absolute;right:0;top:calc(100% + 6px);z-index:5;display:grid;min-width:210px;padding:6px;background:#262626;border:1px solid #4a4a4a;border-radius:6px;box-shadow:0 10px 24px #0008}.menu button{display:flex;justify-content:space-between;gap:16px;border:0;background:none;text-align:left;min-height:34px}.menu button:hover:not(:disabled){background:#353535}.menu small{font:10px var(--mono);color:#9c9c9c}
   .timeline{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;margin-top:16px}.lane-names{display:grid;grid-template-rows:48px 48px;gap:6px;font:9px var(--mono);letter-spacing:1.4px;color:#8f8f8f}.lane-head{display:flex;flex-direction:column;justify-content:center;gap:6px}.lane-head input{width:100%;height:16px;margin:0;accent-color:#c2a9c8;cursor:pointer}
   .lanes{position:relative;display:grid;grid-template-rows:48px 48px;gap:6px;touch-action:none;cursor:crosshair}.lane{position:relative;overflow:hidden;background:#181818;border:1px solid #373737;border-radius:3px}.lane svg{display:block;width:100%;height:100%}
-  .backing-lane.over{border-color:#d8c2dd}.drop-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:4px;font-size:11px;color:#9c9c9c;cursor:pointer}.drop-hint u{color:#dedbd5}.drop-hint input,.hidden-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+  .backing-lane.over,.guitar-lane.over{border-color:#d8c2dd}.drop-hint,.drop-hint:hover{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:4px;min-height:0;padding:0;border:0;border-radius:0;background:none;font-size:11px;color:#9c9c9c;cursor:pointer}.drop-hint u{color:#dedbd5}.drop-hint input,.hidden-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
   .selection{position:absolute;top:0;bottom:0;background:#d8c2dd22;border-left:1px solid #d8c2dd;border-right:1px solid #d8c2dd;pointer-events:none}
   .playhead-track{position:absolute;inset:0;pointer-events:none}.playhead{position:absolute;inset:0;will-change:transform}.playhead::before{content:'';position:absolute;left:0;top:0;bottom:0;width:1px;background:#e8dfd0}
   .record-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px;min-height:0}.record-tools:empty{display:none}.small{min-height:30px;padding:5px 10px;font-size:11px}.record-tools{position:relative}.backing-name{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px var(--mono);color:#cfcfcf}.level{display:flex;align-items:center;gap:8px;font-size:10px;color:#aaa}.level input{width:110px;accent-color:#c2a9c8}.sync output{min-width:48px;font:11px var(--mono);color:#cfcfcf;font-variant-numeric:tabular-nums}.selection-info{font:11px var(--mono);color:#d8c2dd;margin-left:auto}

@@ -117,6 +117,28 @@ try {
   await page.getByLabel('Backing track file', { exact: true }).waitFor({ state: 'attached' });
   console.log('ok a backing track is recorded over, and exported with the take, alone, or cut to a selection');
 
+  // A DI dropped on the guitar lane is the take: exported like one, and in
+  // Processed played live through the amp, as the old file source did.
+  // 3.5 s, so its duration cannot be mistaken for the take it replaces, even
+  // with the frame the resampler may round off.
+  const diFrames = Math.round(songRate * 3.5);
+  const di = Buffer.alloc(44 + diFrames * 2);
+  di.write('RIFF', 0); di.writeUInt32LE(36 + diFrames * 2, 4); di.write('WAVEfmt ', 8); di.writeUInt32LE(16, 16);
+  di.writeUInt16LE(1, 20); di.writeUInt16LE(1, 22); di.writeUInt32LE(songRate, 24); di.writeUInt32LE(songRate * 2, 28);
+  di.writeUInt16LE(2, 32); di.writeUInt16LE(16, 34); di.write('data', 36); di.writeUInt32LE(diFrames * 2, 40);
+  for (let i = 0; i < diFrames; i++) di.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 110 * i / songRate) * 6000), 44 + i * 2);
+  await page.getByLabel('Guitar DI file', { exact: true }).setInputFiles({ name: 'di.wav', mimeType: 'audio/wav', buffer: di });
+  await page.waitForFunction(() => document.querySelector('.recorder .duration')?.textContent === '00:03', { timeout: 20000 });
+  await page.getByRole('radio', { name: 'DI', exact: true }).click();
+  const dropped = await download('Guitar only');
+  assert(Math.abs(frames(dropped) - 3.5 * dropped.readUInt32LE(24)) <= 2, `the dropped DI is the whole take (${frames(dropped)} frames)`);
+  await page.getByRole('radio', { name: 'Processed', exact: true }).click();
+  await page.getByRole('button', { name: 'Listen to take', exact: true }).click();
+  await page.getByRole('button', { name: 'Pause take', exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole('button', { name: 'Pause take', exact: true }).click();
+  await page.getByRole('button', { name: 'Listen to take', exact: true }).waitFor({ timeout: 20000 });
+  console.log('ok a DI dropped on the guitar lane is the take, exported, and played live through the amp');
+
   const importer = new alpha.importer.AlphaTexImporter();
   // Long enough to lay out several systems, so the scroll has somewhere to go.
   // The third track enters only in the last bar: that is the case a reader

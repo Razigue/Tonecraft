@@ -44,7 +44,8 @@ const PORT = 8137;
  * time.
  */
 function writeTestTake(file) {
-  const rate = 48_000, seconds = 4;
+  // Long enough to outlast every measurement below: the take plays once, it does not loop.
+  const rate = 48_000, seconds = 60;
   const n = rate * seconds;
   const out = new Float32Array(n);
   for (let i = 0; i < n; i++) {
@@ -354,18 +355,27 @@ await page.getByRole('combobox', { name: 'Cabinet', exact: true }).selectOption(
 await page.waitForTimeout(500);
 ok('the cabinet can be changed while playing');
 
-// The file source, at a level a guitar actually arrives at.
+// A DI dropped on the recorder's guitar lane plays live through the chain, at a
+// level a guitar actually arrives at.
 const take = path.join(ROOT, 'node_modules', '.cache', 'tonecraft-take.wav');
 fs.mkdirSync(path.dirname(take), { recursive: true });
 writeTestTake(take);
 
-await page.locator('.segmented button', { hasText: 'File' }).click();
-await page.locator('.file input[type=file]').first().setInputFiles(take);
-await page.waitForSelector('.wave svg', { timeout: 10_000 });
-ok('an audio file is decoded and drawn');
+await page.getByLabel('Guitar DI file', { exact: true }).setInputFiles(take);
+await page.getByLabel('Recorded guitar', { exact: true }).waitFor({ timeout: 20_000 });
+ok('an audio file is decoded and drawn on the guitar lane');
 
+const listenButton = page.locator('.recorder button.listen');
+async function playTake() {
+  if ((await listenButton.getAttribute('aria-label')) === 'Listen to take') await listenButton.click();
+  await page.getByRole('button', { name: 'Pause take', exact: true }).waitFor({ timeout: 20_000 });
+}
+async function stopTake() {
+  if ((await listenButton.getAttribute('aria-label')) === 'Pause take') await listenButton.click();
+  await page.getByRole('button', { name: 'Listen to take', exact: true }).waitFor({ timeout: 20_000 });
+}
 // Loading a take never starts it, so the level checks below have to press play.
-await page.locator('.transport button.start').click();
+await playTake();
 await page.waitForTimeout(1500);
 
 /**
@@ -429,19 +439,6 @@ await reset('Output');
 check('the master reaches the audio', flat - quiet > 10,
   `${flat.toFixed(0)} at -12.4 dB, ${quiet.toFixed(0)} at -40 dB, of 96`);
 
-// The take that ships. Someone with no guitar and no interface has to be able
-// to hear what this does, so it has to actually load and play.
-await page.locator('.transport button.demo').click();
-// The waveform is already on screen from the previous take, so wait for the
-// name to change rather than for an element that never went away.
-await page.locator('.transport .name', { hasText: 'Demo take' }).waitFor({ timeout: 20_000 });
-check('the demo take loads without starting itself',
-  (await page.locator('.transport button.start').innerText()) === 'Play');
-await page.locator('.transport button.start').click();
-await page.waitForTimeout(1500);
-check('and plays when asked',
-  (await page.locator('.transport button.start').innerText()) === 'Pause');
-
 /**
  * The looper, end to end, through the real worklet.
  *
@@ -465,11 +462,24 @@ check('and plays when asked',
   const length = await page.locator('.loop-clock').innerText();
   check('and is about as long as the recording was', /0:0[01]\.\d/.test(length.split(' / ')[1] ?? ''), length);
 
-  // The source stops; the loop must not.
-  await page.locator('.transport button.start').click();
+  // The take stops; the loop must not. Stopping a take hands the rig back to
+  // the live input — Chromium's fake device, which beeps — so the loop is told
+  // apart by the energy it adds over that, not by silence.
+  await stopTake();
   await page.waitForTimeout(300);
-  const looped = await peakOver(1500);
-  check('the loop keeps playing after the take stops', looped > 1, `output peak ${looped.toFixed(0)} of 96`);
+  const energy = (ms) => page.evaluate(async (d) => {
+    let sum = 0, n = 0;
+    const until = performance.now() + d;
+    while (performance.now() < until) {
+      const bar = document.querySelector('.output-control .meter rect:last-child');
+      sum += Math.pow(Number(bar?.getAttribute('height') ?? 0) / 96 / 1.4, 2);
+      n++;
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    return sum / n;
+  }, ms);
+  const looped = await energy(1500);
+  check('the loop keeps playing after the take stops', looped > 1e-4, `mean ${looped.toExponential(2)}`);
 
   const moved = await page.evaluate(async () => {
     const at = () => document.querySelector('.loop-clock')?.textContent ?? '';
@@ -482,9 +492,10 @@ check('and plays when asked',
   await page.locator('button.loop-small', { hasText: 'Clear' }).click();
   await page.waitForTimeout(400);
   check('clearing empties it', (await status.innerText()).includes('Empty'));
-  const after = await peakOver(600);
-  check('and the loop is gone from the output', after < 2, `output peak ${after.toFixed(0)} of 96`);
-  await page.locator('.transport button.start').click();   // the take, playing again
+  const after = await energy(1500);
+  check('and the loop is gone from the output', after < looped * 0.7,
+    `mean ${looped.toExponential(2)} with the loop, ${after.toExponential(2)} without`);
+  await playTake();   // the take, playing again
   await page.waitForTimeout(600);
 }
 
@@ -527,10 +538,8 @@ async function monitor(want) {
  */
 async function passFromStart(label, ms) {
   await monitor(label);
-  const wave = page.locator('[role=slider][aria-label="Position in the file"]');
-  await wave.scrollIntoViewIfNeeded();
-  await wave.focus();
-  await wave.press('Home');
+  await stopTake();
+  await playTake();
   await page.waitForTimeout(700);
   return integrate(ms);
 }
@@ -639,8 +648,14 @@ demoPage.on('request', (request) => {
 });
 await demoPage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
 await demoPage.getByRole('button', { name: 'Testeur' }).click();
+await demoPage.locator('.capture-info[data-capture="loaded"]').waitFor({ state: 'attached', timeout: 40_000 });
+// The demo waits behind a button that says what it is.
+const demoButton = demoPage.getByRole('button', { name: 'Listen to a demo' });
+check('the demo waits behind its own button', await demoButton.isVisible() && (await demoPage.locator('.wave svg').count()) === 0);
+check('and a tester has no recorder', (await demoPage.locator('.recorder').count()) === 0);
+await demoButton.click();
 await demoPage.waitForSelector('.wave svg', { timeout: 40_000 });
-await demoPage.waitForTimeout(2500);
+await demoPage.waitForTimeout(1500);
 
 check('tester cannot select an input', (await demoPage.locator('.audio-settings, .session-bar, button.chain').count()) === 0);
 const asked = await demoPage.evaluate(() => window.__mic);
@@ -656,6 +671,7 @@ check('and the chain is on by default',
   (await demoPage.locator('button.power-indicator').getAttribute('aria-pressed')) === 'true');
 await demoPage.locator('.transport button.start').click();
 await demoPage.waitForTimeout(1200);
+check('and plays when asked', (await demoPage.locator('.transport button.start').innerText()) === 'Pause');
 
 const demoLevel = await demoPage.evaluate(async () => {
   let peak = 0;
