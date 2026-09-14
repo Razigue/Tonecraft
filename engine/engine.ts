@@ -183,6 +183,8 @@ export class Engine {
   #fileLoop = true;
   #fileCursor = 0;
   #playAskedAt = 0;
+  /** The chain has reported the take playing since it was last asked to. */
+  #fileHeard = false;
 
   #backingBytes: ArrayBuffer | null = null;
   #backing: AudioBuffer | null = null;
@@ -190,6 +192,7 @@ export class Engine {
   #backingPlaying = false;
   #backingCursor = 0;
   #backingAskedAt = 0;
+  #backingHeard = false;
 
   #startedAt = 0;
   #firstAudioAt: number | null = null;
@@ -401,13 +404,18 @@ export class Engine {
     if (this.#firstAudioAt === null && frame[M_INPUT]! > 0.01) this.#firstAudioAt = now;
 
     /* The chain reports where the take is. A frame computed before the chain
-       saw a play request can arrive after it, so the first few after asking
-       are not allowed to say "stopped". */
-    if (this.#backingPlaying && now - this.#backingAskedAt > 150) {
+       saw a play request can arrive after it — well after, on a loaded
+       machine: a fixed 150 ms grace let a stale frame stop a take that had
+       just started. "Stopped" is believed once the chain has said "playing"
+       since the request, or when it never has within a second: a take shorter
+       than one meter frame. */
+    if (this.#backingPlaying && frame[M_BACKING_PLAYING]! >= 0.5) this.#backingHeard = true;
+    if (this.#backingPlaying && (this.#backingHeard || now - this.#backingAskedAt > 1000)) {
       this.#backingCursor = frame[M_BACKING_SECONDS]!;
       if (frame[M_BACKING_PLAYING]! < 0.5) this.#backingPlaying = false;
     }
-    if (this.#filePlaying && now - this.#playAskedAt > 150) {
+    if (this.#filePlaying && frame[M_FILE_PLAYING]! >= 0.5) this.#fileHeard = true;
+    if (this.#filePlaying && (this.#fileHeard || now - this.#playAskedAt > 1000)) {
       this.#fileCursor = frame[M_FILE_SECONDS]!;
       if (frame[M_FILE_PLAYING]! < 0.5) {
         this.#filePlaying = false;
@@ -661,7 +669,7 @@ export class Engine {
     if (this.#backing !== null) {
       this.#backingPlaying = true;
       this.#backingCursor = 0;
-      this.#backingAskedAt = performance.now();
+      this.#backingAskedAt = performance.now(); this.#backingHeard = false;
     }
     this.#syncLive();
     host.resume();
@@ -757,7 +765,7 @@ export class Engine {
     host.send('tc_backing_play', [Math.round(at * buffer.sampleRate)]);
     this.#backingPlaying = true;
     this.#backingCursor = at;
-    this.#backingAskedAt = performance.now();
+    this.#backingAskedAt = performance.now(); this.#backingHeard = false;
   }
 
   stopBacking(): void {
@@ -834,6 +842,7 @@ export class Engine {
     this.#filePlaying = true;
     this.#fileCursor = at;
     this.#playAskedAt = performance.now();
+    this.#fileHeard = false;
   }
 
   stopFile(): void { this.#stopFile(); }

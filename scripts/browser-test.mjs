@@ -549,7 +549,8 @@ const offLevel = await passFromStart('Off', 3000);
 const restoredLevel = await passFromStart('Amp', 3000);
 check('Power off silences the DI and effect tails', offLevel < 1e-5,
   `mean amplitude ${offLevel.toExponential(2)}`);
-check('Power on restores the loaded DI', ampLevel > 1e-3 && restoredLevel > 1e-3);
+check('Power on restores the loaded DI', ampLevel > 1e-3 && restoredLevel > 1e-3,
+  `mean ${ampLevel.toExponential(2)} before, ${restoredLevel.toExponential(2)} after`);
 
 /**
  * The messages below the rig arrive and leave on their own — a hardware
