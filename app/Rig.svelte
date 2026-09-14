@@ -21,7 +21,7 @@
   import EngineSettings from './EngineSettings.svelte';
   import TabReader from './TabReader.svelte';
   import Recorder from './Recorder.svelte';
-  import Tour, { type TourStep } from './Tour.svelte';
+  import Tour, { type TourFigure, type TourStep } from './Tour.svelte';
   import { LOCALES, MESSAGES, detectLocale, saveLocale, type Locale } from './i18n.ts';
   import { NativeLink, detectPlatform, downloadUrl, releasesUrl } from '../engine/native-host.ts';
   import { engineUpdate } from '../engine/engine-update.ts';
@@ -288,14 +288,57 @@
    * what it does. The musician is not walked through anything — their guitar
    * is in their hands, and settings come first.
    */
-  const TOUR_TARGETS: readonly (readonly string[])[] = [
-    ['.global-controls'], ['.amp-head'], ['.demo-panel'], ['.reader'], ['.write-tab'], ['.metronome-launch', '.metronome-toggle'], [],
+  const TOUR_LAYOUT: readonly { targets: readonly string[]; figure?: TourFigure }[] = [
+    { targets: ['.global-controls'] },
+    { targets: ['.amp-head'] },
+    { targets: ['.demo-panel'] },
+    { targets: ['.reader'], figure: 'tracks' },
+    { targets: ['.write-tab'], figure: 'compose' },
+    { targets: ['.metronome-launch', '.metronome-toggle'] },
+    { targets: [] },
   ];
+  /**
+   * What each term of the tutorial names on the page, for the ring drawn while
+   * it is hovered. The controls a tester has not opened yet — a tab's tracks,
+   * the editor — are named in the card's own drawing as well.
+   */
+  const TOUR_TERMS: Readonly<Record<string, string>> = {
+    input: '.global-controls > .io-control:first-child',
+    gate: '.gate-control',
+    amp: '.rig-selectors .selector:first-child',
+    cab: '.rig-selectors .selector:nth-child(2)',
+    preset: '.tone-selector',
+    output: '.output-control',
+    tone: '.amp-panel > .tone-group',
+    pitch: '.amp-panel > .control-group:nth-child(3)',
+    boost: '.amp-panel > .control-group:nth-child(4)',
+    reverb: '.amp-panel > .control-group:nth-child(5)',
+    blocks: '.amp-panel .group-label',
+    power: '.power-indicator',
+    demo: '.demo-launch, .demo-panel .file',
+    wave: '.demo-panel .wave',
+    loop: '.demo-panel .check',
+    import: '.reader-heading .primary',
+    solo: '.track-tools button:first-child, .tour-figure [data-term="solo"]',
+    mute: '.track-tools button:nth-child(2), .tour-figure [data-term="mute"]',
+    volume: '.tracks .track-volume, .tour-figure [data-term="volume"]',
+    neck: '.reader .neck',
+    scale: '.scale-bar',
+    write: '.write-tab',
+    tempo: '.editor-bar .tempo, .tour-figure [data-term="tempo"]',
+    signature: '.editor-bar [aria-label="Time signature"], .tour-figure [data-term="signature"]',
+    tuning: '.editor-bar [aria-label="Tuning"], .tour-figure [data-term="tuning"]',
+    digits: '.tour-figure [data-term="digits"]',
+    arrows: '.tour-figure [data-term="arrows"]',
+    metronome: '.metronome-launch',
+    metronomePlay: '.metronome-toggle',
+    tutorial: '.tour-button',
+  };
   let touring = $state(false);
 
   let locale = $state<Locale>(detectLocale());
   const text = $derived(MESSAGES[locale]);
-  const testerTour = $derived<readonly TourStep[]>(text.tour.steps.map((step, i) => ({ ...step, targets: TOUR_TARGETS[i]! })));
+  const testerTour = $derived<readonly TourStep[]>(text.tour.steps.map((step, i) => ({ ...step, ...TOUR_LAYOUT[i]! })));
   $effect(() => { document.documentElement.lang = locale; });
   function chooseLocale(next: Locale): void {
     locale = next;
@@ -1307,7 +1350,7 @@
         {/if}
   </dialog>
 
-  {#if touring}<Tour steps={testerTour} labels={text.tour} onclose={() => (touring = false)} />{/if}
+  {#if touring}<Tour steps={testerTour} terms={TOUR_TERMS} labels={text.tour} onclose={() => (touring = false)} />{/if}
 </div>
 
 <style>

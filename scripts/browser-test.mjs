@@ -693,14 +693,23 @@ check('the tutorial lights each window in turn, the page dark around it, the exp
 check('and gives the page back as it was',
   (await demoPage.locator('.tour-shade, .tour-lit').count()) === 0
     && (await demoPage.evaluate(() => document.querySelector('.global-controls').style.zIndex === '' && document.querySelector('.metronome-launch').style.zIndex === '')));
-check('in English for an English browser', tourSeen[0]?.title === 'Input, amp and preset' && tourSeen[4]?.title === 'Compose your own tabs' && tourSeen[6]?.title === 'Your turn',
+check('in English for an English browser', tourSeen[0]?.title === 'General settings' && tourSeen[4]?.title === 'Write your own tab' && tourSeen[6]?.title === 'Your turn',
   tourSeen.map((s) => s.title).join(' · '));
 await demoPage.getByRole('button', { name: 'FR', exact: true }).click();
 await demoPage.getByRole('button', { name: 'Tutoriel', exact: true }).click();
 await demoPage.locator('.tour-card').waitFor();
 check('and in French once French is chosen',
-  (await demoPage.locator('#tour-title').innerText()) === 'Entrée, ampli et preset'
+  (await demoPage.locator('#tour-title').innerText()) === 'Réglages généraux'
     && (await demoPage.locator('.tour-card .tour-next').innerText()) === 'Suivant');
+// A defined term, in bold: hovered, it rings the control it names on the page.
+await demoPage.waitForTimeout(900);
+await demoPage.locator('.tour-card .tour-term', { hasText: 'Gate' }).hover();
+const ringOnGate = await demoPage.evaluate(() => {
+  const ring = document.querySelector('.tour-ring')?.getBoundingClientRect();
+  const gate = document.querySelector('.gate-control').getBoundingClientRect();
+  return ring !== undefined && ring.left <= gate.left && ring.right >= gate.right && ring.top <= gate.top && ring.bottom >= gate.bottom;
+});
+check('a term in bold, hovered, rings the control it names', ringOnGate);
 await demoPage.keyboard.press('Escape');
 await demoPage.locator('.bar').getByRole('button', { name: 'EN', exact: true }).click();
 check('it can be started again from the page, and left with Escape',
