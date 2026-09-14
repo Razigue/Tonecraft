@@ -649,6 +649,44 @@ demoPage.on('request', (request) => {
 });
 await demoPage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
 await demoPage.getByRole('button', { name: 'Testeur' }).click();
+// A tester is walked through the page one window at a time, the rest in the
+// dark, each window lit where it is and explained beside it.
+check('a tester starts with the tutorial', await demoPage.locator('.tour-card').isVisible());
+const tourTargets = ['.global-controls', '.amp-head', '.demo-panel', '.reader', '.metronome-launch', null];
+const tourSeen = [];
+for (const target of tourTargets) {
+  await demoPage.waitForTimeout(900);
+  tourSeen.push(await demoPage.evaluate((selector) => {
+    const card = document.querySelector('.tour-card').getBoundingClientRect();
+    const inView = card.top >= 0 && card.bottom <= innerHeight && card.left >= 0 && card.right <= innerWidth;
+    const lit = [...document.querySelectorAll('.tour-lit')];
+    const title = document.querySelector('#tour-title').textContent;
+    if (selector === null) return { title, ok: lit.length === 0 && inView };
+    const el = document.querySelector(selector);
+    const r = el.getBoundingClientRect();
+    const top = Math.max(0, r.top), bottom = Math.min(innerHeight, r.bottom);
+    const hit = document.elementFromPoint(r.left + Math.min(r.width / 2, 24), top + Math.min((bottom - top) / 2, 24));
+    const overlaps = !(card.bottom <= r.top || card.top >= r.bottom || card.right <= r.left || card.left >= r.right);
+    const shaded = document.elementFromPoint(2, 2)?.classList.contains('tour-shade');
+    const tall = r.height + card.height + 48 > innerHeight;
+    return {
+      title,
+      ok: lit.includes(el) && el.contains(hit) && shaded && inView && (tall || !overlaps),
+      detail: `lit ${lit.includes(el)}, on top ${el.contains(hit)}, shaded ${shaded}, card in view ${inView}, overlaps ${overlaps && !tall}`,
+    };
+  }, target));
+  await demoPage.locator('.tour-card .tour-next').click();
+}
+check('the tutorial lights each window in turn, the page dark around it, the explanation beside it',
+  tourSeen.every((s) => s.ok), tourSeen.map((s) => `${s.title}: ${s.ok ? 'ok' : s.detail}`).join(' · '));
+check('and gives the page back as it was',
+  (await demoPage.locator('.tour-shade, .tour-lit').count()) === 0
+    && (await demoPage.evaluate(() => document.querySelector('.global-controls').style.zIndex === '' && document.querySelector('.metronome-launch').style.zIndex === '')));
+await demoPage.getByRole('button', { name: 'Tutoriel', exact: true }).click();
+await demoPage.locator('.tour-card').waitFor();
+await demoPage.keyboard.press('Escape');
+check('it can be started again from the page, and left with Escape',
+  (await demoPage.locator('.tour-card').count()) === 0 || !(await demoPage.locator('.tour-card').isVisible()));
 await demoPage.locator('.capture-info[data-capture="loaded"]').waitFor({ state: 'attached', timeout: 40_000 });
 // The demo waits behind a button that says what it is.
 const demoButton = demoPage.getByRole('button', { name: 'Listen to a demo' });
