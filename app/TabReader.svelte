@@ -6,6 +6,11 @@
   import { KEYS, SCALES, SCALE_GROUPS, scaleById, scaleOnNeck, scaleNoteNames, keyOfSignature } from '../engine/scales.ts';
   import { STORES, dbGet, dbPut } from '../store/db.ts';
   import { restoreFadedVolume } from '../engine/tab-fades.ts';
+  import {
+    DURATIONS, STRING_COUNTS, TUNINGS, addTrack, clearString, deleteBeat, emptyTab, layout as layBeats, makeRest, nudgeDuration,
+    readTab, setDuration, setStrings, setTempo, setTuning, stepBeat, stepString, toAlphaTex, toggleDotted, typeDigit,
+    type Cursor, type EditTab, type PendingDigit,
+  } from '../engine/tab-editor.ts';
 
   let { ontempo }: { ontempo?: (bpm: number) => void } = $props();
 
@@ -266,6 +271,8 @@
     // The room the last bar needs to reach the middle, and only when the line
     // is longer than the window: on a short one it would be paper to nowhere.
     api.postRenderFinished.on(() => {
+      rendering = false;
+      if (api === created && editing) { if (redraw) { redraw = false; void renderDraft(); } else placeCursor(); }
       if (!viewport || !surface) return;
       fitSurface(created);
       layout++;
@@ -273,16 +280,23 @@
       const width = surface.scrollWidth;
       if (width > viewport.clientWidth) tail = Math.round(viewport.clientWidth / 2);
     });
+    api.renderStarted.on(() => { rendering = true; });
     api.playerReady.on(() => { ready = true; });
-    api.playerStateChanged.on(e => { playing = e.state === 1; if (playing) stringCursor = null; });
+    api.playerStateChanged.on(e => {
+      playing = e.state === 1;
+      if (playing) stringCursor = null;
+      else if (editing) cursorAtTick(currentTick);
+    });
     api.playerPositionChanged.on(e => {
       position = e.currentTime; duration = e.endTime; currentTick = e.currentTick;
       // Every jump, ours or a click on a note, lands centred. Keyed on the
       // event's own flag rather than on a pending one we set before seeking:
       // a stray position update from the pause that preceded it consumed the
-      // flag, and the seek that followed then scrolled nowhere.
-      if (e.isSeek) { if (playing) lit = []; showBar(barAt(e.currentTick)); }
+      // flag, and the seek that followed then scrolled nowhere. Writing, the
+      // cursor scrolls itself, to the beat rather than to its bar.
+      if (e.isSeek && !editing) { if (playing) lit = []; showBar(barAt(e.currentTick)); }
     });
+    api.beatMouseDown.on(beat => { if (editing && !playing) cursorAtTick(beat.absolutePlaybackStart); });
     // What is sounding, replaced whole on every beat: the previous position
     // goes out as the next comes in, which is the whole point of the neck.
     api.activeBeatsChanged.on(e => {
@@ -297,7 +311,7 @@
     api.playbackRangeChanged.on(e => { selection = e.playbackRange !== null; });
     // alphaTab's own errors are for the console, not the player: a line like
     // "Cannot read properties of undefined" says nothing they can act on.
-    api.error.on(e => { console.warn('[tab reader]', e); busy = false; });
+    api.error.on(e => { console.warn('[tab reader]', e); busy = false; rendering = false; });
     return api;
   }
 
@@ -315,6 +329,8 @@
       const parsed = alpha.importer.ScoreLoader.loadScoreFromBytes(new Uint8Array(await file.arrayBuffer()), new alpha.Settings());
       if (disposed) return;
       restoreFadedVolume(parsed, alpha);
+      // A file opened while writing is a file to read: the draft stays kept.
+      editing = false; clearTimeout(drawTimer);
       score = parsed; filename = file.name;
       track = Math.max(0, parsed.tracks.findIndex(t => t.staves.some(s => s.tuning.length > 0)));
       // The key follows the song until a scale is chosen: picking one then
@@ -345,6 +361,7 @@
   function chooseTrack(index: number) {
     if (!score || !api) return;
     track = index; lit = []; stringCursor = null;
+    if (editing) { cursor = { track: index, beat: 0, string: draft.tracks[index]?.tuning.length ?? 6 }; void renderDraft(); return; }
     api.renderTracks([score.tracks[index]!]);
   }
   function toggled(set: ReadonlySet<number>): Set<number> {
@@ -505,6 +522,7 @@
   }
   function keydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && focused) { void setFocused(false); e.stopPropagation(); }
+    if (editKey(e)) return;
     if (e.code === 'Space' && e.target instanceof Element && !e.target.closest('input,select,button')) {
       e.preventDefault(); e.stopPropagation(); togglePlay();
     }
@@ -522,6 +540,161 @@
       else moveString(up ? 1 : -1);
     }
   }
+  /**
+   * Writing a tab. The editor holds the tab as written (engine/tab-editor.ts)
+   * and the reader shows it read back from alphaTex, so what is written is laid
+   * out, played, lit on the neck and exported by the same reader as a file.
+   * One layout at a time: a score handed to alphaTab while it lays out the
+   * previous one throws on bars that no longer exist, so an edit made during a
+   * layout waits for it, and only the latest tab is drawn.
+   */
+  const DRAFT_KEY = 'tab-draft';
+  let editing = $state(false);
+  let draft = $state.raw<EditTab>(emptyTab());
+  let cursor = $state.raw<Cursor>({ track: 0, beat: 0, string: 6 });
+  let pendingDigit: PendingDigit | null = null;
+  let rendering = false;
+  let redraw = false;
+  let drawTimer = 0;
+  const editTrack = $derived(draft.tracks[cursor.track] ?? draft.tracks[0]!);
+  const editBeat = $derived(editTrack.beats[cursor.beat] ?? null);
+  const tunings = $derived(TUNINGS[editTrack.tuning.length] ?? []);
+  const tuningIndex = $derived(tunings.findIndex(t => t.notes.join() === editTrack.tuning.join()));
+
+  async function startEditing() {
+    if (busy) return;
+    busy = true; error = ''; storageNote = '';
+    try {
+      const alpha = await library();
+      const saved = readTab(await dbGet<unknown>(STORES.state, DRAFT_KEY));
+      if (disposed) return;
+      if (saved) draft = saved;
+      cursor = { track: 0, beat: 0, string: draft.tracks[0]!.tuning.length };
+      pendingDigit = null;
+      editing = true; filename = ''; track = 0;
+      mutedTracks = new Set(); soloed = new Set(); trackVolumes = new Map(); looping = false; selection = false; position = 0; duration = 0; lit = [];
+      const fresh = await reader(alpha);
+      fresh.playbackSpeed = speed / 100;
+      rendering = false; redraw = false;
+      await renderDraft();
+    } catch (e) {
+      console.warn('[tab reader]', e);
+      editing = false;
+      error = 'The editor could not start.';
+    } finally { busy = false; }
+  }
+
+  /** Back to reading: the last file opened, if there is one. */
+  async function stopEditing() {
+    editing = false;
+    clearTimeout(drawTimer);
+    api?.destroy(); api = null;
+    score = null; ready = false; playing = false; stringCursor = null; lit = []; tail = 0;
+    const file = await loadMedia('last-score');
+    if (file && !disposed && !editing && !score) void open(file, false);
+  }
+
+  async function renderDraft() {
+    clearTimeout(drawTimer);
+    const shown = api;
+    if (!shown || !editing) return;
+    if (rendering) { redraw = true; return; }
+    const alpha = await library();
+    if (api !== shown || !editing) return;
+    if (rendering) { redraw = true; return; }
+    const importer = new alpha.importer.AlphaTexImporter();
+    importer.initFromString(toAlphaTex(draft), new alpha.Settings());
+    const parsed = importer.readScore();
+    parsed.tracks.forEach((t, i) => { t.playbackInfo.isMute = mutedTracks.has(i); t.playbackInfo.isSolo = soloed.has(i); });
+    score = parsed; track = cursor.track;
+    rendering = true;
+    shown.renderScore(parsed, [cursor.track]);
+    for (const [i, level] of trackVolumes) if (parsed.tracks[i]) shown.changeTrackVolume([parsed.tracks[i]], level);
+  }
+
+  function commit(next: EditTab, at: Cursor = cursor) {
+    const t = next.tracks[Math.min(at.track, next.tracks.length - 1)]!;
+    cursor = { track: next.tracks.indexOf(t), beat: Math.max(0, Math.min(at.beat, t.beats.length - 1)), string: Math.max(1, Math.min(t.tuning.length, at.string)) };
+    if (next === draft) { placeCursor(); return; }
+    draft = next;
+    clearTimeout(drawTimer);
+    drawTimer = window.setTimeout(() => { void renderDraft(); void dbPut(STORES.state, draft, DRAFT_KEY); }, 40);
+  }
+  /** From a control: the keys go back to the tab. */
+  function act(next: EditTab, at: Cursor = cursor) {
+    commit(next, at);
+    section?.focus({ preventScroll: true });
+  }
+
+  /** The cursor drawn where the beat being written was laid out: alphaTab's own, the string mark and the neck. */
+  function placeCursor() {
+    const shown = api, beats = draft.tracks[cursor.track]?.beats, staff = score?.tracks[cursor.track]?.staves[0];
+    if (!editing || !shown || !beats || !staff) return;
+    const [bar, index] = layBeats(beats).at[cursor.beat] ?? [0, 0];
+    const beat = staff.bars[bar]?.voices[0]?.beats[index];
+    if (!beat) return;
+    stringCursor = cursor.string;
+    stepped = beat.absolutePlaybackStart;
+    currentTick = stepped;
+    if (!playing) shown.tickPosition = stepped;
+    const x = shown.boundsLookup?.findBeat(beat)?.onNotesX;
+    if (x !== undefined && viewport && (x < viewport.scrollLeft + 60 || x > viewport.scrollLeft + viewport.clientWidth - 60)) follow(x, 0);
+  }
+  /** The beat written at a tick; a rest closing a bar belongs to the beat before it. */
+  function cursorAtTick(at: number) {
+    const beats = draft.tracks[cursor.track]?.beats, staff = score?.tracks[cursor.track]?.staves[0];
+    if (!beats || !staff) return;
+    let found = 0;
+    layBeats(beats).at.forEach(([bar, index], i) => {
+      const beat = staff.bars[bar]?.voices[0]?.beats[index];
+      if (beat && beat.absolutePlaybackStart <= at + 1) found = i;
+    });
+    cursor = { ...cursor, beat: found };
+    placeCursor();
+  }
+
+  /**
+   * Keys while writing. Digits by the key pressed, not the character: the row
+   * above the letters types `&é"'` on a French keyboard, and a fret all the
+   * same. A keypad with Num Lock off sends arrows from the same keys, and they
+   * move the cursor.
+   */
+  function editKey(e: KeyboardEvent): boolean {
+    if (!editing || playing || e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (e.target instanceof Element && e.target.closest('input,select,textarea')) return false;
+    const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code);
+    if (digit && e.key.length === 1) {
+      const typed = typeDigit(draft, cursor, Number(digit[1]), pendingDigit, performance.now());
+      pendingDigit = typed.pending;
+      commit(typed.tab);
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      const moved = stepBeat(draft, cursor, e.key === 'ArrowRight' ? 1 : -1);
+      commit(moved.tab, moved.cursor);
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      commit(draft, stepString(draft, cursor, e.key === 'ArrowUp' ? 1 : -1));
+    } else if (e.code === 'NumpadAdd' || e.key === '+') commit(nudgeDuration(draft, cursor, true));
+    else if (e.code === 'NumpadSubtract' || e.key === '-') commit(nudgeDuration(draft, cursor, false));
+    else if (e.code === 'NumpadDecimal' || e.key === '.') commit(toggleDotted(draft, cursor));
+    else if (e.key === 'r' || e.key === 'R') commit(makeRest(draft, cursor));
+    else if (e.key === 'Delete') commit(clearString(draft, cursor));
+    else if (e.key === 'Backspace') { const removed = deleteBeat(draft, cursor); commit(removed.tab, removed.cursor); }
+    else return false;
+    e.preventDefault(); e.stopPropagation();
+    return true;
+  }
+
+  async function exportGp() {
+    const alpha = await library();
+    const importer = new alpha.importer.AlphaTexImporter();
+    importer.initFromString(toAlphaTex(draft), new alpha.Settings());
+    const bytes = new alpha.exporter.Gp7Exporter().export(importer.readScore(), new alpha.Settings());
+    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' }));
+    const link = document.createElement('a');
+    link.href = url; link.download = 'Untitled.gp';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
   onMount(() => {
     void dbGet<{ scaleId?: unknown; scaleRoot?: unknown }>(STORES.state, SCALE_KEY).then(saved => {
       if (disposed || !saved) return;
@@ -539,6 +712,7 @@
     <div><span class="eyebrow">PRACTICE</span><h2>Tab reader</h2></div>
     <div class="heading-actions">
       {#if score}<button aria-pressed={focused} onclick={() => setFocused(!focused)}> {focused ? 'Exit focus' : 'Focus view'} </button>{/if}
+      <button aria-pressed={editing} disabled={busy} onclick={() => (editing ? stopEditing() : startEditing())}>{editing ? 'Close editor' : 'Write a tab'}</button>
       <button class="primary" disabled={busy} onclick={() => picker.click()}>{busy ? 'Opening…' : score ? 'Open another tab' : 'Import tab'}</button>
     </div>
     <input bind:this={picker} type="file" accept={ACCEPT} aria-label="Import tablature" onchange={e => { const f = e.currentTarget.files?.[0]; if (f) void open(f); e.currentTarget.value = ''; }} />
@@ -564,6 +738,27 @@
         <label class="volume">Volume<input type="range" aria-label="Tab playback volume" min="0" max="100" bind:value={volume} oninput={() => { if (api) api.masterVolume = volume / 100; }} /></label>
         <label class="view-select">View<select aria-label="Notation view" bind:value={notation} onchange={updateDisplay}><option value="tab">Tab</option><option value="both">Score + tab</option></select></label>
         <label>Zoom<select aria-label="Tab zoom" bind:value={zoom} onchange={updateDisplay}>{#each [75, 90, 100, 110, 125, 150] as n}<option value={n}>{n}%</option>{/each}</select></label>
+      </div>
+    {/if}
+    {#if editing && score}
+      <div class="editor-bar" role="toolbar" aria-label="Tab editor">
+        <label>BPM<input class="tempo" type="number" aria-label="Tempo" min="30" max="300" step="1" value={draft.tempo}
+          onchange={e => act(setTempo(draft, Number(e.currentTarget.value)))} /></label>
+        <div class="durations" role="group" aria-label="Duration">
+          {#each DURATIONS as d}<button aria-pressed={editBeat?.duration === d} onclick={() => act(setDuration(draft, cursor, d))}>1/{d}</button>{/each}
+          <button aria-pressed={editBeat?.dotted ?? false} onclick={() => act(toggleDotted(draft, cursor))}>Dotted</button>
+          <button aria-pressed={editBeat !== null && editBeat.notes.length === 0} onclick={() => act(makeRest(draft, cursor))}>Rest</button>
+        </div>
+        <label>Strings<select aria-label="String count" value={editTrack.tuning.length}
+          onchange={e => { const n = Number(e.currentTarget.value); act(setStrings(draft, cursor.track, n), { ...cursor, string: cursor.string + n - editTrack.tuning.length }); }}>
+          {#each STRING_COUNTS as n}<option value={n}>{n}</option>{/each}
+        </select></label>
+        <label>Tuning<select aria-label="Tuning" value={tuningIndex}
+          onchange={e => { const t = tunings[Number(e.currentTarget.value)]; if (t) act(setTuning(draft, cursor.track, t.notes)); }}>
+          {#each tunings as t, i}<option value={i}>{t.name}</option>{/each}
+        </select></label>
+        <button onclick={() => act(addTrack(draft), { track: draft.tracks.length, beat: 0, string: 6 })}>+ Track</button>
+        <button class="primary export" onclick={exportGp}>Export .gp</button>
       </div>
     {/if}
     <div class="reader-body" class:empty={!score}>
@@ -632,6 +827,7 @@
   .score-viewport{overflow-x:auto;overflow-y:hidden;min-width:0;position:relative;scrollbar-color:#777 #dedbd5}.has-score{display:flex;align-items:stretch}.score-tail{flex:0 0 auto}.has-score{background:#faf8f3;color:#222}.score-paper{flex:0 0 auto;min-width:100%;min-height:120px;background:#faf8f3;color:#171717}.hidden{display:none}.string-cursor{position:absolute;left:-10px;top:-8px;width:20px;height:16px;box-sizing:border-box;border:1.5px solid #a37320;border-radius:3px;background:#a373201f;pointer-events:none;z-index:2;will-change:transform}.empty-state{padding:48px 24px;text-align:center;background:radial-gradient(ellipse at top,#303030,#1c1c1c 75%)}.formats{display:block;margin-top:22px;font:10px var(--mono);letter-spacing:1px;color:#c5c1ba}.tab-mark{width:124px;position:relative;margin:auto;padding:4px 0}.tab-mark i{display:block;height:1px;background:#696762;margin:7px 0}.tab-mark span{position:absolute;inset:0;display:grid;place-items:center;font:600 17px var(--mono);letter-spacing:3px;color:#dedbd5;text-shadow:0 0 6px #222;background:linear-gradient(90deg,transparent,#282828 32%,#282828 68%,transparent)}
   .reader-footer{display:flex;justify-content:space-between;gap:16px;padding:12px 18px;border-top:1px solid #404040;font:10px var(--mono);color:#aaa}.reader-footer>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.focused{position:fixed;inset:16px;z-index:50;margin:0;display:flex;flex-direction:column;box-shadow:0 0 0 30px #080808e8}.focused .drop-surface{flex:1;min-height:0;display:flex;flex-direction:column}.focused .reader-body{flex:1;min-height:0}.focused .stage{justify-content:center}.focused aside{overflow:auto}
   .scale-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 18px;background:#242424;border-top:1px solid #404040}.scale-bar label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa}.scale-bar select{padding:5px}.scale-notes{font:11px var(--mono);color:#dedbd5;letter-spacing:.5px}.legend{margin-left:auto;display:flex;align-items:center;gap:6px;font:10px var(--mono);color:#999}.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:8px}.legend .root{background:#2f6f6a}.legend .tone{border:1.5px solid #5fa39c;box-sizing:border-box}.legend .play{background:#c08a32}
+  .editor-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 18px;background:#242424;border-bottom:1px solid #404040}.editor-bar label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa}.editor-bar select{padding:5px}.tempo{width:62px;box-sizing:border-box;min-height:34px;padding:0 8px;font:12px var(--mono);color:#ddd;background:#303030;border:1px solid #4b4b4b;border-radius:4px}.durations{display:flex;flex-wrap:wrap;gap:3px}.durations button{padding:6px 8px;font:11px var(--mono)}.durations [aria-pressed="true"]{background:#dedbd5;color:#222;border-color:#dedbd5}.export{margin-left:auto}
   :global(.at-cursor-bar){background:#bda77230}:global(.at-cursor-beat){background:#866329;width:3px}:global(.at-selection div){background:#bda77244}:global(.at-highlight *){fill:#a37320!important;stroke:#a37320!important}
   @media(max-width:760px){.scale-bar{padding:8px 12px;gap:8px}.legend{display:none}.reader-heading{padding:18px 14px}.heading-actions{gap:6px}.heading-actions button{padding:5px 8px}.reader-body{grid-template-columns:minmax(0,1fr)}aside{padding:12px;border-right:0;border-bottom:1px solid #444}aside>.eyebrow,aside p:not(.plays){display:none}.plays{margin-top:10px}.jump{display:inline-block;margin:0 0 0 8px}.tracks{display:flex;margin:0;overflow:auto;max-height:120px}.track-row{flex-shrink:0;max-width:180px}.track-tools{margin:10px 0 0;max-width:160px}.transport{padding:12px;gap:8px}.volume{display:none!important}.view-select{margin-left:0}.focused{inset:6px}.focused .reader-body{display:flex;flex-direction:column}.focused .stage{flex:1}.empty-state{padding:32px 18px}}
 </style>

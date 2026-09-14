@@ -409,6 +409,42 @@ try {
   assert.equal(await page.locator('.neck .scale').count(), 0, 'None takes the scale off');
   console.log('ok scales in all twelve keys light the neck, under the note being played');
 
+  // Writing a tab: behind its button, from the keyboard, on the neck, and
+  // exported as Guitar Pro that opens again.
+  assert.equal(await page.locator('.editor-bar').count(), 0, 'the editor waits behind its button');
+  await page.getByRole('button', { name: 'Write a tab', exact: true }).click();
+  const editor = page.locator('.editor-bar');
+  await editor.waitFor({ timeout: 30000 });
+  await page.waitForFunction(() => document.querySelectorAll('.tracks button').length === 1 && document.querySelector('.score-paper svg'), null, { timeout: 30000 });
+  await page.locator('.reader').focus();
+  // 3 on the top string; the next beat 1 then 2, twelve, made an eighth; a string down, 5.
+  for (const key of ['3', 'ArrowRight', '1', '2', 'NumpadAdd', 'ArrowDown', 'Digit5']) await page.keyboard.press(key);
+  await page.waitForFunction(() => {
+    const texts = [...document.querySelectorAll('.score-paper svg text')].map(t => t.textContent.trim());
+    return ['3', '12', '5'].every(f => texts.includes(f));
+  }, null, { timeout: 15000 });
+  assert.equal(await editor.getByRole('button', { name: '1/8', exact: true }).getAttribute('aria-pressed'), 'true', '+ makes the beat shorter');
+  await page.waitForFunction(() => document.querySelectorAll('.neck .core').length === 1 && document.querySelector('.string-cursor'), null, { timeout: 10000 });
+  await editor.getByLabel('Tempo', { exact: true }).fill('90');
+  await editor.getByLabel('Tempo', { exact: true }).dispatchEvent('change');
+  await editor.getByLabel('String count', { exact: true }).selectOption('7');
+  await page.waitForFunction(() => document.querySelectorAll('.neck .string').length === 7, null, { timeout: 15000 });
+  await editor.getByLabel('Tuning', { exact: true }).selectOption({ label: 'Drop A' });
+  await editor.getByRole('button', { name: '+ Track', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.tracks button').length === 2, null, { timeout: 15000 });
+  const pendingGp = page.waitForEvent('download', { timeout: 30000 });
+  await editor.getByRole('button', { name: 'Export .gp', exact: true }).click();
+  const gpFile = await pendingGp;
+  assert.equal(gpFile.suggestedFilename(), 'Untitled.gp');
+  const written = alpha.importer.ScoreLoader.loadScoreFromBytes(new Uint8Array(fs.readFileSync(await gpFile.path())), new alpha.Settings());
+  const writtenStaff = written.tracks[0].staves[0];
+  const writtenBeats = writtenStaff.bars[0].voices[0].beats;
+  assert(written.tracks.length === 2 && written.tempo === 90 && writtenStaff.tuning.length === 7 && writtenStaff.tuning.at(-1) === 33,
+    `the export keeps the tracks, the tempo and the tuning (${written.tracks.length} tracks, ${written.tempo} BPM, ${writtenStaff.tuning})`);
+  assert.deepEqual(writtenBeats.slice(0, 2).map(b => b.notes.map(n => n.fret).sort((a, b) => a - b)), [[3], [5, 12]], 'and the notes written');
+  assert.equal(writtenBeats[1].duration, 8, 'at the duration chosen');
+  console.log('ok a tab written from the keyboard, on seven strings with a second track, exported as Guitar Pro');
+
   // The accepted extensions must be the ones the loader actually reads.
   // alphaTex is the entry furthest from Guitar Pro on that list.
   await picker.setInputFiles({ name: 'riff.atex', mimeType: 'text/plain',
@@ -419,6 +455,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.tracks button').length === 1
     && document.querySelectorAll('.score-paper svg').length > 0
     && document.querySelector('.score-paper').scrollWidth < 2000, { timeout: 30000 });
+  assert.equal(await page.locator('.editor-bar').count(), 0, 'opening a tab goes back to reading');
   // Opening a score sets the metronome to its tempo, and shows it doing so.
   await page.waitForFunction(() => document.querySelector('.metronome input[type=number]')?.value === '100', { timeout: 10000 });
   await page.locator('.metronome-launch .metronome-glow').waitFor({ state: 'attached', timeout: 5000 });
