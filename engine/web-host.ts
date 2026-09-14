@@ -338,6 +338,12 @@ export class WebHost implements ChainHost {
     return parts === null ? null : parts.input + parts.output;
   }
 
+  /** The input latency the capture track reports (Chromium); zero where it reports none. */
+  get captureLatencyMs(): number {
+    const settings = this.#stream?.getAudioTracks()[0]?.getSettings() as (MediaTrackSettings & { latency?: number }) | undefined;
+    return typeof settings?.latency === 'number' && settings.latency > 0 ? settings.latency * 1000 : 0;
+  }
+
   /**
    * `input` is the render buffer the browser chose for `latencyHint: 0`;
    * `output` is what the system and the device add on the way out. Neither

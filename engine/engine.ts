@@ -693,8 +693,10 @@ export class Engine {
       const view = new DataView(chunk.data.buffer, chunk.data.byteOffset, chunk.data.byteLength);
       for (let i = 0; i < count; i++) samples[offset + i] = view.getFloat32(i * 4, true);
     }
-    // The guitar reached the DI a round trip after the backing it was played to.
-    const latencyFrames = Math.max(0, Math.round(((this.roundTripMs ?? 0) / 1000) * host.sampleRate));
+    // The guitar reached the DI a round trip after the backing it was played
+    // to: out to the ears, and in through the capture path, which the browser's
+    // round trip does not count.
+    const latencyFrames = Math.max(0, Math.round((((this.roundTripMs ?? 0) + host.captureLatencyMs) / 1000) * host.sampleRate));
     this.#recorded = { samples, sampleRate: host.sampleRate, latencyFrames };
     return this.#recorded;
   }

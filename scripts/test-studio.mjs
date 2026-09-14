@@ -40,7 +40,7 @@ try {
   await page.getByRole('button', { name: '■ Stop recording', exact: true }).waitFor();
   await page.waitForTimeout(3000); // capture a real fake-device stream
   await page.getByRole('button', { name: '■ Stop recording', exact: true }).click();
-  await page.getByText('Take saved on this device.').waitFor();
+  await page.getByRole('button', { name: '● New take', exact: true }).waitFor({ timeout: 20000 });
   const download = async item => {
     const pending = page.waitForEvent('download', { timeout: 60000 });
     await page.getByRole('button', { name: 'Export WAV ▾', exact: true }).click();
@@ -86,7 +86,7 @@ try {
   await page.getByRole('button', { name: '■ Stop recording', exact: true }).waitFor();
   await page.waitForTimeout(1200);
   await page.getByRole('button', { name: '■ Stop recording', exact: true }).click();
-  await page.getByText('Take saved on this device.').waitFor();
+  await page.getByRole('button', { name: '● New take', exact: true }).waitFor({ timeout: 20000 });
   await page.getByRole('radio', { name: 'DI', exact: true }).click();
   const cover = await download('Guitar + backing');
   const guitarOnly = await download('Guitar only');
@@ -95,6 +95,14 @@ try {
   // Resampled from 48 kHz to the take's rate: the decoder may round one frame off.
   assert(Math.abs(frames(backingOnly) - 2 * takeRate) <= 2, `the backing track alone is the whole song (${frames(backingOnly)} frames at ${takeRate} Hz)`);
   assert.equal(frames(cover), Math.max(frames(guitarOnly), frames(backingOnly)), 'the longer lane sets the end of the mix');
+  // Sync moves the guitar earlier against the backing track: 200 ms more of it
+  // is before the timeline starts, so the guitar lane is 200 ms shorter.
+  await page.getByLabel('Guitar sync', { exact: true }).fill('0');
+  const unsynced = await download('Guitar only');
+  await page.getByLabel('Guitar sync', { exact: true }).fill('200');
+  const synced = await download('Guitar only');
+  assert(Math.abs(frames(unsynced) - frames(synced) - 0.2 * takeRate) <= 2, `sync moves the guitar by what it says (${frames(unsynced)} → ${frames(synced)})`);
+  await page.getByRole('button', { name: /^Measured / }).click();
   const lanes = await page.locator('.recorder .lanes').boundingBox();
   await page.mouse.move(lanes.x + lanes.width * 0.25, lanes.y + 20);
   await page.mouse.down();

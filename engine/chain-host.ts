@@ -82,6 +82,13 @@ export interface ChainHost {
 
   /** The round trip as the host reports it, in ms (FR-35). */
   readonly roundTripMs: number | null;
+  /**
+   * What the capture path adds that `roundTripMs` leaves out, in ms: the
+   * browser's input latency, which the Web Audio numbers do not include. Zero
+   * where the round trip already counts it, or where nothing reports it. Used
+   * to line a take up with a backing track, never shown.
+   */
+  readonly captureLatencyMs: number;
   readonly latencyParts: LatencyParts | null;
 
   /** Brings a suspended output back, where that is a thing. */

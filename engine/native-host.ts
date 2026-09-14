@@ -517,4 +517,7 @@ export class NativeHost implements ChainHost {
     const parts = this.latencyParts;
     return parts === null ? null : parts.input + parts.output;
   }
+
+  /** The driver's input latency is already in the round trip. */
+  get captureLatencyMs(): number { return 0; }
 }
