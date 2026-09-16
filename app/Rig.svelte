@@ -1177,9 +1177,40 @@
     </section>
 
     <section class="amp-head" class:guilt={isGuilt} class:bypassed={poweredOff} aria-label={isGuilt ? 'GUILT amplifier' : 'Tonecraft amplifier'}>
+      {#if isGuilt}
+        <div class="guilt-handle" aria-hidden="true"><span></span></div>
+        <div class="guilt-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <!-- Static image filters; only the glow layer's opacity follows the meters. -->
+        <svg class="glass-filters" width="0" height="0" aria-hidden="true" focusable="false">
+          <defs>
+            <filter id="guilt-glass-relief" color-interpolation-filters="sRGB">
+              <feColorMatrix type="saturate" values="0" />
+              <feGaussianBlur stdDeviation="0.45" />
+              <feConvolveMatrix order="3" kernelMatrix="-1 -1 0 -1 0 1 0 1 1" divisor="2" bias="0.5" preserveAlpha="true" result="bevel" />
+              <feBlend in="bevel" in2="SourceGraphic" mode="soft-light" />
+            </filter>
+            <filter id="guilt-glass-bloom" x="-5%" y="-10%" width="110%" height="120%" color-interpolation-filters="sRGB">
+              <feComponentTransfer>
+                <feFuncR type="linear" slope="2.4" intercept="-0.35" />
+                <feFuncG type="linear" slope="2.4" intercept="-0.35" />
+                <feFuncB type="linear" slope="2.4" intercept="-0.35" />
+              </feComponentTransfer>
+              <feGaussianBlur stdDeviation="3" result="nearGlow" />
+              <feGaussianBlur stdDeviation="8" />
+              <feBlend in2="nearGlow" mode="screen" />
+            </filter>
+          </defs>
+        </svg>
+      {/if}
       <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
       <div class="glass-window">
         {#if isGuilt}<img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt="Purple Gothic stained glass with a central rose window" width="2172" height="724" decoding="async" /><div class="veil" style={`opacity:${veil}`}></div>{:else}<div class="neutral-art"><span>TC</span><small>AMPLIFICATION</small></div>{/if}
+        {#if isGuilt}
+          <div class="glass-glow" aria-hidden="true" style={`opacity:${0.28 + light * 0.44}`}>
+            <img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt="" width="2172" height="724" decoding="async" />
+          </div>
+        {/if}
+        {#if isGuilt}<div class="glass-reflections" aria-hidden="true"></div>{/if}
         <div class="amp-brand"><span class="brand-rule"></span><h1>{isGuilt ? 'GUILT' : 'TONECRAFT'}</h1><span class="brand-rule"></span><p>{isGuilt ? 'LUX EX SONO' : 'FIND YOUR FREQUENCY'}</p></div>
       </div>
       <div class="amp-panel">
@@ -1706,4 +1737,167 @@
 
   .settings-button{display:grid;place-items:center;width:40px;height:40px;padding:8px;border:0;background:none;color:var(--ink);cursor:pointer;border-radius:4px;font-size:26px}.settings-button:hover{background:#252525}.audio-settings{width:min(440px,calc(100vw - 64px));padding:calc(var(--u)*3);color:var(--ink);background:#171717;border:1px solid #444;border-radius:8px}.audio-settings[open]{display:flex;flex-direction:column;gap:calc(var(--u)*3)}.audio-settings::backdrop{background:#000a}.settings-heading{display:flex;align-items:center;justify-content:space-between}.settings-heading h2{margin:0;font-size:18px;font-weight:500}.audio-settings .device-controls{flex-direction:column;gap:calc(var(--u)*2);margin-top:0}.audio-settings select{max-width:100%;width:100%}.audio-settings .failure{margin-top:0}.power-indicator{border:0;background:none;cursor:pointer;color:#bab0bf;padding:8px;min-width:44px}.power-indicator>span{width:28px;height:28px;display:grid;place-items:center;background:#29252d}.power-indicator>span.lit{color:#fff;background:#66536f}.power-indicator:disabled{opacity:.5;cursor:wait}
   .welcome{color:var(--ink);background:#101010;border:1px solid #3b3b3b;width:min(580px,calc(100vw - 64px));box-sizing:border-box;max-height:calc(100svh - 48px);overflow:auto}.welcome:not([open]){display:none}.welcome::backdrop{background:#000b}.welcome h2{font-size:21px;font-weight:500;margin:0}.welcome .choices{width:100%}.welcome .choice{background:#191919;border-color:#404040;border-radius:5px;padding:22px;min-width:0}.welcome .choice:hover{background:#252525;border-color:#888}.welcome .choice .t-module{font-size:12px;color:#ededed}.welcome .choice .t-small{line-height:1.6}.welcome .quiet{color:#aaa}
+  /* GUILT is viewed head-on, just above the cabinet: a shallow, symmetric
+     top plane and rounded rails surround the recessed glass and faceplate. */
+  .amp-head.guilt {
+    --leather-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3' stitchTiles='stitch'/%3E%3CfeDiffuseLighting surfaceScale='2' diffuseConstant='.65' lighting-color='%23b5a9a3'%3E%3CfeDistantLight azimuth='225' elevation='45'/%3E%3C/feDiffuseLighting%3E%3C/filter%3E%3Cpath fill='%23201c21' filter='url(%23grain)' opacity='.24' d='M0 0h180v180H0z'/%3E%3C/svg%3E");
+    --knob-material: conic-gradient(from 35deg,#27232a,#89818d 55deg,#49424e 105deg,#211e24 175deg,#514a57 260deg,#a39aa6 310deg,#27232a);
+    --knob-accent: #d7bedf;
+    --control-label: #c6bcc9;
+    isolation: isolate;
+    margin-top: 48px;
+    margin-right: 0;
+    padding: 22px;
+    border: 1px solid #555257;
+    border-radius: 15px;
+    background: var(--leather-grain),linear-gradient(90deg,#343236,#1a191c 3%,#232125 50%,#1a191c 97%,#343236);
+    box-shadow: inset 0 3px 2px #b4adb15c,inset 3px 0 4px #8a858b40,inset -3px 0 4px #8a858b30,inset 0 -5px 5px #000c,0 3px 0 #0c0b0d,0 16px 18px -5px #000b,0 30px 35px -15px #000b;
+  }
+  .amp-head.guilt::before,.amp-head.guilt::after {
+    content: '';
+    position: absolute;
+    pointer-events: none;
+    z-index: -1;
+    border: 1px solid #4c494e;
+  }
+  .amp-head.guilt::before {
+    height: 14px;
+    left: 3px;
+    right: 3px;
+    top: -9px;
+    clip-path: polygon(10px 0,calc(100% - 10px) 0,100% 100%,0 100%);
+    border-radius: 12px 12px 0 0;
+    background: var(--leather-grain),linear-gradient(#272529,#555056 65%,#242226);
+    box-shadow: inset 0 1px 1px #b1a3ae55;
+  }
+  .amp-head.guilt::after {
+    inset: 7px;
+    border-color: #131215;
+    border-radius: 10px;
+    box-shadow: 0 1px 1px #b6aeb338,inset 0 2px 3px #000b,inset 2px 0 3px #0008,inset -2px 0 3px #0008;
+  }
+  .guilt-handle {
+    position: absolute;
+    z-index: -2;
+    top: -17px;
+    left: calc(50% - 110px);
+    width: 220px;
+    height: 12px;
+    pointer-events: none;
+    border-bottom: 5px solid #161317;
+    filter: drop-shadow(0 3px 2px #0008);
+  }
+  .guilt-handle::before,.guilt-handle::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    width: 27px;
+    height: 9px;
+    border: 1px solid #6d686b;
+    border-radius: 3px;
+    background: linear-gradient(#827b75,#393635 45%,#211e20);
+  }
+  .guilt-handle::before { left: 0; }
+  .guilt-handle::after { right: 0; }
+  .guilt-handle span {
+    position: absolute;
+    inset: 0 17px 0;
+    border: 4px solid #242226;
+    border-bottom: 0;
+    border-radius: 14px 14px 0 0;
+    box-shadow: inset 0 2px 1px #897b8444,0 -1px 0 #615b60;
+    background: linear-gradient(#39353b,#201e22 65%,transparent 66%);
+  }
+  .guilt-corners { position: absolute; inset: 0; pointer-events: none; }
+  .guilt-corners i {
+    position: absolute;
+    width: 36px;
+    height: 36px;
+    border: 1px solid #666268;
+    background: linear-gradient(135deg,#6b666d,#39363c 20%,#222025 50%,#423e45 76%,#19171b);
+    box-shadow: 0 2px 3px #0009,inset 1px 1px 2px #d5cdd044;
+  }
+  .guilt-corners i:nth-child(1) { top: -2px; left: -2px; border-radius: 15px 4px 5px 4px; clip-path: polygon(0 0,100% 0,100% 30%,30% 30%,30% 100%,0 100%); }
+  .guilt-corners i:nth-child(2) { top: -2px; right: -2px; border-radius: 4px 15px 4px 5px; clip-path: polygon(0 0,100% 0,100% 100%,70% 100%,70% 30%,0 30%); }
+  .guilt-corners i:nth-child(3) { bottom: -2px; left: -2px; border-radius: 4px 5px 4px 15px; clip-path: polygon(0 0,30% 0,30% 70%,100% 70%,100% 100%,0 100%); }
+  .guilt-corners i:nth-child(4) { bottom: -2px; right: -2px; border-radius: 5px 4px 15px 4px; clip-path: polygon(70% 0,100% 0,100% 100%,0 100%,0 70%,70% 70%); }
+  .guilt .tl,.guilt .tr { top: 3px; }
+  .guilt .bl,.guilt .br { bottom: 3px; }
+  .guilt .screw {
+    width: 5px;
+    height: 5px;
+    z-index: 1;
+    background: linear-gradient(135deg,#b5a9ad,#4d444d 40%,#171319 42% 56%,#a0939c 58%,#3d353e);
+    box-shadow: 0 1px 2px #000,inset 0 0 0 1px #c0b0b044;
+  }
+  .guilt .glass-window {
+    border: 6px solid;
+    border-top-width: 10px;
+    border-color: #0c0b10 #211d26 #423b47;
+    border-radius: 5px 5px 0 0;
+    box-shadow: 0 0 0 1px #0b090e,0 -2px 3px #000c,0 1px 0 #8b7d9144;
+  }
+  .glass-filters { position: absolute; pointer-events: none; }
+  .guilt .glass-window { isolation: isolate; }
+  .guilt .glass-window>img { filter: url(#guilt-glass-relief) brightness(1.8) contrast(1.13) saturate(.9); }
+  .glass-glow {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    mix-blend-mode: screen;
+    will-change: opacity;
+  }
+  .guilt .glass-glow img { filter: url(#guilt-glass-bloom); }
+  .guilt .glass-window::after {
+    z-index: 1;
+    border: 1px solid #ddc0f333;
+    box-shadow: inset 0 13px 15px #06030bf0,inset 8px 0 12px #08050db3,inset -8px 0 12px #08050db3,inset 0 -3px 6px #0b0610b3;
+    background: linear-gradient(0deg,#09060ec2,transparent 40%,transparent 80%,#07030c44);
+  }
+  .glass-reflections {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(118deg,transparent 4%,#ead8ff12 19%,#f3e9ff24 19.3%,#e8d5ff05 20%,transparent 35%,#e8d5ff12 35.3%,transparent 52%),linear-gradient(175deg,#eedaff14,transparent 35%,#9972b408 70%,transparent);
+    box-shadow: inset 0 2px 0 #f4e3ff55,inset 2px 0 0 #eddbff22,inset 0 -2px 0 #ad83ba33;
+  }
+  .guilt .amp-brand { z-index: 2; bottom: 21px; }
+  .guilt .amp-brand h1 {
+    color: #e0cedf;
+    text-shadow: 0 1px 0 #f7eaf6,0 2px 0 #857087,0 3px 0 #49334e,2px 5px 3px #000,0 8px 13px #000;
+  }
+  .guilt .amp-brand p { color: #d0b7d4; text-shadow: 0 2px 2px #000; }
+  .guilt .amp-panel {
+    position: relative;
+    margin-top: 2px;
+    border: 1px solid;
+    border-color: #655d6a #211d27 #111015 #312b38;
+    border-radius: 0 0 4px 4px;
+    background: repeating-linear-gradient(0deg,#dccbe903 0 1px,transparent 1px 3px),linear-gradient(105deg,#302c34,#211e26 40%,#19171f 75%,#28232d);
+    box-shadow: 0 -1px 0 #08070a,inset 0 1px 1px #dfcfe21a,inset 3px 0 6px #0007,inset -3px 0 6px #0007,inset 0 -3px 5px #0007,0 4px 5px #000c;
+  }
+  .guilt .amp-signature { color: #ccbacc; text-shadow: 0 1px 0 #09070d,0 -1px 0 #ffffff22; }
+  .guilt :global(.dial) { box-shadow: 0 1px 0 #d5c0de22,0 -1px 2px #000b; }
+  .guilt :global(.dial::before) { background: radial-gradient(circle at 40% 32%,#433a49,#17121e 75%); box-shadow: inset 0 2px 4px #000; }
+  .guilt :global(.cap) { border-color: #9a899d #4b414f #27202e #796c80; box-shadow: 2px 5px 5px #000b,0 2px 0 2px #141018,inset 0 0 0 2px #c5b0d022,inset 0 1px 2px #eee2f455; }
+  .guilt :global(.indicator) { box-shadow: 0 0 3px #d6b6e355; }
+  .guilt .power-indicator>span { background: radial-gradient(circle at 35% 25%,#635467,#2b2331 65%); border-color: #2c2530; box-shadow: 0 0 0 1px #9c8aa0,0 3px 0 2px #141018,2px 5px 6px #0009,inset 0 1px 2px #e2c9e644; }
+  .guilt .power-indicator>span.lit { background: radial-gradient(circle at 35% 25%,#b88ec5,#61436f 70%); box-shadow: 0 0 0 1px #b29ab9,0 3px 0 2px #141018,0 0 15px #c47adf66,inset 0 1px 3px #f8ddff77; }
+  .guilt+.amp-foot { margin: 0 58px; }
+  .guilt+.amp-foot span { width: 55px; height: 20px; border-radius: 0 0 10px 10px; background: linear-gradient(90deg,#111014,#3a363e 25%,#201d25 75%,#100d14); border-bottom: 3px solid #0b090e; box-shadow: 0 5px 5px #0007,inset 0 5px 6px #000; }
+  @media(prefers-reduced-motion:reduce) {
+    .glass-glow { opacity: .34 !important; will-change: auto; }
+  }
+  @media(max-width:760px) {
+    .amp-head.guilt { margin-top: 40px; padding: 17px 12px; }
+    .amp-head.guilt::before { height: 11px; top: -6px; }
+    .amp-head.guilt::after { inset: 5px; }
+    .guilt-handle { top: -14px; width: 150px; left: calc(50% - 75px); }
+    .guilt .glass-window { border-width: 5px; }
+    .guilt .amp-panel { padding: 20px 6px; }
+    .guilt .tone-group .knob-row { gap: 6px; }
+    .guilt .tone-group :global(.knob) { min-width: 0; flex: 1; }
+    .guilt .tone-group :global(.dial) { width: 54px; height: 54px; }
+    .guilt .tone-group :global(.label) { font-size: 8px; letter-spacing: .8px; }
+  }
 </style>
