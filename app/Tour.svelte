@@ -19,13 +19,13 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
 
   let { steps, terms, labels, onclose }: {
     steps: readonly TourStep[];
     /** Term → selector of what it names, on the page or in the card's drawing. */
     terms: Readonly<Record<string, string>>;
-    labels: { readonly skip: string; readonly back: string; readonly next: string; readonly done: string };
+    labels: { readonly skip: string; readonly back: string; readonly next: string; readonly done: string; readonly collapse: string; readonly expand: string };
     onclose: () => void;
   } = $props();
 
@@ -40,16 +40,34 @@
   const LIFT = '71';
   const GAP = 16;
   const RING_PAD = 6;
+  /**
+   * Where a card beside the window does not fit, the card is a sheet at the
+   * foot of the screen and the window is read above it. On a phone the card
+   * beside the window was the whole screen: it hid what it explained, and its
+   * buttons scrolled out of reach.
+   */
+  const SHEET = '(max-width: 640px), (max-height: 520px)';
+  /** Far enough, and more sideways than down, to be a swipe rather than a scroll. */
+  const SWIPE_PX = 60;
+  let sheet = $state(false);
+  /** A sheet folded to its title and buttons, so the window above can be used. */
+  let collapsed = $state(false);
   let index = $state(0);
   let card = $state<HTMLDivElement | null>(null);
   let next = $state<HTMLButtonElement | null>(null);
   let place = $state<{ x: number; y: number } | null>(null);
   let term = $state<string | null>(null);
   let rings = $state<{ x: number; y: number; w: number; h: number }[]>([]);
-  let lit: { el: HTMLElement; position: string; zIndex: string }[] = [];
+  let lit: { el: HTMLElement; position: string; zIndex: string; translate: string; fixed: boolean }[] = [];
   let frame = 0;
   const step = $derived(steps[index]!);
   const last = $derived(index === steps.length - 1);
+  const blocked = $derived(step.task !== undefined && !step.done);
+
+  function go(to: number): void {
+    if (to < 0 || to >= steps.length || (to > index && blocked)) return;
+    index = to;
+  }
 
   type Segment = { text: string; term?: string; bold?: boolean };
   function segments(line: string): Segment[] {
@@ -65,26 +83,48 @@
   }
 
   function release(): void {
-    for (const { el, position, zIndex } of lit) {
+    for (const { el, position, zIndex, translate } of lit) {
       el.style.position = position;
       el.style.zIndex = zIndex;
+      el.style.translate = translate;
       el.classList.remove('tour-lit');
     }
     lit = [];
   }
 
+  /**
+   * A window near the end of the page cannot scroll above a sheet: the page
+   * is lengthened by the sheet's height while there is one.
+   */
+  const bodyPadding = document.body.style.paddingBottom;
+  function pad(): void {
+    const h = sheet && card ? card.offsetHeight : 0;
+    document.body.style.paddingBottom = h > 0 ? `${h}px` : bodyPadding;
+    // A window fixed to the foot of the screen cannot scroll out from under
+    // the sheet: it is lifted above it while it is explained.
+    for (const l of lit) if (l.fixed) l.el.style.translate = h > 0 ? `0 ${-h}px` : l.translate;
+  }
+
   function light(targets: readonly string[]): void {
+    pad();
     release();
     for (const selector of targets) {
       const el = document.querySelector<HTMLElement>(selector);
       if (!el) continue;
-      lit.push({ el, position: el.style.position, zIndex: el.style.zIndex });
-      if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+      const computed = getComputedStyle(el).position;
+      lit.push({ el, position: el.style.position, zIndex: el.style.zIndex, translate: el.style.translate, fixed: computed === 'fixed' });
+      if (computed === 'static') el.style.position = 'relative';
       el.style.zIndex = LIFT;
       el.classList.add('tour-lit');
     }
+    pad();
     const first = lit[0]?.el;
     if (!first || getComputedStyle(first).position === 'fixed') return;
+    if (sheet) {
+      // Read from its top, above the sheet.
+      scrollTo({ top: scrollY + first.getBoundingClientRect().top - GAP, behavior: 'smooth' });
+      return;
+    }
     // With room for the card, the window goes to the top and the card under it:
     // centred, a window half the screen high left no room on either side, and
     // the card covered what it explained. Taller than that, it is read from its
@@ -116,6 +156,9 @@
     frame = requestAnimationFrame(() => {
       measureRings();
       if (!card) return;
+      // The sheet is laid out by CSS; it only has to be shown.
+      pad();
+      if (sheet) { place = { x: 0, y: 0 }; return; }
       const w = card.offsetWidth, h = card.offsetHeight;
       const rects = lit.map(l => l.el.getBoundingClientRect());
       if (rects.length === 0) { place = { x: Math.round((innerWidth - w) / 2), y: Math.round(Math.max(GAP, (innerHeight - h) / 2)) }; return; }
@@ -137,15 +180,70 @@
     measureRings();
   }
 
+  /**
+   * A tap is not a hover: the ring stays until another term is tapped or the
+   * step changes. Above a sheet, what the term names is brought into the part
+   * of the screen the sheet leaves free.
+   */
+  function tapTerm(key: string): void {
+    show(key);
+    if (!sheet || !card) return;
+    const selector = terms[key];
+    const el = selector ? document.querySelector<HTMLElement>(selector) : null;
+    if (!el || el.closest('.tour-card')) return;
+    const r = el.getBoundingClientRect(), free = card.getBoundingClientRect().top;
+    if (r.top >= GAP && r.bottom <= free - GAP) return;
+    scrollTo({ top: scrollY + r.top - Math.max(GAP, (free - r.height) / 2), behavior: 'smooth' });
+  }
+
+  let swipe: { id: number; x: number; y: number } | null = null;
+  function swipeStart(e: PointerEvent): void {
+    if (e.pointerType !== 'mouse') swipe = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  }
+  function swipeEnd(e: PointerEvent): void {
+    if (swipe?.id !== e.pointerId) return;
+    const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+    swipe = null;
+    if (Math.abs(dx) < SWIPE_PX || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    go(dx < 0 ? index + 1 : index - 1);
+  }
+
+  /** Using the window above a sheet folds the sheet out of its way. */
+  function pageDown(e: PointerEvent): void {
+    if (!sheet || collapsed || !(e.target instanceof Element) || e.target.closest('.tour-card')) return;
+    if (lit.some(l => l.el.contains(e.target as Node))) { collapsed = true; void tick().then(position); }
+  }
+
+  function toggleSheet(): void {
+    collapsed = !collapsed;
+    void tick().then(position);
+  }
+
   function finish(): void {
     release();
     onclose();
   }
 
   $effect(() => {
-    const targets = step.targets;
+    const query = matchMedia(SHEET);
+    const update = () => { sheet = query.matches; position(); };
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  });
+
+  /**
+   * Only a new step lights and scrolls. The steps are rebuilt when a task is
+   * done, and that must not pull the page away from where it was just done.
+   */
+  const targetKey = $derived(`${index}\n${step.targets.join('\n')}`);
+  $effect(() => {
+    void targetKey;
+    const targets = untrack(() => step.targets);
     term = null;
     rings = [];
+    // A step with something to do starts folded, the page it is done on in view.
+    collapsed = sheet && untrack(() => blocked);
     void tick().then(() => {
       light(targets);
       position();
@@ -153,22 +251,28 @@
     });
   });
 
-  onDestroy(() => { cancelAnimationFrame(frame); release(); });
+  onDestroy(() => { cancelAnimationFrame(frame); release(); document.body.style.paddingBottom = bodyPadding; });
 </script>
 
-<svelte:window onscroll={position} onresize={position}
+<svelte:window onscroll={position} onresize={position} onpointerdown={pageDown}
   onkeydown={e => { if (e.key === 'Escape') { e.preventDefault(); finish(); } }} />
 
 <div class="tour-shade" aria-hidden="true"></div>
 {#each rings as r}
   <span class="tour-ring" aria-hidden="true" style:width={`${r.w}px`} style:height={`${r.h}px`} style:transform={`translate(${r.x}px, ${r.y}px)`}></span>
 {/each}
-<div class="tour-card" class:placed={place !== null} class:wide={step.figure !== undefined} role="dialog" aria-labelledby="tour-title" bind:this={card}
-  style:transform={place ? `translate(${place.x}px, ${place.y}px)` : undefined}>
-  <div class="tour-progress" aria-hidden="true">{#each steps as _, i}<i class:done={i <= index}></i>{/each}</div>
-  <span class="tour-count">{index + 1} / {steps.length}</span>
-  <h2 id="tour-title">{step.title}</h2>
+<div class="tour-card" class:placed={place !== null} class:wide={step.figure !== undefined} class:sheet class:collapsed role="dialog" tabindex="-1" aria-labelledby="tour-title" bind:this={card}
+  style:transform={place && !sheet ? `translate(${place.x}px, ${place.y}px)` : undefined}
+  onpointerdown={swipeStart} onpointerup={swipeEnd} onpointercancel={() => (swipe = null)}>
+  <div class="tour-head">
+    {#if sheet}<button type="button" class="tour-grip" aria-expanded={!collapsed} aria-label={collapsed ? labels.expand : labels.collapse} onclick={toggleSheet}><span></span></button>{/if}
+    <div class="tour-progress" aria-hidden="true">{#each steps as _, i}<i class:done={i <= index}></i>{/each}</div>
+    <span class="tour-count">{index + 1} / {steps.length}</span>
+    <h2 id="tour-title">{step.title}</h2>
+  </div>
 
+  {#if !collapsed}
+  <div class="tour-body">
   {#if step.figure === 'tracks'}
     <div class="tour-figure fig-tracks" aria-hidden="true">
       <div class="fig-track"><span class="fig-name"><b>01</b> Lead</span><span class="fig-btn on" data-term="solo">Solo</span><span class="fig-btn">Mute</span><span class="fig-level" data-term="volume"><i style="transform:scaleX(.85)"></i></span></div>
@@ -196,24 +300,39 @@
 
   {#each step.body as line}
     <p>{#each segments(line) as part}{#if part.term}<button type="button" class="tour-term" class:named={terms[part.term] !== undefined}
-        onpointerenter={() => show(part.term!)} onpointerleave={() => show(null)}
-        onfocus={() => show(part.term!)} onblur={() => show(null)} onclick={() => show(part.term!)}>{part.text}</button>{:else if part.bold}<strong>{part.text}</strong>{:else}{part.text}{/if}{/each}</p>
+        onpointerenter={e => { if (e.pointerType === 'mouse') show(part.term!); }} onpointerleave={e => { if (e.pointerType === 'mouse') show(null); }}
+        onfocus={() => show(part.term!)} onclick={() => tapTerm(part.term!)}>{part.text}</button>{:else if part.bold}<strong>{part.text}</strong>{:else}{part.text}{/if}{/each}</p>
   {/each}
+  </div>
+  {/if}
   {#if step.task}
     <p class="tour-task" class:done={step.done} role="status"><span aria-hidden="true">{step.done ? '✓' : '→'}</span> {#each segments(step.task) as part}{#if part.bold}<strong>{part.text}</strong>{:else}{part.text}{/if}{/each}</p>
   {/if}
   <div class="tour-actions">
     {#if !last}<button class="tour-skip" type="button" onclick={finish}>{labels.skip}</button>{/if}
-    {#if index > 0}<button type="button" onclick={() => index--}>{labels.back}</button>{/if}
-    <button class="tour-next" type="button" bind:this={next} disabled={step.task !== undefined && !step.done} onclick={() => (last ? finish() : index++)}>{last ? labels.done : labels.next}</button>
+    {#if index > 0}<button type="button" onclick={() => go(index - 1)}>{labels.back}</button>{/if}
+    <button class="tour-next" type="button" bind:this={next} disabled={blocked} onclick={() => (last ? finish() : go(index + 1))}>{last ? labels.done : labels.next}</button>
   </div>
 </div>
 
 <style>
   .tour-shade{position:fixed;inset:0;z-index:70;background:#030303d9;animation:tour-in .25s ease-out}
-  .tour-card{position:fixed;left:0;top:0;z-index:72;width:min(430px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;box-sizing:border-box;padding:20px 24px 18px;border:1px solid #6d5a72;border-radius:10px;background:#1d1a1f;color:var(--ink);opacity:0;transition:transform .3s ease-out}
+  .tour-card{position:fixed;left:0;top:0;z-index:72;display:flex;flex-direction:column;width:min(430px,calc(100vw - 32px));max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow:hidden;box-sizing:border-box;padding:20px 24px 18px;touch-action:pan-y;border:1px solid #6d5a72;border-radius:10px;background:#1d1a1f;color:var(--ink);opacity:0;transition:transform .3s ease-out}
   .tour-card.wide{width:min(470px,calc(100vw - 32px))}
   .tour-card.placed{opacity:1}
+  .tour-head,.tour-task,.tour-actions{flex:none}
+  .tour-body{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain}
+  /* The sheet: the full width of the foot of the screen, its buttons always in reach. */
+  .tour-card.sheet{top:auto;bottom:0;width:100%;max-height:min(58vh,100vh - 96px);max-height:min(58dvh,100dvh - 96px);padding:0 16px calc(12px + env(safe-area-inset-bottom));border-width:1px 0 0;border-radius:14px 14px 0 0;transition:none}
+  .sheet .tour-head{padding-top:4px}
+  .sheet h2{font-size:17px;margin:4px 0 8px}
+  .sheet.collapsed h2{margin-bottom:0}
+  .sheet .tour-body p{font-size:14px}
+  .sheet .tour-task{margin-top:8px}
+  .sheet .tour-actions{margin-top:10px}
+  .tour-grip{display:grid;place-items:center;width:100%;min-height:28px!important;padding:0!important;border:0!important;background:none!important}
+  .tour-grip span{width:40px;height:4px;border-radius:2px;background:#6d5a72}
+  .sheet .tour-progress{margin-bottom:8px}
   .tour-progress{display:flex;gap:4px;margin-bottom:14px}
   .tour-progress i{flex:1;height:2px;border-radius:1px;background:#3d3540}
   .tour-progress i.done{background:#cdb6d4}
@@ -235,6 +354,12 @@
   .tour-next{background:#dedbd5!important;color:#222!important;border-color:#dedbd5!important}
   .tour-next:hover{background:#fff!important}
   .tour-next:disabled{opacity:.4;cursor:default}
+  @media (pointer: coarse){
+    button:not(.tour-term):not(.tour-grip){min-height:44px;padding:8px 16px;font-size:14px}
+    .tour-term.named{padding:2px 0}
+    /* No keyboard to point at: the neck is how a note is written here. */
+    .fig-keys{display:none}
+  }
   .tour-task{margin:14px 0 0;padding:10px 12px;border:1px solid #6d5a72;border-radius:6px;background:#27212a;color:#f3e9f6}
   .tour-task.done{border-color:#5fa39c;background:#1c2626}
 

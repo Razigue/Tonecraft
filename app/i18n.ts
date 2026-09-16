@@ -54,6 +54,9 @@ export interface Messages {
     readonly back: string;
     readonly next: string;
     readonly done: string;
+    /** The tutorial folded out of the way on a small screen, and back. */
+    readonly collapse: string;
+    readonly expand: string;
     /** In the order of the windows the tutorial lights. */
     readonly steps: readonly [TourText, TourText, TourText, TourText, TourText, TourText, TourText];
   };
@@ -76,6 +79,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
       back: 'Back',
       next: 'Next',
       done: 'Done',
+      collapse: 'Fold the tutorial',
+      expand: 'Unfold the tutorial',
       steps: [
         {
           title: 'General settings',
@@ -121,7 +126,7 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
             'Move through the beats of the bar with the [arrow keys](arrows) ← and →, and change string with ↑ and ↓. Several notes on the same beat make a chord. **Delete** erases the note, **Backspace** the whole beat.',
             '**+** and **−** make a note shorter or longer, **Space** plays back what you have written, and **Export .gp** saves it as a Guitar Pro file.',
           ],
-          task: 'Your turn: click **Write a tab**, then type a number on your keyboard. You will hear the note as it is written.',
+          task: 'Your turn: click **Write a tab**, then type a number on your keyboard or tap a fret on the neck. You will hear the note as it is written.',
         },
         {
           title: 'The metronome',
@@ -156,6 +161,8 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
       back: 'Précédent',
       next: 'Suivant',
       done: 'Terminer',
+      collapse: 'Replier le tutoriel',
+      expand: 'Déplier le tutoriel',
       steps: [
         {
           title: 'Réglages généraux',
@@ -201,7 +208,7 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
             'Parcourez les temps de la mesure avec les [flèches](arrows) ← et →, et changez de corde avec ↑ et ↓. Plusieurs notes sur un même temps forment un accord. **Suppr** efface la note, **Retour arrière** le temps entier.',
             '**+** et **−** raccourcissent ou allongent la note, **Espace** fait écouter ce que vous avez écrit, et **Export .gp** l’enregistre au format Guitar Pro.',
           ],
-          task: 'À vous : cliquez sur **Write a tab**, puis tapez un chiffre au clavier. Vous entendrez la note au moment où elle s’écrit.',
+          task: 'À vous : cliquez sur **Write a tab**, puis tapez un chiffre au clavier ou touchez une case du manche. Vous entendrez la note au moment où elle s’écrit.',
         },
         {
           title: 'Le métronome',

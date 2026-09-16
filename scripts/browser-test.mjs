@@ -27,7 +27,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, devices } from 'playwright';
 import { writeWav } from '../render/wav.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -892,6 +892,70 @@ try {
 } catch { /* reported below */ }
 check('an engine older than the newest release is offered the update', updateOffered,
   updateOffered ? '' : await updatePage.locator('.audio-settings').innerText());
+
+/**
+ * On a phone, by touch. The card beside the window was the whole screen: it
+ * hid what it explained, its buttons scrolled out of reach, and the composing
+ * step waited for a key no phone has. Now it is a sheet at the foot of the
+ * screen, each window read above it, stepped through by swiping or tapping.
+ */
+{
+  // Alone, last: an engine that fails to start under the load of the pages
+  // above brings the welcome sheet back over the tutorial.
+  for (const context of browser.contexts()) for (const open of context.pages()) await open.close();
+  const phone = await browser.newContext({ ...devices['iPhone 13'] });
+  const tap = await phone.newPage();
+  const cdp = await phone.newCDPSession(tap);
+  const swipeLeft = async () => {
+    const h = await tap.locator('.tour-card h2').boundingBox();
+    const y = h.y + h.height / 2;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 300, y }] });
+    for (let x = 260; x >= 100; x -= 40) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+  await tap.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+  await tap.getByRole('button', { name: 'Tester' }).tap();
+  const seen = [];
+  for (const [step, target] of tourTargets.entries()) {
+    if (step === 4) {
+      await tap.waitForTimeout(900);
+      const folded = await tap.locator('.tour-card.collapsed').count() === 1;
+      const write = await tap.locator('.write-tab').boundingBox();
+      await tap.touchscreen.tap(write.x + write.width / 2, write.y + write.height / 2);
+      await tap.locator('.editor-bar').waitFor({ timeout: 30000 });
+      // A fret on the neck, brought above the sheet the way a thumb would.
+      await tap.evaluate(() => { const fret = document.querySelectorAll('.reader rect.pick')[30]; scrollBy(0, fret.getBoundingClientRect().top - 120); });
+      await tap.waitForTimeout(400);
+      const fret = await tap.locator('.reader rect.pick').nth(30).boundingBox();
+      await tap.touchscreen.tap(fret.x + fret.width / 2, fret.y + fret.height / 2);
+      await tap.waitForFunction(() => !document.querySelector('.tour-card .tour-next').disabled, null, { timeout: 15000 });
+      seen.push({ title: 'compose', ok: folded, detail: `starts folded ${folded}` });
+    }
+    await tap.waitForTimeout(900);
+    seen.push(await tap.evaluate((selector) => {
+      const card = document.querySelector('.tour-card').getBoundingClientRect();
+      const next = document.querySelector('.tour-card .tour-next').getBoundingClientRect();
+      const title = document.querySelector('#tour-title').textContent;
+      const sheet = Math.abs(card.bottom - innerHeight) < 2 && card.left <= 0 && card.right >= innerWidth;
+      const reachable = next.top >= card.top && next.bottom <= innerHeight && next.height >= 44;
+      if (selector === null) return { title, ok: sheet && reachable, detail: `sheet ${sheet}, next ${reachable}` };
+      const r = document.querySelector(selector).getBoundingClientRect();
+      // Some of the window in the part of the screen the sheet leaves free: a tall one is read by scrolling it.
+      const visible = r.top < card.top && r.bottom > 0 && (r.top >= 0 || r.bottom - r.top > card.top);
+      return { title, ok: sheet && reachable && visible, detail: `sheet ${sheet}, next ${reachable}, window above it ${visible} (${Math.round(r.top)} under ${Math.round(card.top)})` };
+    }, target));
+    const before = await tap.locator('#tour-title').innerText();
+    if (step % 2 === 0 && step < tourTargets.length - 1) {
+      await swipeLeft();
+      await tap.waitForTimeout(300);
+      seen.push({ title: 'swipe', ok: (await tap.locator('#tour-title').innerText()) !== before, detail: 'a swipe to the left is the next step' });
+    } else await tap.locator('.tour-card .tour-next').tap();
+  }
+  check('on a phone the tutorial is a sheet under each window, its buttons in reach, swiped or tapped through, a note written on the neck',
+    seen.every((s) => s.ok), seen.filter((s) => !s.ok).map((s) => `${s.title}: ${s.detail}`).join(' · ') || `${seen.length} checks`);
+  check('and the page is given back as it was', await tap.evaluate(() => document.body.style.paddingBottom === '' && document.querySelectorAll('.tour-lit').length === 0));
+  await phone.close();
+}
 
 await browser.close();
 server.close();
