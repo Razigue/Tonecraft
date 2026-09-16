@@ -1137,7 +1137,7 @@
 
   <main class="workspace">
     <section class="global-controls" aria-label="Global controls">
-      <div class="io-control"><Meter level={meters.input} /><Knob param={param('in_trim')} value={values.in_trim!} resetValue={resetValues.in_trim} onchange={v => setParam('in_trim',v)} label="Input" /></div>
+      <div class="io-control"><Meter level={meters.input} kind="peak" /><Knob param={param('in_trim')} value={values.in_trim!} resetValue={resetValues.in_trim} onchange={v => setParam('in_trim',v)} label="Input" /></div>
       <div class="gate-control"><Knob param={param('gate_threshold')} value={values.gate_threshold!} resetValue={resetValues.gate_threshold} onchange={v => setParam('gate_threshold',v)} label="Gate" /><button class="enable" aria-label="Gate enabled" aria-pressed={values.gate_bypass !== 1} onclick={() => setParam('gate_bypass',values.gate_bypass === 1 ? 0 : 1)}>{values.gate_bypass === 1 ? 'OFF' : 'ON'}</button></div>
       <div class="rig-selectors">
         <label class="selector"><span>AMPLIFIER</span><select aria-label="Capture" value={captureFile} onchange={e => chooseCapture(e.currentTarget.value)}>{#each captures as c}<option value={c.file}>{c.file === PRESETS[0]?.capture ? 'GUILT · Lead' : c.name}</option>{/each}</select></label>
