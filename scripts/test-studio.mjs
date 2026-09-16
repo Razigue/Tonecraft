@@ -157,7 +157,10 @@ try {
   const secondRate = second.readUInt32LE(24);
   assert(frames(second) > 0.8 * secondRate && frames(second) < 3 * secondRate, `the second track is its own take (${frames(second)} frames)`);
   assert(Math.abs(frames(both) - Math.max(frames(firstOnly), frames(second))) <= 1, 'both tracks together run to the longer one');
-  await page.getByRole('button', { name: 'Remove Guitar 2', exact: true }).click();
+  // Deleting asks twice, and deletes the track Record would record into.
+  await page.getByRole('button', { name: 'Delete Guitar 2', exact: true }).click();
+  assert.equal(await page.getByLabel('Recorded guitar 2', { exact: true }).count(), 1, 'one press only asks');
+  await page.getByRole('button', { name: 'Press again to delete', exact: true }).click();
   await page.getByLabel('Recorded guitar 2', { exact: true }).waitFor({ state: 'detached' });
   assert.equal(frames(await download('Guitar only')), frames(firstOnly), 'removing the second track leaves the first as it was');
   console.log('ok a second track is added, recorded over the first, exported alone or with it, and removed');

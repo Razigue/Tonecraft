@@ -341,8 +341,35 @@
     for (let i = index; i < tracks.length; i++) await saveTrackMedia(i);
     await deleteMedia(mediaId(last));
   }
+  /**
+   * Deleting loses a take for good, so it asks twice: the first press turns
+   * the button into its confirmation for a few seconds.
+   */
+  const CONFIRM_MS = 4000;
+  let confirmDelete = $state(false);
+  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
+  function cancelDelete() { clearTimeout(confirmTimer); confirmDelete = false; }
+  async function askDelete() {
+    if (recording || busy) return;
+    if (!confirmDelete) {
+      confirmDelete = true;
+      clearTimeout(confirmTimer);
+      confirmTimer = setTimeout(() => { confirmDelete = false; }, CONFIRM_MS);
+      return;
+    }
+    cancelDelete();
+    if (tracks.length > 1) { await removeTrack(armed); return; }
+    // The last track stays, empty: there is always somewhere to record.
+    setTrack(0, { take: null, fromFile: false });
+    seconds = 0;
+    selection = null;
+    syncMs = null;
+    persist();
+    await saveTrackMedia(0);
+  }
   function arm(index: number) {
     if (recording) return;
+    if (index !== armed) cancelDelete();
     armed = index;
     seconds = tracks[index]?.take ? tracks[index].take.samples.length / tracks[index].take.sampleRate : 0;
     persist();
@@ -581,7 +608,7 @@
     })();
   });
   onDestroy(() => {
-    disposed = true; clearTimeout(poll); abort?.abort();
+    disposed = true; clearTimeout(poll); clearTimeout(confirmTimer); abort?.abort();
     void stopLive();
     stopListening();
     stopPreview();
@@ -624,7 +651,6 @@
           <div class="lane-title">
             {#if tracks.length > 1}
               <button type="button" class="arm" role="radio" aria-checked={armed === i} aria-label={`Record into ${trackName(i)}`} disabled={recording || busy} onclick={() => arm(i)}><span></span>{trackName(i).toUpperCase()}</button>
-              <button type="button" class="remove" aria-label={`Remove ${trackName(i)}`} disabled={recording || busy} onclick={() => void removeTrack(i)}>✕</button>
             {:else}
               <span>GUITAR</span>
             {/if}
@@ -667,6 +693,10 @@
     {#if tracks.length < MAX_TRACKS}
       <button class="small add-track" disabled={recording || busy} onclick={addTrack}>+ Add track</button>
     {/if}
+    {#if tracks.length > 1 || armedTake}
+      <button class="small delete-track" class:confirm={confirmDelete} disabled={recording || busy || working !== null} onclick={() => void askDelete()}>
+        {confirmDelete ? 'Press again to delete' : tracks.length > 1 ? `Delete ${trackName(armed)}` : 'Delete take'}</button>
+    {/if}
     {#if backingFile}
       <span class="backing-name" title={backingFile.name}>{backingFile.name}</span>
       <button class="small" disabled={!engine || recording} onclick={preview}>{previewing ? '■ Stop' : '▶ Preview'}</button>
@@ -697,7 +727,7 @@
   .export-menu{position:relative}.menu{position:absolute;right:0;top:calc(100% + 6px);z-index:5;display:grid;min-width:210px;padding:6px;background:#262626;border:1px solid #4a4a4a;border-radius:6px;box-shadow:0 10px 24px #0008}.menu button{display:flex;justify-content:space-between;gap:16px;border:0;background:none;text-align:left;min-height:34px}.menu button:hover:not(:disabled){background:#353535}.menu small{font:10px var(--mono);color:#9c9c9c}
   .timeline{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;margin-top:16px}.lane-names{display:grid;grid-auto-rows:48px;gap:6px;font:9px var(--mono);letter-spacing:1.4px;color:#8f8f8f}.lane-head{display:flex;flex-direction:column;justify-content:center;gap:6px}.lane-head input{width:100%;height:16px;margin:0;accent-color:#c2a9c8;cursor:pointer}
   .lanes{position:relative;display:grid;grid-auto-rows:48px;gap:6px;touch-action:none;cursor:crosshair}.lane{position:relative;overflow:hidden;background:#181818;border:1px solid #373737;border-radius:3px}.lane svg{display:block;width:100%;height:100%}
-  .lane-title{display:flex;align-items:center;justify-content:space-between;gap:4px}.arm,.remove,.arm:hover,.remove:hover{display:flex;align-items:center;gap:6px;min-height:0;padding:0;border:0;background:none;font:9px var(--mono);letter-spacing:1.4px;color:#8f8f8f}.arm span{width:6px;height:6px;border-radius:50%;border:1px solid #6a6a6a}.armed .arm{color:#ededed}.armed .arm span{background:var(--ember);border-color:var(--ember)}.remove{font-size:10px;padding:2px 4px}.remove:hover:not(:disabled){color:#ededed}.guitar-lane.armed{border-color:#5a5a5a}
+  .lane-title{display:flex;align-items:center;justify-content:space-between;gap:4px}.arm,.arm:hover{display:flex;align-items:center;gap:6px;min-height:0;padding:0;border:0;background:none;font:9px var(--mono);letter-spacing:1.4px;color:#8f8f8f}.arm span{width:6px;height:6px;border-radius:50%;border:1px solid #6a6a6a}.armed .arm{color:#ededed}.armed .arm span{background:var(--ember);border-color:var(--ember)}.delete-track.confirm{color:var(--ember);border-color:var(--ember)}.guitar-lane.armed{border-color:#5a5a5a}
   .backing-lane.over,.guitar-lane.over{border-color:#d8c2dd}.drop-hint,.drop-hint:hover{position:absolute;inset:0;display:grid;place-items:center;min-height:0;padding:0 12px;text-align:center;line-height:1.4;border:0;border-radius:0;background:none;font-size:11px;color:#9c9c9c;cursor:pointer}.drop-hint>span{min-width:0;max-width:100%;white-space:normal}.drop-hint u{color:#dedbd5}.drop-hint input,.hidden-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
   .selection{position:absolute;top:0;bottom:0;background:#d8c2dd22;border-left:1px solid #d8c2dd;border-right:1px solid #d8c2dd;pointer-events:none}
   .playhead-track{position:absolute;inset:0;pointer-events:none}.playhead{position:absolute;inset:0;will-change:transform}.playhead::before{content:'';position:absolute;left:0;top:0;bottom:0;width:1px;background:#e8dfd0}
