@@ -1,0 +1,535 @@
+---
+/**
+ * The home page, in either language. Static from top to bottom: no island, no
+ * framework runtime, one inline script of a few hundred bytes that keeps the
+ * page in the language the studio was last used in (see below).
+ *
+ * Every image is a screenshot of the studio itself, taken from the built site
+ * by scripts/landing-shots.mjs: what the page shows is what the visitor gets.
+ */
+import { Picture } from 'astro:assets';
+import { LANDING, type LandingLocale } from '../i18n/landing.ts';
+import '../../app/tokens.css';
+
+import glass from '../assets/landing/glass.webp';
+import overview from '../assets/landing/overview.png';
+import amp from '../assets/landing/amp.png';
+import controls from '../assets/landing/controls.png';
+import panel from '../assets/landing/panel.png';
+import session from '../assets/landing/session.png';
+import recorder from '../assets/landing/recorder.png';
+import tabs from '../assets/landing/tabs.png';
+import tuner from '../assets/landing/tuner.png';
+import metronome from '../assets/landing/metronome.png';
+import engine from '../assets/landing/engine.png';
+
+interface Props { locale: LandingLocale }
+const { locale } = Astro.props;
+const t = LANDING[locale];
+
+const base = import.meta.env.BASE_URL;
+const homes: Record<LandingLocale, string> = { en: base, fr: `${base}fr/` };
+const absolute = (path: string) => new URL(path, Astro.site).href;
+const url = absolute(homes[locale]);
+const other: LandingLocale = locale === 'en' ? 'fr' : 'en';
+// ?lang= carries the choice to the studio, which keeps it: both then open in
+// the same language from then on.
+const studio = `${base}app/?lang=${locale}`;
+const source = 'https://github.com/Razigue/Tonecraft';
+
+const shots = { amp, pedals: panel, cab: controls, tabs } as const;
+const formats = ['avif', 'webp'] as const;
+
+const jsonLd = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'Tonecraft',
+    url,
+    inLanguage: t.htmlLang,
+    description: t.description,
+    applicationCategory: 'MultimediaApplication',
+    applicationSubCategory: 'Guitar amp simulator',
+    operatingSystem: 'Windows, macOS, Linux',
+    browserRequirements: 'Requires a desktop browser with Web Audio and WebAssembly (Chrome, Edge, Firefox, Safari).',
+    isAccessibleForFree: true,
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
+    screenshot: absolute(overview.src),
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    inLanguage: t.htmlLang,
+    mainEntity: t.faq.items.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
+  },
+];
+
+/*
+ * One language across the home page and the studio. The studio keeps its
+ * choice under this key; a visitor who picked French there and comes back to
+ * `/` is sent to `/fr/`, and the reverse. A language link carries ?lang=, which
+ * records the new choice instead of being sent back. Crawlers keep nothing in
+ * storage, so they are never redirected and each page stays indexable under its
+ * own hreflang. Inline and in the head: it runs before the first paint.
+ */
+const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search).get('lang'),h=${JSON.stringify(homes)};if(q==='en'||q==='fr'){localStorage.setItem(k,q);history.replaceState(null,'',location.pathname+location.hash)}else{var s=localStorage.getItem(k);if(s&&s!=='${locale}'&&h[s])location.replace(h[s]+location.hash)}}catch(e){}`;
+---
+
+<!doctype html>
+<html lang={t.htmlLang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script is:inline set:html={sync} />
+    <title>{t.title}</title>
+    <meta name="description" content={t.description} />
+    <link rel="canonical" href={url} />
+    <link rel="alternate" hreflang="en" href={absolute(homes.en)} />
+    <link rel="alternate" hreflang="fr" href={absolute(homes.fr)} />
+    <link rel="alternate" hreflang="x-default" href={absolute(homes.en)} />
+    <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
+    <link rel="sitemap" href={`${base}sitemap-index.xml`} />
+    <meta name="theme-color" content="#080808" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Tonecraft" />
+    <meta property="og:title" content={t.title} />
+    <meta property="og:description" content={t.description} />
+    <meta property="og:url" content={url} />
+    <meta property="og:locale" content={t.ogLocale} />
+    <meta property="og:locale:alternate" content={LANDING[other].ogLocale} />
+    <meta property="og:image" content={absolute(overview.src)} />
+    <meta property="og:image:alt" content={t.alt.overview} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={t.title} />
+    <meta name="twitter:description" content={t.description} />
+    <meta name="twitter:image" content={absolute(overview.src)} />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+  </head>
+  <body>
+    <a class="skip" href="#main">{locale === 'fr' ? 'Aller au contenu' : 'Skip to content'}</a>
+
+    <header class="top">
+      <a class="wordmark" href={homes[locale]}>tonecraft</a>
+      <nav aria-label={locale === 'fr' ? 'Principale' : 'Main'}>
+        <a href="#features">{t.nav.features}</a>
+        <a href="#engine">{t.nav.engine}</a>
+        <a href="#faq">{t.nav.faq}</a>
+        <a class="button small" href={studio}>{t.nav.open}</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero">
+        <div class="hero-glass" aria-hidden="true">
+          <Picture src={glass} formats={formats} widths={[1200, 2172]} sizes="100vw" alt="" loading="eager" fetchpriority="high" />
+        </div>
+        <div class="hero-inner">
+          <div class="hero-copy">
+            <h1>Tonecraft</h1>
+            <p class="tagline">{t.hero.tagline}</p>
+            <p class="lede">{t.hero.lede}</p>
+            <p class="price t-readout">{t.hero.price}</p>
+            <div class="actions">
+              <a class="button primary" href={studio}>{t.hero.open}</a>
+              <a class="button" href="#overview">{t.hero.more}</a>
+            </div>
+            <ul class="facts">{t.hero.facts.map((f) => <li>{f}</li>)}</ul>
+          </div>
+          <div class="hero-shot">
+            <Picture src={amp} formats={formats} widths={[720, 1180, 2360]} sizes="(min-width: 960px) 56vw, 100vw" alt={t.alt.hero} loading="eager" />
+          </div>
+        </div>
+      </section>
+
+      <section id="overview" class="block overview">
+        <p class="eyebrow">{t.overview.eyebrow}</p>
+        <h2>{t.overview.title}</h2>
+        <span class="rule" aria-hidden="true"></span>
+        <div class="prose">{t.overview.body.map((p) => <p>{p}</p>)}</div>
+        <ol class="points steps">
+          {t.overview.steps.map(([term, def]) => (<li><span class="term">{term}</span><span class="def">{def}</span></li>))}
+        </ol>
+        <figure class="window wide">
+          <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>tonecraft · studio</span></div>
+          <Picture src={overview} formats={formats} widths={[800, 1600, 3200]} sizes="(min-width: 1240px) 1180px, 100vw" alt={t.alt.overview} loading="lazy" />
+        </figure>
+      </section>
+
+      <section id="engine" class="block feature engine">
+        <div class="engine-grid">
+          <figure class="shot small">
+            <Picture src={engine} formats={formats} widths={[490, 980]} sizes="(min-width: 900px) 420px, 100vw" alt={t.alt.engine} loading="lazy" />
+          </figure>
+          <div class="engine-copy">
+            <p class="eyebrow">{t.engine.eyebrow}</p>
+            <h2>{t.engine.title}</h2>
+            <span class="rule left" aria-hidden="true"></span>
+            {t.engine.body.map((p) => <p>{p}</p>)}
+            <p class="os t-readout">ASIO · WASAPI · CoreAudio · ALSA</p>
+          </div>
+        </div>
+      </section>
+
+      <div id="features">
+        {t.features.map((f) => (
+          <section id={f.id} class="block feature">
+            {f.id === 'session' ? (
+              <div class="stack">
+                <Picture src={session} formats={formats} widths={[800, 1600, 2360]} sizes="(min-width: 1080px) 980px, 100vw" alt={t.alt.session} loading="lazy" />
+                <Picture src={recorder} formats={formats} widths={[800, 1600, 2360]} sizes="(min-width: 1080px) 980px, 100vw" alt="" loading="lazy" />
+              </div>
+            ) : (
+              <figure class:list={['shot', f.id === 'tabs' && 'paper']}>
+                <Picture src={shots[f.id as keyof typeof shots]} formats={formats} widths={[800, 1600, 2360]} sizes="(min-width: 1080px) 980px, 100vw" alt={t.alt[f.id]} loading="lazy" />
+              </figure>
+            )}
+            <p class="eyebrow">{f.eyebrow}</p>
+            <h2>{f.title}</h2>
+            <span class="rule" aria-hidden="true"></span>
+            <div class="prose">{f.body.map((p) => <p>{p}</p>)}</div>
+            {f.points && (
+              <dl class="points">
+                {f.points.map(([term, def]) => (<div><dt>{term}</dt><dd>{def}</dd></div>))}
+              </dl>
+            )}
+          </section>
+        ))}
+
+        <section class="block pair" aria-label={`${t.pair[0].title} · ${t.pair[1].title}`}>
+          {t.pair.map((f, i) => (
+            <article id={f.id}>
+              <figure class="shot small">
+                <Picture src={i === 0 ? tuner : metronome} formats={formats} widths={[480, 960]} sizes="(min-width: 900px) 440px, 100vw" alt={t.alt[f.id]} loading="lazy" />
+              </figure>
+              <h3>{f.title}</h3>
+              <span class="rule" aria-hidden="true"></span>
+              <div class="prose">{f.body.map((p) => <p>{p}</p>)}</div>
+            </article>
+          ))}
+        </section>
+      </div>
+
+      <section class="banner" aria-label={t.banner.line}>
+        <Picture src={glass} formats={formats} widths={[1200, 2172]} sizes="100vw" alt={t.alt.banner} loading="lazy" />
+        <div class="banner-copy">
+          <p class="banner-line">{t.banner.line}</p>
+          <p class="banner-sub">{t.banner.sub}</p>
+        </div>
+      </section>
+
+      <section class="block requirements">
+        <div class="req-grid">
+          <div>
+            <h2>{t.requirements.title}</h2>
+            <ul class="req-list">{t.requirements.items.map((i) => <li>{i}</li>)}</ul>
+          </div>
+          <div>
+            <h3>{t.requirements.browsers}</h3>
+            <table>
+              <thead><tr>{t.requirements.head.map((h) => <th scope="col">{h}</th>)}</tr></thead>
+              <tbody>
+                {t.requirements.table.map(([b, l, p]) => (<tr><th scope="row">{b}</th><td>{l}</td><td>{p}</td></tr>))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="faq" class="block faq">
+        <h2>{t.faq.title}</h2>
+        <div class="faq-list">
+          {t.faq.items.map(([q, a]) => (
+            <details>
+              <summary>{q}</summary>
+              <p>{a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <section class="cta">
+        <h2>{t.cta.title}</h2>
+        <p>{t.cta.body}</p>
+        <a class="button primary" href={studio}>{t.cta.open}</a>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="foot-grid">
+        <div>
+          <p class="wordmark">tonecraft</p>
+          <p class="muted">{t.footer.tagline}</p>
+        </div>
+        <nav aria-label={t.footer.product}>
+          <p class="eyebrow">{t.footer.product}</p>
+          <a href={studio}>{t.nav.open}</a>
+          <a href="#features">{t.nav.features}</a>
+          <a href="#engine">Tonecraft Engine</a>
+          <a href="#faq">{t.nav.faq}</a>
+        </nav>
+        <nav aria-label={t.footer.source}>
+          <p class="eyebrow">{t.footer.source}</p>
+          <a href={source} rel="noopener">GitHub</a>
+        </nav>
+      </div>
+      <div class="foot-bottom">
+        <p class="muted">© {new Date().getFullYear()} Tonecraft · {t.footer.license}</p>
+        <!-- A native popover: it opens, traps nothing, closes on Escape or a
+             click outside, and costs no script. -->
+        <button class="globe" type="button" popovertarget="language">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z" /></svg>
+          <span>{locale === 'fr' ? 'Français' : 'English'}</span>
+        </button>
+      </div>
+    </footer>
+
+    <div id="language" class="language" popover aria-labelledby="language-title">
+      <div class="language-head">
+        <h2 id="language-title">{t.nav.language}</h2>
+        <button type="button" popovertarget="language" popovertargetaction="hide" aria-label={locale === 'fr' ? 'Fermer' : 'Close'}>×</button>
+      </div>
+      <ul>
+        <li><a href={`${homes.en}?lang=en`} hreflang="en" lang="en" aria-current={locale === 'en' ? 'true' : undefined}>English</a></li>
+        <li><a href={`${homes.fr}?lang=fr`} hreflang="fr" lang="fr" aria-current={locale === 'fr' ? 'true' : undefined}>Français</a></li>
+      </ul>
+    </div>
+  </body>
+</html>
+
+<style is:global>
+  /* The studio's tokens (app/tokens.css), so the page and the rig are one
+     palette. Page-only values sit here, named, not inline. */
+  :root {
+    --page-max: 1180px;
+    --text-max: 620px;
+    --hairline: rgba(228, 228, 228, 0.14);
+    --glass-accent: #c9a7dc; /* The GUILT glow, as the studio draws it. */
+    --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    margin: 0;
+    background: var(--chalk);
+    color: var(--ink);
+    font-family: var(--body);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  img { display: block; max-width: 100%; height: auto; }
+  a { color: inherit; }
+  h1, h2, h3 { margin: 0; font-weight: 500; letter-spacing: -0.01em; }
+  p { margin: 0; }
+  :focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
+</style>
+
+<style>
+  .skip { position: absolute; left: -999px; top: 8px; padding: 8px 12px; background: var(--ink); color: var(--chalk); z-index: 10; }
+  .skip:focus { left: 8px; }
+
+  .top {
+    position: absolute; inset: 0 0 auto 0; z-index: 5;
+    display: flex; align-items: center; justify-content: space-between; gap: 24px;
+    padding: 20px clamp(16px, 4vw, 48px);
+  }
+  .wordmark { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; text-decoration: none; }
+  .top nav { display: flex; align-items: center; gap: clamp(12px, 2vw, 28px); font-size: 14px; }
+  .top nav > a:not(.button) { text-decoration: none; color: var(--graphite); transition: color 160ms var(--ease); }
+  .top nav > a:not(.button):hover { color: var(--ink); }
+
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--graphite); }
+
+  .button {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 22px;
+    border: 1px solid rgba(228, 228, 228, 0.28); border-radius: 4px; background: #161616;
+    font-size: 15px; text-decoration: none; white-space: nowrap;
+    transition: background-color 160ms var(--ease), border-color 160ms var(--ease);
+  }
+  .button.primary { background: var(--ink); color: var(--chalk); border-color: var(--ink); font-weight: 500; }
+  .button:hover { border-color: rgba(228, 228, 228, 0.5); }
+  .button.primary:hover { background: #fff; }
+  .button.small { min-height: 36px; padding: 0 14px; font-size: 13px; }
+
+  /* Hero: the stained glass, darkened towards the text. */
+  .hero { position: relative; min-height: 100vh; min-height: 100svh; display: grid; align-items: center; overflow: hidden; }
+  .hero-glass { position: absolute; inset: 0; opacity: 0.55; }
+  .hero-glass :global(img) { width: 100%; height: 100%; object-fit: cover; }
+  .hero-glass::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, var(--chalk) 18%, rgba(8, 8, 8, 0.82) 48%, rgba(8, 8, 8, 0.45)),
+                linear-gradient(0deg, var(--chalk) 2%, transparent 40%, rgba(8, 8, 8, 0.7));
+  }
+  .hero-inner {
+    position: relative; width: min(100% - 32px, 1320px); margin: 0 auto; padding: 120px 0 72px;
+    display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(24px, 4vw, 64px); align-items: center;
+  }
+  .hero-copy { display: grid; gap: 18px; justify-items: start; }
+  .hero h1 { font-size: clamp(48px, 7vw, 92px); font-weight: 600; letter-spacing: -0.04em; line-height: 0.95; }
+  .tagline { font-size: clamp(20px, 2.2vw, 26px); }
+  .lede { color: var(--graphite); font-size: 17px; line-height: 1.55; max-width: 34ch; }
+  .price { color: var(--glass-accent); font-size: 15px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+  .facts { list-style: none; padding: 0; margin: 4px 0 0; display: grid; gap: 4px; font-family: var(--mono); font-size: 12px; color: var(--graphite); }
+  .hero-shot { animation: rise 900ms var(--ease) both; }
+  .hero-shot :global(img) { border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7); }
+  @keyframes rise { from { opacity: 0; transform: translateY(24px); } }
+  @media (prefers-reduced-motion: reduce) { .hero-shot { animation: none; } }
+
+  /* Content blocks: centred, one idea each, as a product sheet. */
+  .block { width: min(100% - 32px, var(--page-max)); margin: 0 auto; padding: clamp(72px, 10vw, 140px) 0; display: grid; justify-items: center; text-align: center; gap: 18px; }
+  .block h2 { font-size: clamp(26px, 3.2vw, 38px); line-height: 1.15; max-width: 22ch; }
+  .rule { display: block; width: 36px; height: 1px; background: var(--glass-accent); opacity: 0.7; }
+  .rule.left { justify-self: start; }
+  .prose { display: grid; gap: 12px; max-width: var(--text-max); color: var(--graphite); font-size: 16px; line-height: 1.65; }
+
+  .shot { margin: 0 0 28px; width: min(100%, 980px); }
+  .shot :global(img) { border-radius: 10px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); }
+  .shot.small { width: min(100%, 440px); }
+  .shot.paper :global(img) { border: 1px solid var(--hairline); }
+  .stack { display: grid; gap: 16px; width: min(100%, 980px); margin-bottom: 28px; }
+  .stack :global(img) { border-radius: 10px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); }
+
+  .window { margin: 36px 0 0; width: 100%; border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden; background: #0d0d0d; box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6); }
+  .window-bar { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--hairline); }
+  .window-bar i { width: 9px; height: 9px; border-radius: 50%; background: var(--bone); }
+  .window-bar span { margin-left: 12px; font-family: var(--mono); font-size: 11px; color: var(--graphite); }
+
+  .points { margin: 8px 0 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+  .steps { list-style: none; padding: 0; counter-reset: step; }
+  .steps li { counter-increment: step; display: grid; gap: 6px; }
+  .steps .term::before { content: counter(step, decimal-leading-zero) '  '; color: var(--graphite); }
+  .points div, .steps li { min-width: 150px; padding: 14px 18px; border: 1px solid var(--hairline); border-radius: 8px; text-align: left; }
+  .points dt, .steps .term { font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--glass-accent); }
+  .points dd, .steps .def { margin: 6px 0 0; font-size: 14px; color: var(--graphite); }
+
+  .feature + .feature { border-top: 1px solid var(--hairline); }
+
+  .pair { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: clamp(32px, 6vw, 96px); border-top: 1px solid var(--hairline); }
+  .pair article { display: grid; justify-items: center; gap: 16px; }
+  .pair h3 { font-size: 24px; }
+
+  .engine { border-top: 1px solid var(--hairline); }
+  .engine-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(32px, 6vw, 88px); align-items: center; text-align: left; }
+  .engine-copy { display: grid; gap: 16px; justify-items: start; color: var(--graphite); line-height: 1.65; }
+  .engine-copy h2 { color: var(--ink); }
+  .engine .shot { margin: 0; }
+  .os { font-size: 12px; letter-spacing: 0.12em; color: var(--ink); }
+
+  .banner { position: relative; height: clamp(360px, 60vw, 720px); overflow: hidden; display: grid; place-items: center; }
+  .banner :global(picture), .banner :global(img) { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .banner::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, var(--chalk), rgba(8, 8, 8, 0.35) 30%, rgba(8, 8, 8, 0.35) 70%, var(--chalk)); }
+  .banner-copy { position: relative; z-index: 1; text-align: center; padding: 0 16px; }
+  .banner-line { font-size: clamp(48px, 10vw, 140px); font-weight: 700; font-style: italic; letter-spacing: -0.04em; line-height: 1; text-transform: uppercase; text-shadow: 0 6px 40px rgba(0, 0, 0, 0.6); }
+  .banner-sub { margin-top: 16px; font-size: clamp(16px, 2vw, 20px); }
+
+  .requirements { text-align: left; justify-items: stretch; }
+  .req-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(32px, 6vw, 96px); }
+  .req-grid h3 { font-size: 20px; margin-bottom: 16px; }
+  .req-list { margin: 20px 0 0; padding-left: 18px; display: grid; gap: 10px; color: var(--graphite); line-height: 1.6; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 12px 8px; border-bottom: 1px solid var(--hairline); text-align: left; }
+  thead th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--graphite); font-weight: 400; }
+  td { color: var(--graphite); }
+
+  .faq { border-top: 1px solid var(--hairline); }
+  .faq-list { width: min(100%, 760px); text-align: left; margin-top: 16px; }
+  details { border-bottom: 1px solid var(--hairline); }
+  summary { cursor: pointer; list-style: none; padding: 20px 32px 20px 0; position: relative; font-size: 17px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: '+'; position: absolute; right: 4px; top: 18px; font-family: var(--mono); color: var(--graphite); transition: transform 160ms var(--ease); }
+  details[open] summary::after { transform: rotate(45deg); }
+  details p { padding: 0 0 20px; color: var(--graphite); line-height: 1.65; }
+
+  .cta { display: grid; justify-items: center; gap: 18px; text-align: center; padding: clamp(80px, 10vw, 140px) 16px; background: radial-gradient(ellipse at 50% 100%, rgba(201, 167, 220, 0.16), transparent 60%); border-top: 1px solid var(--hairline); }
+  .cta h2 { font-size: clamp(30px, 4vw, 48px); letter-spacing: -0.02em; }
+  .cta p { color: var(--graphite); }
+
+  .foot { border-top: 1px solid var(--hairline); padding: 56px clamp(16px, 4vw, 48px) 32px; }
+  .foot-grid { width: min(100%, var(--page-max)); margin: 0 auto 40px; display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 32px; }
+  .foot nav { display: grid; gap: 10px; align-content: start; font-size: 14px; }
+  .foot nav a { color: var(--graphite); text-decoration: none; }
+  .foot nav a:hover { color: var(--ink); }
+  .foot .wordmark { margin-bottom: 8px; }
+  .muted { color: var(--graphite); font-size: 13px; }
+  .foot-bottom { width: min(100%, var(--page-max)); margin: 0 auto; padding-top: 24px; border-top: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .globe { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 4px; border: 0; background: none; color: var(--graphite); font: 13px var(--body); cursor: pointer; }
+  .globe:hover { color: var(--ink); }
+
+  .language { width: min(100% - 32px, 360px); padding: 24px; border: 1px solid var(--hairline); border-radius: 8px; background: #141414; color: var(--ink); }
+  .language::backdrop { background: rgba(8, 8, 8, 0.72); }
+  .language-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .language-head h2 { font-size: 18px; }
+  .language-head button { width: 40px; height: 40px; border: 0; background: none; color: var(--graphite); font-size: 22px; cursor: pointer; }
+  .language-head button:hover { color: var(--ink); }
+  .language ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .language a { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 14px; border: 1px solid var(--hairline); border-radius: 4px; text-decoration: none; }
+  .language a:hover { border-color: rgba(228, 228, 228, 0.4); }
+  .language a[aria-current]::after { content: '●'; font-size: 8px; color: var(--glass-accent); }
+  @media (prefers-reduced-motion: no-preference) {
+    .language { transition: opacity 180ms var(--ease), transform 180ms var(--ease), display 180ms allow-discrete, overlay 180ms allow-discrete; }
+    .language:not(:popover-open) { opacity: 0; transform: translateY(8px); }
+    @starting-style { .language:popover-open { opacity: 0; transform: translateY(8px); } }
+  }
+
+  /*
+   * Motion, in CSS only: the page ships no script to animate itself (the
+   * choice was GSAP or 0 kB, and 0 kB won). Scroll-driven animations run off
+   * the main thread, on transform and opacity alone. A browser without them
+   * (Firefox today) shows the page still, which is the same page.
+   */
+  @media (prefers-reduced-motion: no-preference) {
+    .hero-copy > * { animation: rise 800ms var(--ease) both; }
+    .hero-copy > :nth-child(2) { animation-delay: 60ms; }
+    .hero-copy > :nth-child(3) { animation-delay: 120ms; }
+    .hero-copy > :nth-child(4) { animation-delay: 180ms; }
+    .hero-copy > :nth-child(5) { animation-delay: 240ms; }
+    .hero-copy > :nth-child(6) { animation-delay: 300ms; }
+    .hero-copy > :nth-child(7) { animation-delay: 360ms; }
+    .hero-shot { animation-delay: 200ms; }
+
+    @supports (animation-timeline: view()) {
+      .block > *, .pair article, .points div, .steps li, .faq-list details, .cta > * {
+        animation: reveal linear both;
+        animation-timeline: view();
+        animation-range: entry 0% entry 70%;
+      }
+      .shot :global(img), .stack :global(img), .window :global(img) {
+        animation: settle linear both;
+        animation-timeline: view();
+        animation-range: entry 0% cover 45%;
+      }
+      .hero-glass :global(img) {
+        animation: drift linear both;
+        animation-timeline: scroll(root);
+        animation-range: 0 100vh;
+      }
+      .banner :global(img) {
+        animation: parallax linear both;
+        animation-timeline: view();
+      }
+      .banner-copy {
+        animation: reveal linear both;
+        animation-timeline: view();
+        animation-range: entry 20% cover 50%;
+      }
+    }
+  }
+  @keyframes reveal { from { opacity: 0; transform: translateY(32px); } }
+  @keyframes settle { from { opacity: 0.2; transform: scale(0.94); } }
+  @keyframes drift { to { transform: scale(1.08) translateY(4%); opacity: 0.4; } }
+  @keyframes parallax { from { transform: translateY(-12%) scale(1.2); } to { transform: translateY(12%) scale(1.2); } }
+
+  @media (max-width: 900px) {
+    .top nav > a:not(.button) { display: none; }
+    .hero-inner { grid-template-columns: 1fr; padding-top: 96px; }
+    .hero-glass::after { background: linear-gradient(0deg, var(--chalk) 10%, rgba(8, 8, 8, 0.78) 60%, rgba(8, 8, 8, 0.6)); }
+    .pair, .engine-grid, .req-grid { grid-template-columns: 1fr; }
+    .engine-grid { justify-items: center; }
+    .foot-grid { grid-template-columns: 1fr 1fr; }
+    .foot-grid > div:first-child { grid-column: 1 / -1; }
+  }
+  @media (max-width: 520px) {
+    .top .button.small { display: none; }
+    th, td { padding: 10px 4px; font-size: 13px; }
+  }
+</style>

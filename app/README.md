@@ -4,7 +4,7 @@ Depends on `engine/`, `schema/` and `store/`. Never touches the audio graph dire
 
 The session — tone, capture, cabinet, devices, backend, metronome tempo and volume, loop level, file looping, the last DI take — is saved to IndexedDB through `store/` and restored at load. It pre-fills the rig; it never starts the engine or a sound. What the looper recorded is audio and is not among it.
 
-One island, one route, `client:only="svelte"`.
+One island, one route — `/app/` — `client:only="svelte"`. The language is chosen in the audio settings (and on the welcome, for a first visit), never in the bar; `?lang=` from the home pages sets it.
 
 - `Rig.svelte` owns the studio layout and existing audio session state. Global controls and amplifier/cabinet/preset selectors sit above the amplifier head; source, device and file controls sit below it.
 - `tokens.css` defines the neutral Tonecraft palette. Amplifier-specific materials and accents stay scoped to the head. GUILT is associated with the Lead capture, so editing a parameter does not remove its identity.

@@ -5,10 +5,11 @@ import sitemap from '@astrojs/sitemap';
 import tailwind from '@tailwindcss/vite';
 import { alphaTab } from '@coderline/alphatab-vite';
 
-// Provisional. PRODUCT.md section 7 targets tonecraft.app; the domain is not
-// bought yet and trademark clearance (OI-6) has not run. Sitemap and canonical
-// URLs derive from this, so it has to be settled before launch.
-const SITE = 'https://tonecraft.app';
+// Canonical URLs, the sitemap and robots.txt derive from this. CI passes the
+// origin GitHub Pages actually serves — the github.io host today, the custom
+// domain once one is set — so a canonical never points at a host that does not
+// answer. PRODUCT.md section 7 targets tonecraft.app, not bought yet.
+const SITE = process.env.SITE_ORIGIN ?? 'https://tonecraft.app';
 
 // GitHub Pages serves a project repository under /<repo>/, so every absolute
 // path in the app would 404 there. CI passes the repository name; locally and
@@ -51,7 +52,16 @@ export default defineConfig({
   // need one.
   output: 'static',
 
-  integrations: [svelte(), sitemap()],
+  integrations: [
+    svelte(),
+    // The studio is an application, not content: it would rank for nothing and
+    // compete with the home page it links from. Each home page lists its
+    // translation so the sitemap carries the same hreflang pairs as the pages.
+    sitemap({
+      filter: (page) => !new URL(page).pathname.endsWith('/app/'),
+      i18n: { defaultLocale: 'en', locales: { en: 'en', fr: 'fr' } },
+    }),
+  ],
 
   vite: {
     plugins: [alphaTabEffectRows(), tailwind(), alphaTab()],

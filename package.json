@@ -38,6 +38,7 @@
     "test:recording": "tsx scripts/test-recording.ts",
     "test:studio": "node scripts/test-studio.mjs",
     "test:browser": "node scripts/browser-test.mjs",
+    "shots": "node scripts/landing-shots.mjs",
     "verify": "npm test && npm run build && npm run test:browser && npm run test:studio"
   },
   "dependencies": {

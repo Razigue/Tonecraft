@@ -1,8 +1,9 @@
 //! Opening Tonecraft in the player's browser. The page is the interface; the
 //! engine only ever sends the player there.
 
-/// Where Tonecraft lives.
-pub const PAGE: &str = "https://razigue.github.io/Tonecraft/";
+/// Where Tonecraft lives: the studio itself, not the home page, which is
+/// written for visitors who have not played yet.
+pub const PAGE: &str = "https://razigue.github.io/Tonecraft/app/";
 
 /// Opens `url` in the default browser. Best effort: there is no one to tell
 /// if it fails, and the icon is still there to try again.

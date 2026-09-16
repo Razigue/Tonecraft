@@ -88,7 +88,7 @@ function serve() {
   return new Promise((resolve) => server.listen(PORT, '127.0.0.1', () => resolve(server)));
 }
 
-if (!fs.existsSync(path.join(DIST, 'index.html'))) {
+if (!fs.existsSync(path.join(DIST, 'app', 'index.html'))) {
   console.error('dist/ is not built. Run `npm run build` first.');
   process.exit(1);
 }
@@ -108,7 +108,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
 console.log('\nTonecraft — end-to-end\n');
 
-await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+await page.goto(`http://127.0.0.1:${PORT}/app/`, { waitUntil: 'networkidle' });
 
 check('the page renders the rig', await page.locator('.amp-head').isVisible());
 check('the welcome offers musician and tester paths',
@@ -687,7 +687,7 @@ demoPage.on('pageerror', (e) => demoErrors.push(String(e)));
 demoPage.on('request', (request) => {
   if (request.url().includes('/di/demo-di.wav')) demoRequests.push(request.url());
 });
-await demoPage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+await demoPage.goto(`http://127.0.0.1:${PORT}/app/`, { waitUntil: 'networkidle' });
 await demoPage.getByRole('button', { name: 'Tester' }).click();
 // A tester is walked through the page one window at a time, the rest in the
 // dark, each window lit where it is and explained beside it.
@@ -804,7 +804,7 @@ check('nothing threw on the demo path', demoErrors.length === 0, demoErrors[0]);
  * running locally will see this check fail: it is written for its absence.
  */
 const nativePage = await browser.newPage();
-await nativePage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+await nativePage.goto(`http://127.0.0.1:${PORT}/app/`, { waitUntil: 'networkidle' });
 await nativePage.getByRole('button', { name: 'Musician' }).click();
 const engines = nativePage.getByRole('radiogroup', { name: 'Audio engine' }).getByRole('radio');
 await engines.nth(1).click();
@@ -882,7 +882,7 @@ await updatePage.route('https://api.github.com/**', (route) => route.fulfill({
   status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' },
   body: JSON.stringify([{ tag_name: 'engine-v0.1.2', draft: false, prerelease: false }, { tag_name: 'engine-v0.1.1', draft: false, prerelease: false }]),
 }));
-await updatePage.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+await updatePage.goto(`http://127.0.0.1:${PORT}/app/`, { waitUntil: 'networkidle' });
 await updatePage.getByRole('button', { name: 'Musician' }).click();
 await updatePage.getByRole('radiogroup', { name: 'Audio engine' }).getByRole('radio').nth(1).click();
 let updateOffered = false;
@@ -913,7 +913,7 @@ check('an engine older than the newest release is offered the update', updateOff
     for (let x = 260; x >= 100; x -= 40) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y }] });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   };
-  await tap.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle' });
+  await tap.goto(`http://127.0.0.1:${PORT}/app/`, { waitUntil: 'networkidle' });
   await tap.getByRole('button', { name: 'Tester' }).tap();
   const seen = [];
   for (const [step, target] of tourTargets.entries()) {

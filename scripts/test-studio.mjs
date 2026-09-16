@@ -14,7 +14,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (!url.pathname.startsWith(base)) { res.writeHead(404); res.end(); return; }
   const relative = decodeURIComponent(url.pathname.slice(base.length));
-  const file = path.resolve(dist, relative || 'index.html');
+  const file = path.resolve(dist, relative.endsWith('/') || !relative ? relative + 'index.html' : relative);
   if (!file.startsWith(dist + path.sep) || !fs.existsSync(file)) { res.writeHead(404); res.end(); return; }
   res.setHeader('Content-Type', mime[path.extname(file)] ?? 'application/octet-stream');
   fs.createReadStream(file).pipe(res);
@@ -32,7 +32,7 @@ page.on('console', m => { if (m.type() === 'error') console.log('browser:', m.te
 const soundFonts = [];
 page.on('response', r => { if (r.url().endsWith('/MuseScore_General.sf3')) soundFonts.push(r.status()); });
 try {
-  await page.goto(`http://127.0.0.1:${server.address().port}${base}`);
+  await page.goto(`http://127.0.0.1:${server.address().port}${base}app/`);
   await page.getByRole('button', { name: 'Musician' }).click();
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await page.locator('.capture-info[data-capture="loaded"]').waitFor({ state: 'attached', timeout: 30000 });

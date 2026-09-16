@@ -91,11 +91,16 @@ jobs:
         run: npm run test:studio
 
       # GitHub Pages serves this under /<repo>/ unless a custom domain is set,
-      # so what is deployed is rebuilt against that base.
+      # so what is deployed is rebuilt against the origin and base it reports:
+      # canonical URLs and the sitemap follow a custom domain on their own.
+      - id: pages
+        uses: actions/configure-pages@v5
+
       - name: Rebuild for deployment
         run: npm run build
         env:
-          BASE_PATH: /${{ github.event.repository.name }}/
+          SITE_ORIGIN: ${{ steps.pages.outputs.origin }}
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}/
 
       - uses: actions/upload-pages-artifact@v3
         with:

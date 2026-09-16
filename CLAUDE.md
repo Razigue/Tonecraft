@@ -172,7 +172,7 @@ L'utilisateur ne peut pas distinguer un problème d'impédance d'un mauvais mote
 ## 4. Règles frontend
 
 - Les pages de contenu envoient **0 kB de JS**. Toute hydratation doit être justifiée.
-- L'application est **un seul îlot**, sur une seule route, en `client:only="svelte"`.
+- L'application est **un seul îlot**, sur une seule route (`/app/`, hors index et hors sitemap), en `client:only="svelte"`. L'accueil (`/` et `/fr/`) est une landing statique qui y mène avec `?lang=` ; les deux partagent le choix de langue (`tonecraft-locale`).
 - **Aucun contrôle rotatif. Tous les contrôles continus sont des faders verticaux linéaires**, en SVG + `transform: translate()` en CSS. Jamais de canvas, jamais de sprite sheet. Composité GPU, coût CPU nul. Voir `DESIGN.md` §1 et §6 : c'est une position argumentée, pas une préférence.
 - **Aucun `<canvas>`, aucun `AnalyserNode`, ni spectre ni oscilloscope.** Toute la visualisation est portée par le cordon (`DESIGN.md` §5) : un filet SVG/CSS dont l'opacité par segment est pilotée par le RMS de chaque étage, calculé dans le worklet et posté à 30 Hz. Suspendu quand l'onglet est caché.
 - Sur les pages preset pré-rendues, le cordon est alimenté par l'enveloppe RMS calculée au build et livrée en JSON, animée depuis `audio.currentTime`. Aucun graphe audio, même signature visuelle sur les deux chemins.

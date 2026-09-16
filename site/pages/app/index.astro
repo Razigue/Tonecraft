@@ -1,0 +1,49 @@
+---
+// The app is a single Svelte island on a single route (FR-21), /app/: the home
+// pages, / and /fr/, are static content written for search and ship no
+// JavaScript. client:only because the island owns an AudioContext, which
+// cannot exist during a static build.
+//
+// The page carries nothing of its own: the chain is the interface, and the page
+// is the rig (DESIGN.md section 4).
+import Rig from '../../../app/Rig.svelte';
+
+// Same reason the engine resolves its URLs against the base: GitHub Pages
+// serves a project repository under /<repo>/, and an absolute path 404s there.
+const base = import.meta.env.BASE_URL;
+const home = new URL(base, Astro.site).href;
+const title = 'Tonecraft | Studio';
+const description = 'The Tonecraft studio: a real-time guitar amp, boost, cabinet and reverb in the browser.';
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <!-- The home pages carry the search surface; the studio would only compete
+         with them for the same queries. Links are still followed. -->
+    <meta name="robots" content="noindex, follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Tonecraft" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={home} />
+    <style is:global>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; background: #080808; color: #e4e4e4; font-family: "Helvetica Neue", system-ui, sans-serif; }
+      body { -webkit-font-smoothing: antialiased; }
+    </style>
+  </head>
+  <body>
+    <Rig client:only="svelte" />
+    <noscript>
+      <h1>Tonecraft</h1>
+      <p>{description}</p>
+      <p>Tonecraft needs JavaScript and WebAudio to run. <a href={base}>About Tonecraft</a></p>
+    </noscript>
+  </body>
+</html>

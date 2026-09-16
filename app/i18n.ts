@@ -14,6 +14,17 @@ export const LOCALES: readonly Locale[] = ['en', 'fr'];
 const KEY = 'tonecraft-locale';
 
 export function detectLocale(): Locale {
+  // The French home page links here with ?lang=fr: someone who read the page in
+  // one language expects the studio in it. Kept as their choice from then on.
+  const asked = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('lang');
+  if (asked === 'en' || asked === 'fr') {
+    saveLocale(asked);
+    // Out of the address once kept, so a copied tone link does not carry it.
+    const url = new URL(location.href);
+    url.searchParams.delete('lang');
+    history.replaceState(history.state, '', url);
+    return asked;
+  }
   try {
     const saved = localStorage.getItem(KEY);
     if (saved === 'en' || saved === 'fr') return saved;
