@@ -171,7 +171,9 @@ try {
   // makes look broken, because selecting it plays the band and not it.
   const repeat = (pattern, n) => Array.from({ length: n }, () => pattern).join(' | ');
   importer.initFromString('\\title "Practice riff" \\tempo 120 . '
-    + `\\track "Guitar" ${repeat(':4 0.6 2.6 3.6 5.6', 40)} `
+    // The first bar opens a section and palm-mutes on its first beat, under the
+    // tempo: three rows of text that alphaTab drew on top of one another.
+    + `\\track "Guitar" \\section "Riff 1" :4 0.6{pm} 2.6{pm} 3.6 5.6 | ${repeat(':4 0.6 2.6 3.6 5.6', 39)} `
     + `\\track "Bass" \\tuning E2 A2 D3 G3 ${repeat(':4 0.4 2.4 3.4 5.4', 40)} `
     + `\\track "Late Solo" ${repeat(':4 r r r r', 39)} | :4 12.1 10.1 8.1 7.1`);
   const score = importer.readScore();
@@ -184,6 +186,13 @@ try {
   const signed = await page.evaluate(() => [...document.querySelectorAll('.score-paper svg text')]
     .filter(t => t.textContent.includes('rendered by') && t.getClientRects().length > 0).length);
   assert.equal(signed, 0, 'the score carries no "rendered by alphaTab" caption');
+  const rows = await page.evaluate(() => {
+    const box = (match) => [...document.querySelectorAll('.score-paper svg text')].find(t => match(t.textContent.trim()))?.getBoundingClientRect();
+    return [box(t => t === 'Riff 1'), box(t => t === 'P.M.'), box(t => t.includes('120'))].map(r => r && { top: r.top, bottom: r.bottom, left: r.left, right: r.right });
+  });
+  assert(rows.every(Boolean), `the section, the palm mute and the tempo are drawn (${JSON.stringify(rows)})`);
+  const apart = (a, b) => a.bottom <= b.top || b.bottom <= a.top || a.right <= b.left || b.right <= a.left;
+  assert(apart(rows[0], rows[1]) && apart(rows[0], rows[2]) && apart(rows[1], rows[2]), `rows of effects starting on one beat do not overlap (${JSON.stringify(rows)})`);
   await page.getByRole('button', { name: /^02 Bass/ }).click();
   assert.equal(await page.getByRole('button', { name: /^02 Bass/ }).getAttribute('aria-pressed'), 'true');
   await page.getByRole('button', { name: 'Solo', exact: true }).click();

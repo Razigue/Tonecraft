@@ -23,6 +23,19 @@
   // Naming one it cannot read would be a promise the importer breaks.
   const ACCEPT = '.gpx,.gp,.gp3,.gp4,.gp5,.musicxml,.xml,.mxl,.cap,.capx,.alphatex,.atex';
   const BASE = import.meta.env.BASE_URL;
+  /**
+   * alphaTab stacks its rows of effects above the tab — tempo, section names,
+   * P.M., harmonics — with 2 px between them, so a section name sat on the tempo
+   * it follows. 8 px keeps each row readable on its own.
+   */
+  const EFFECT_ROW_GAP = 8;
+  /**
+   * Room between beats on the single line. At alphaTab's 1 a run of notes read as
+   * one block; 2 separated everything, at the price of a line twice as long to
+   * scroll through. A bar already at its tightest — grace notes, harmonics with
+   * their <19> — is laid out at its own minimum whatever this says.
+   */
+  const STRETCH = 1.5;
   let section: HTMLElement;
   let surface: HTMLDivElement;
   let viewport: HTMLDivElement;
@@ -243,6 +256,7 @@
       // requested and never drawn, some never reported visible at all.
       core: { fontDirectory: `${BASE}font/`, engine: 'svg', enableLazyLoading: false },
       display: { scale: zoom / 100, padding: [24, 28, 24, 28], layoutMode: alpha.LayoutMode.Horizontal,
+        effectBandPaddingBottom: EFFECT_ROW_GAP, stretchForce: STRETCH,
         staveProfile: notation === 'tab' ? alpha.StaveProfile.Tab : alpha.StaveProfile.ScoreTab },
       // The footer — the copyright and its "All Rights Reserved" second line,
       // which alphaTab draws only under a copyright — is a page of print, not
