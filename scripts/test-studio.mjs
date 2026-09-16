@@ -139,6 +139,29 @@ try {
   await page.getByRole('button', { name: 'Listen to take', exact: true }).waitFor({ timeout: 20000 });
   console.log('ok a DI dropped on the guitar lane is the take, exported, and played live through the amp');
 
+  // A second track, added with the button and recorded over the first: the
+  // first is heard through the chain while it records, and each exports alone
+  // or together. Removing it leaves the first track as it was.
+  await page.getByRole('button', { name: '+ Add track', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: '+ Add track', exact: true }).count(), 0, 'two tracks at most');
+  assert.equal(await page.getByRole('radio', { name: 'Record into Guitar 2', exact: true }).getAttribute('aria-checked'), 'true', 'a new track is the one recorded into');
+  await page.getByRole('button', { name: '● Record', exact: true }).click();
+  await page.getByRole('button', { name: '■ Stop recording', exact: true }).waitFor({ timeout: 60000 });
+  await page.waitForTimeout(1500);
+  await page.getByRole('button', { name: '■ Stop recording', exact: true }).click();
+  await page.getByLabel('Recorded guitar 2', { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole('radio', { name: 'DI', exact: true }).click();
+  const second = await download('Guitar 2 only');
+  const both = await download('Guitars only');
+  const firstOnly = await download('Guitar only');
+  const secondRate = second.readUInt32LE(24);
+  assert(frames(second) > 0.8 * secondRate && frames(second) < 3 * secondRate, `the second track is its own take (${frames(second)} frames)`);
+  assert(Math.abs(frames(both) - Math.max(frames(firstOnly), frames(second))) <= 1, 'both tracks together run to the longer one');
+  await page.getByRole('button', { name: 'Remove Guitar 2', exact: true }).click();
+  await page.getByLabel('Recorded guitar 2', { exact: true }).waitFor({ state: 'detached' });
+  assert.equal(frames(await download('Guitar only')), frames(firstOnly), 'removing the second track leaves the first as it was');
+  console.log('ok a second track is added, recorded over the first, exported alone or with it, and removed');
+
   const importer = new alpha.importer.AlphaTexImporter();
   // Long enough to lay out several systems, so the scroll has somewhere to go.
   // The third track enters only in the last bar: that is the case a reader

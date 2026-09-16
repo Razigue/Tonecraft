@@ -109,16 +109,25 @@ console.log('ok processed WAV uses the amp and current controls, preserves DI an
 {
   // The timeline an export is cut from: the guitar moved a round trip earlier
   // to line up with the backing track, the backing track from 0.
-  const t = { guitar: Float32Array.from([1, 2, 3, 4, 5, 6]), backing: Float32Array.from([10, 20, 30]), guitarLevel: 1, backingLevel: 0.5, latencyFrames: 2 };
-  assert.deepEqual(laneFrames(t), { guitar: 4, backing: 3 });
+  const lane = (samples: number[], latencyFrames: number, extra = {}) => ({ samples: Float32Array.from(samples), level: 1, latencyFrames, ...extra });
+  const t = { guitars: [lane([1, 2, 3, 4, 5, 6], 2)], backing: Float32Array.from([10, 20, 30]), backingLevel: 0.5 };
+  assert.deepEqual(laneFrames(t), { guitars: [4], backing: 3 });
   assert.deepEqual(defaultRange(t, 'mix'), [0, 4], 'the longer lane sets the end');
   assert.deepEqual(defaultRange(t, 'backing'), [0, 3]);
   assert.deepEqual(defaultRange(t, 'guitar'), [0, 4]);
   assert.deepEqual([...mixTimeline(t, 'mix')], [3 + 5, 4 + 10, 5 + 15, 6], 'the guitar lines up with what it was played to');
   assert.deepEqual([...mixTimeline(t, 'guitar', [1, 3])], [4, 5], 'a selection exports exactly its frames');
   assert.deepEqual([...mixTimeline(t, 'backing')], [5, 10, 15], 'the backing track alone, at its level');
-  const alone = { guitar: Float32Array.from([1, 2, 3]), backing: null, guitarLevel: 1, backingLevel: 1, latencyFrames: 2 };
+  const alone = { guitars: [lane([1, 2, 3], 2)], backing: null, backingLevel: 1 };
   assert.deepEqual([...mixTimeline(alone, 'guitar')], [1, 2, 3], 'with no backing track the guitar is not moved');
-  assert.deepEqual([...mixTimeline({ ...t, guitarLevel: 0.5 }, 'mix', [0, 2])], [1.5 + 5, 2 + 10], 'each lane at its own level');
+  assert.deepEqual([...mixTimeline({ ...t, guitars: [{ ...t.guitars[0]!, level: 0.5 }] }, 'mix', [0, 2])], [1.5 + 5, 2 + 10], 'each lane at its own level');
+
+  // A second track played over the first, with no backing track: the first
+  // stays where it was recorded, the second moves by its own round trip.
+  const two = { guitars: [lane([1, 2, 3, 4], 3), lane([0, 0, 10, 20, 30], 2, { overdub: true })], backing: null, backingLevel: 1 };
+  assert.deepEqual(laneFrames(two), { guitars: [4, 3], backing: 0 });
+  assert.deepEqual([...mixTimeline(two, 'guitar')], [11, 22, 33, 4], 'an overdub lines up with the track it was played to');
+  assert.deepEqual([...mixTimeline(two, 'guitar', undefined, 1)], [10, 20, 30], 'one track alone, where it sits in the mix');
+  assert.deepEqual([...mixTimeline({ ...two, guitars: [two.guitars[0]!] }, 'guitar')], [1, 2, 3, 4], 'a track does not move when another is removed');
   console.log('ok exports cut the timeline: a selection, or the longer lane, guitar lined up with the backing track');
 }

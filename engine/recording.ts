@@ -5,6 +5,8 @@ export interface Recording {
   sampleRate: number;
   /** The round trip it was recorded with, in frames: how late the guitar reached the DI behind a backing track it was played to. */
   latencyFrames?: number;
+  /** Recorded while other guitar tracks played back. */
+  overdub?: boolean;
 }
 export interface RecordingTone {
   values: Record<string, number>;
@@ -55,49 +57,72 @@ export function encodeWav(take: Recording): ArrayBuffer {
   return bytes;
 }
 
-/** What an export contains: the guitar and the backing track together, or either alone. */
+/** What an export contains: the guitars and the backing track together, or either alone. */
 export type ExportContent = 'mix' | 'guitar' | 'backing';
 
+/** One guitar track on the timeline. An empty one has no samples. */
+export interface GuitarLane {
+  samples: Float32Array;
+  /** Its level in the mix, 0 to 1. */
+  level: number;
+  /** How late the guitar reached the DI behind what the player heard, in frames. */
+  latencyFrames: number;
+  /** Recorded while other guitar tracks played: it lines up with them even with no backing track. */
+  overdub?: boolean;
+}
+
 /**
- * A take and its backing track on one timeline. The backing track started at
- * 0 with the recorder; the guitar played to it reached the DI a round trip
- * later, so on the timeline it is moved that much earlier and sounds as it was
- * played. Without a backing track there is nothing to line up with, and the
- * guitar stays where it was recorded.
+ * Guitar tracks and a backing track on one timeline. The backing track and
+ * any track played back during a take start at 0 with the recorder; the
+ * guitar played to them reached the DI a round trip later, so on the timeline
+ * it is moved that much earlier and sounds as it was played. A track recorded
+ * with nothing to hear stays where it was recorded, unless a backing track
+ * gives it something to line up with.
+ *
+ * Where a track sits never depends on the other guitar tracks, only on its own
+ * take and the backing track: what a player hears during an overdub is the
+ * same timeline the export is cut from.
  */
 export interface Timeline {
-  guitar: Float32Array | null;
+  guitars: readonly GuitarLane[];
   backing: Float32Array | null;
-  /** Each lane's level in the mix, 0 to 1. */
-  guitarLevel: number;
   backingLevel: number;
-  latencyFrames: number;
 }
 
-const shift = (t: Timeline): number => (t.backing ? t.latencyFrames : 0);
+export const laneShift = (t: Timeline, lane: GuitarLane): number => (t.backing || lane.overdub ? lane.latencyFrames : 0);
 
 /** How long each lane is on the timeline, in frames. */
-export function laneFrames(t: Timeline): { guitar: number; backing: number } {
-  return { guitar: t.guitar ? Math.max(0, t.guitar.length - shift(t)) : 0, backing: t.backing?.length ?? 0 };
+export function laneFrames(t: Timeline): { guitars: number[]; backing: number } {
+  return {
+    guitars: t.guitars.map((g) => Math.max(0, g.samples.length - laneShift(t, g))),
+    backing: t.backing?.length ?? 0,
+  };
 }
 
-/** Without a selection: from the first sample to the end of the longer of the lanes exported. */
-export function defaultRange(t: Timeline, content: ExportContent): [number, number] {
+/** The guitar tracks an export takes: every one, or one alone. */
+const chosen = (t: Timeline, only?: number): number[] =>
+  t.guitars.map((_, i) => i).filter((i) => only === undefined || i === only);
+
+/** Without a selection: from the first sample to the end of the longest of the lanes exported. */
+export function defaultRange(t: Timeline, content: ExportContent, only?: number): [number, number] {
   const lanes = laneFrames(t);
-  const guitar = content === 'backing' ? 0 : lanes.guitar;
+  const guitar = content === 'backing' ? 0 : Math.max(0, ...chosen(t, only).map((i) => lanes.guitars[i]!));
   const backing = content === 'guitar' ? 0 : lanes.backing;
   return [0, Math.max(guitar, backing)];
 }
 
 /** The frames of `range` (default: `defaultRange`) of what `content` names, summed. */
-export function mixTimeline(t: Timeline, content: ExportContent, range?: readonly [number, number]): Float32Array<ArrayBuffer> {
-  const [start, end] = range ?? defaultRange(t, content);
+export function mixTimeline(t: Timeline, content: ExportContent, range?: readonly [number, number], only?: number): Float32Array<ArrayBuffer> {
+  const [start, end] = range ?? defaultRange(t, content, only);
   const from = Math.max(0, Math.floor(start));
   const out = new Float32Array(Math.max(0, Math.floor(end) - from));
-  if (content !== 'backing' && t.guitar) {
-    const g = t.guitar, offset = from + shift(t), level = t.guitarLevel;
-    const n = Math.min(out.length, g.length - offset);
-    for (let i = Math.max(0, -offset); i < n; i++) out[i]! += g[offset + i]! * level;
+  if (content !== 'backing') {
+    for (const index of chosen(t, only)) {
+      const lane = t.guitars[index]!;
+      const g = lane.samples, offset = from + laneShift(t, lane), level = lane.level;
+      const n = Math.min(out.length, g.length - offset);
+      for (let i = Math.max(0, -offset); i < n; i++) out[i]! += g[offset + i]! * level;
+    }
   }
   if (content !== 'guitar' && t.backing) {
     const b = t.backing, level = t.backingLevel;
@@ -121,15 +146,21 @@ export async function decodeBacking(file: Blob, sampleRate: number): Promise<Flo
 
 export interface ExportOptions {
   content?: ExportContent;
+  /** One guitar track alone, by index; every one when absent. */
+  only?: number;
   backing?: Float32Array<ArrayBuffer> | null;
-  guitarLevel?: number;
+  /** Per guitar track, by index; 1 when absent. */
+  guitarLevels?: readonly number[];
   backingLevel?: number;
   /** Frames on the timeline; the default range when absent. */
   range?: readonly [number, number];
 }
 
-/** Runs on a separate worker so exporting cannot freeze the rig or its audio. */
-export function exportRecording(take: Recording, tone: RecordingTone | null, progress: (value: number) => void, signal?: AbortSignal, options: ExportOptions = {}): Promise<ArrayBuffer> {
+/**
+ * Runs on a separate worker so exporting cannot freeze the rig or its audio.
+ * `takes` are the guitar tracks in order, an empty track as no samples.
+ */
+export function exportRecording(takes: readonly Recording[], sampleRate: number, tone: RecordingTone | null, progress: (value: number) => void, signal?: AbortSignal, options: ExportOptions = {}): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./recording-worker.ts', import.meta.url), { type: 'module' });
     const cleanup = () => { worker.terminate(); signal?.removeEventListener('abort', cancel); };
@@ -142,11 +173,11 @@ export function exportRecording(take: Recording, tone: RecordingTone | null, pro
       else progress(e.data.progress);
     };
     worker.onerror = () => { cleanup(); reject(new Error('Audio export failed. Please try again.')); };
-    const samples = take.samples.slice();
+    const copies = takes.map((t) => ({ samples: t.samples.slice(), sampleRate: t.sampleRate, latencyFrames: t.latencyFrames ?? 0, overdub: t.overdub === true }));
     const backing = options.backing ? options.backing.slice() : null;
     worker.postMessage({
-      take: { samples, sampleRate: take.sampleRate, latencyFrames: take.latencyFrames ?? 0 }, tone,
+      takes: copies, sampleRate, tone,
       options: { ...options, backing }, base: new URL(import.meta.env.BASE_URL, location.href).href,
-    }, backing ? [samples.buffer, backing.buffer] : [samples.buffer]);
+    }, [...copies.map((c) => c.samples.buffer), ...(backing ? [backing.buffer] : [])]);
   });
 }

@@ -3,7 +3,7 @@
   import type { Engine } from '../engine/engine.ts';
   import { CUSTOM_CAB } from '../engine/ir.ts';
   import {
-    encodeWav, decodeRecording, decodeBacking, exportRecording, laneFrames,
+    encodeWav, decodeRecording, decodeBacking, exportRecording, laneFrames, laneShift,
     type ExportContent, type Recording, type RecordingTone, type Timeline,
   } from '../engine/recording.ts';
   import { deleteMedia, loadMedia, saveMedia } from '../store/media.ts';
@@ -14,12 +14,34 @@
   type Mode = 'di' | 'processed';
   const STATE_KEY = 'recorder';
   const MODES: readonly (readonly [Mode, string])[] = [['di', 'DI'], ['processed', 'Processed']];
-  const CONTENTS: readonly (readonly [ExportContent, string])[] = [['mix', 'Guitar + backing'], ['guitar', 'Guitar only'], ['backing', 'Backing only']];
+  /**
+   * Guitar tracks a session can hold. Nothing in the chain grows with it: a
+   * take records one input, and the other tracks are heard as one pre-rendered
+   * mix. What grows is the wait before an overdub starts, one offline render per
+   * track, and that is what keeps the number small.
+   */
+  const MAX_TRACKS = 2;
 
-  let take = $state.raw<Recording | null>(null);
+  interface Track {
+    /** Stable across reordering, so a render of a removed track is never reused. */
+    readonly id: number;
+    readonly take: Recording | null;
+    /** The take was dropped as a DI, not recorded. */
+    readonly fromFile: boolean;
+    readonly level: number;
+  }
+  let nextTrackId = 0;
+  const newTrack = (): Track => ({ id: nextTrackId++, take: null, fromFile: false, level: 1 });
+  /** The first track keeps the id the single take always had, so sessions from before tracks still load. */
+  const mediaId = (index: number) => (index === 0 ? 'last-recording' : `last-recording-${index + 1}`);
+  const trackName = (index: number) => (index === 0 ? 'Guitar' : `Guitar ${index + 1}`);
+
+  let tracks = $state.raw<Track[]>([newTrack()]);
+  /** The track Record records into. */
+  let armed = $state(0);
   let recording = $state(false);
   let busy = $state(false);
-  let working = $state<'listen' | 'export' | null>(null);
+  let working = $state<'listen' | 'export' | 'prepare' | null>(null);
   let progress = $state(0);
   let seconds = $state(0);
   let error = $state('');
@@ -33,31 +55,27 @@
   /** The rate `backing` was decoded at: a take restored at another rate needs it again. */
   let backingDecodedAt = 0;
   let backingLevel = $state(0.8);
-  let guitarLevel = $state(1);
   let previewing = $state(false);
   let dragOver = $state(false);
   /** Seconds on the timeline, start before end. */
   let selection = $state<[number, number] | null>(null);
   let menu = $state(false);
   /**
-   * How far the guitar is moved earlier to meet the backing track, in ms, when
-   * set by ear; null follows the latency measured with the take. A measured
-   * round trip is what the drivers report, and they can be wrong by a buffer.
+   * How far the guitar is moved earlier to meet what it was played to, in ms,
+   * when set by ear; null follows the latency measured with each take. A
+   * measured round trip is what the drivers report, and they can be wrong by a
+   * buffer — the same buffer for every take on the same interface, so one
+   * setting serves every track.
    */
   let syncMs = $state<number | null>(null);
   let replaceInput = $state<HTMLInputElement | null>(null);
-  let diInput = $state<HTMLInputElement | null>(null);
-  let diOver = $state(false);
-  /**
-   * The take was dropped as a DI, not recorded. In Processed it plays live,
-   * through the chain, the way the old file source did: every change to the
-   * amp is heard at once, and the looper can loop it. The export stays the
-   * offline render.
-   */
-  let takeFromFile = $state(false);
+  let diInputs = $state<(HTMLInputElement | null)[]>([]);
+  let diOver = $state(-1);
   let live = $state(false);
-  let liveLoaded: { engine: Engine; takeId: number } | null = null;
+  let liveLoaded: { engine: Engine; version: number } | null = null;
   let recordingEngine: Engine | null = null;
+  /** Other tracks were played back during the take in progress. */
+  let overdubbing = false;
   let poll: ReturnType<typeof setTimeout> | undefined;
   let previewPoll: ReturnType<typeof setInterval> | undefined;
   let abort: AbortController | null = null;
@@ -65,20 +83,40 @@
   let changed = false;
   const timestamp = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
-  const rate = $derived(take?.sampleRate ?? engine?.sampleRate ?? 48_000);
-  const measuredMs = $derived(take ? Math.round(((take.latencyFrames ?? 0) / take.sampleRate) * 1000) : 0);
-  const alignFrames = $derived(take ? (syncMs === null ? take.latencyFrames ?? 0 : Math.round((syncMs / 1000) * take.sampleRate)) : 0);
-  const timeline = $derived<Timeline>({ guitar: take?.samples ?? null, backing, guitarLevel, backingLevel, latencyFrames: alignFrames });
+  const takes = $derived(tracks.flatMap((t) => (t.take ? [t.take] : [])));
+  const hasTake = $derived(takes.length > 0);
+  const armedTake = $derived(tracks[armed]?.take ?? null);
+  const rate = $derived(takes[0]?.sampleRate ?? engine?.sampleRate ?? 48_000);
+  const measured = $derived(takes.find((t) => (t.latencyFrames ?? 0) > 0) ?? takes[0] ?? null);
+  const measuredMs = $derived(measured ? Math.round(((measured.latencyFrames ?? 0) / measured.sampleRate) * 1000) : 0);
+  const alignOf = (take: Recording) => (syncMs === null ? take.latencyFrames ?? 0 : Math.round((syncMs / 1000) * take.sampleRate));
+  const syncShown = $derived(hasTake && (backing !== null || takes.some((t) => t.overdub)));
+  const EMPTY = new Float32Array(0);
+  const timeline = $derived<Timeline>({
+    guitars: tracks.map((t) => ({ samples: t.take?.samples ?? EMPTY, level: t.level, latencyFrames: t.take ? alignOf(t.take) : 0, overdub: t.take?.overdub })),
+    backing, backingLevel,
+  });
   const lanes = $derived(laneFrames(timeline));
-  const totalFrames = $derived(Math.max(lanes.guitar, lanes.backing));
+  const totalFrames = $derived(Math.max(lanes.backing, ...lanes.guitars));
   const duration = $derived(totalFrames / rate);
   /** What listening plays, and what the export list starts from. */
-  const defaultContent = $derived<ExportContent>(take && backing ? 'mix' : take ? 'guitar' : 'backing');
-  const canPlayLive = $derived(engine !== null && takeFromFile && mode === 'processed');
-  const available = (content: ExportContent) => (content === 'mix' ? !!take && !!backing : content === 'guitar' ? !!take : !!backing);
+  const defaultContent = $derived<ExportContent>(hasTake && backing ? 'mix' : hasTake ? 'guitar' : 'backing');
+  /** A lone dropped DI plays live through the chain, which has one file source. */
+  const liveIndex = $derived(takes.length === 1 ? tracks.findIndex((t) => t.take !== null && t.fromFile) : -1);
+  const canPlayLive = $derived(engine !== null && liveIndex >= 0 && mode === 'processed');
+  const available = (content: ExportContent, only?: number) =>
+    content === 'backing' ? !!backing
+    : only !== undefined ? !!tracks[only]?.take
+    : content === 'mix' ? hasTake && !!backing : hasTake;
+  const contents = $derived<(readonly [ExportContent, string, number | undefined])[]>([
+    ['mix', 'Guitar + backing', undefined],
+    ['guitar', tracks.length > 1 ? 'Guitars only' : 'Guitar only', undefined],
+    ...(tracks.length > 1 ? tracks.map((_, i) => ['guitar', `${trackName(i)} only`, i] as const) : []),
+    ['backing', 'Backing only', undefined],
+  ]);
 
-  /* One waveform column per 480th of the timeline, so both lanes share a scale
-     and the guitar sits where it will sound against the backing track. */
+  /* One waveform column per 480th of the timeline, so every lane shares a scale
+     and each guitar sits where it will sound against the others. */
   const COLUMNS = 480;
   function lanePath(samples: Float32Array | null, offset: number, frames: number, total: number, scale: number): string {
     if (!samples || total === 0) return '';
@@ -94,61 +132,105 @@
     }
     return points.join(' ');
   }
-  const guitarPath = $derived(lanePath(take?.samples ?? null, backing ? alignFrames : 0, lanes.guitar, totalFrames, 80));
+  const guitarPaths = $derived(tracks.map((t, i) => lanePath(t.take?.samples ?? null, laneShift(timeline, timeline.guitars[i]!), lanes.guitars[i]!, totalFrames, 80)));
   const backingPeak = $derived.by(() => { let p = 0; if (backing) for (const v of backing) { const a = Math.abs(v); if (a > p) p = a; } return p; });
   const backingPath = $derived(lanePath(backing, 0, lanes.backing, totalFrames, backingPeak > 0 ? 20 / backingPeak : 1));
   const percent = (s: number) => `${duration > 0 ? Math.max(0, Math.min(100, (s / duration) * 100)) : 0}%`;
 
   /**
    * What the take sounds like is what the export will write. Rendered once per
-   * take, backing track, content, guitar mode, selection and level, so
+   * set of takes, backing track, content, guitar mode, selection and level, so
    * listening then exporting renders only once.
    */
-  let takeId = 0;
+  let version = 0;
   let backingId = 0;
   let rendered: { key: string; blob: Blob; url: string } | null = null;
+  /** The mix heard during an overdub, kept while nothing it depends on changes. */
+  let monitor: { key: string; blob: Blob } | null = null;
   let audio: HTMLAudioElement | null = null;
   let frame = 0;
   let listenFrom = 0;
 
   function persist() {
-    void dbPut(STORES.state, { mode, guitarLevel, backingLevel, latencyFrames: take?.latencyFrames ?? 0, syncMs, fromFile: takeFromFile }, STATE_KEY);
+    void dbPut(STORES.state, {
+      mode, backingLevel, syncMs, armed,
+      tracks: tracks.map((t) => ({ level: t.level, fromFile: t.fromFile, latencyFrames: t.take?.latencyFrames ?? 0, overdub: t.take?.overdub === true })),
+    }, STATE_KEY);
   }
   function forgetRender() {
     stopListening();
     if (rendered) URL.revokeObjectURL(rendered.url);
     rendered = null;
   }
-  function setTake(next: Recording | null) {
-    void stopLive();
+  function setTrack(index: number, patch: Partial<Omit<Track, 'id'>>) {
+    if ('take' in patch) { void stopLive(); version++; }
     forgetRender();
-    takeId++;
-    take = next;
+    tracks = tracks.map((t, i) => (i === index ? { ...t, ...patch } : t));
+  }
+  async function saveTrackMedia(index: number) {
+    const take = tracks[index]?.take;
+    if (take) await saveMedia(new File([encodeWav(take)], `${mediaId(index)}.wav`, { type: 'audio/wav' }), 'take', mediaId(index));
+    else await deleteMedia(mediaId(index));
   }
   function selectionFrames(): [number, number] | undefined {
     return selection ? [Math.round(selection[0] * rate), Math.round(selection[1] * rate)] : undefined;
   }
-  async function render(content: ExportContent): Promise<{ blob: Blob; url: string } | null> {
-    if (!available(content)) return null;
+  /** The tone as it is at the click, with a loaded cabinet IR read at the takes' rate. */
+  async function snapshotTone(sampleRate: number): Promise<RecordingTone> {
+    return { values: { ...tone.values }, capture: tone.capture ? { ...tone.capture } : null, cab: tone.cab,
+      ...(tone.cab === CUSTOM_CAB && engine ? { cabIR: await engine.cabIRAt(sampleRate, CUSTOM_CAB) } : {}) };
+  }
+  const trackTakes = (except = -1): Recording[] => tracks.map((t, i) => (t.take && i !== except ? { ...t.take, latencyFrames: alignOf(t.take) } : { samples: EMPTY, sampleRate: rate }));
+  async function render(content: ExportContent, only?: number): Promise<{ blob: Blob; url: string } | null> {
+    if (!available(content, only)) return null;
     const guitarTone = content === 'backing' || mode === 'di' ? null : tone;
     const range = selectionFrames();
-    const key = [takeId, backingId, content, guitarTone ? JSON.stringify(guitarTone) : 'dry', range?.join('-') ?? 'all', content === 'guitar' ? '' : backingLevel, content === 'backing' ? '' : guitarLevel, alignFrames].join('|');
+    const levels = tracks.map((t) => t.level);
+    const key = [version, tracks.map((t) => t.id).join(','), backingId, content, only ?? 'all', guitarTone ? JSON.stringify(guitarTone) : 'dry', range?.join('-') ?? 'all', content === 'guitar' ? '' : backingLevel, content === 'backing' ? '' : levels.join(','), syncMs].join('|');
     if (rendered?.key === key) return rendered;
     progress = 0;
     abort = new AbortController();
     try {
       // Snapshot at the click: edits made while rendering belong to the next render.
-      const source = take ? { ...take, latencyFrames: alignFrames } : { samples: new Float32Array(0), sampleRate: rate };
-      const snapshot = guitarTone ? { values: { ...guitarTone.values }, capture: guitarTone.capture ? { ...guitarTone.capture } : null, cab: guitarTone.cab,
-        ...(guitarTone.cab === CUSTOM_CAB && engine ? { cabIR: await engine.cabIRAt(source.sampleRate, CUSTOM_CAB) } : {}) } : null;
-      const wav = await exportRecording(source, snapshot, value => { progress = value; }, abort.signal,
-        { content, backing, guitarLevel, backingLevel, range });
+      const snapshot = guitarTone ? await snapshotTone(rate) : null;
+      const wav = await exportRecording(trackTakes(), rate, snapshot, value => { progress = value; }, abort.signal,
+        { content, only, backing, guitarLevels: levels, backingLevel, range });
       if (disposed) return null;
       if (rendered) URL.revokeObjectURL(rendered.url);
       const blob = new Blob([wav], { type: 'audio/wav' });
       rendered = { key, blob, url: URL.createObjectURL(blob) };
       return rendered;
     } finally { abort = null; }
+  }
+
+  /**
+   * What the player hears while recording into `index`: every other track and
+   * the backing track, from the start of the timeline, as one file the chain
+   * plays in the backing track's place. It starts on the block the recorder
+   * starts on, so the new take lines up with the others exactly as it lines up
+   * with a backing track. Through the amp whenever there is one, whatever the
+   * export mode: nobody plays along to a DI.
+   */
+  async function renderMonitor(index: number): Promise<Blob> {
+    const levels = tracks.map((t) => t.level);
+    const guitarTone = tone.capture ? tone : null;
+    const key = [version, tracks.map((t) => t.id).join(','), index, backingId, guitarTone ? JSON.stringify(guitarTone) : 'dry', backingLevel, levels.join(','), syncMs].join('|');
+    if (monitor?.key === key) return monitor.blob;
+    progress = 0;
+    abort = new AbortController();
+    try {
+      const snapshot = guitarTone ? await snapshotTone(rate) : null;
+      const wav = await exportRecording(trackTakes(index), rate, snapshot, value => { progress = value; }, abort.signal,
+        { content: backing ? 'mix' : 'guitar', backing, guitarLevels: levels, backingLevel });
+      monitor = { key, blob: new Blob([wav], { type: 'audio/wav' }) };
+      return monitor.blob;
+    } finally { abort = null; }
+  }
+  const abortedByPlayer = (err: unknown) => err instanceof Error && err.message === 'Export cancelled.';
+  /** After an overdub, the chain gets the real backing track back, or none. */
+  async function restoreBacking(e: Engine) {
+    if (backingFile) { await e.loadBacking(backingFile); e.setBackingLevel(backingLevel); }
+    else e.clearBacking();
   }
 
   function follow() {
@@ -163,20 +245,20 @@
     playheadAt = -1;
   }
   async function playLive() {
-    const e = engine, t = take;
+    const e = engine, t = tracks[liveIndex]?.take;
     if (!e || !t || working) return;
     stopPreview();
     working = 'listen'; error = '';
     try {
-      if (liveLoaded?.engine !== e || liveLoaded.takeId !== takeId) {
+      if (liveLoaded?.engine !== e || liveLoaded.version !== version) {
         await e.loadFile(new File([encodeWav(t)], 'take.wav', { type: 'audio/wav' }));
-        liveLoaded = { engine: e, takeId };
+        liveLoaded = { engine: e, version };
       }
       await e.setSource('file');
       e.setLoop(false);
       const from = selection?.[0] ?? 0;
       // The guitar is heard where the timeline draws it against the backing track.
-      const lead = backing ? alignFrames / t.sampleRate : 0;
+      const lead = laneShift(timeline, timeline.guitars[liveIndex]!) / t.sampleRate;
       e.playFile(from + lead);
       if (backing) e.playBacking(from);
       listenFrom = from;
@@ -187,9 +269,9 @@
     finally { working = null; }
   }
   function followLive() {
-    const e = engine;
-    if (!e || !live || !take) { void stopLive(); return; }
-    const lead = backing ? alignFrames / take.sampleRate : 0;
+    const e = engine, t = tracks[liveIndex]?.take;
+    if (!e || !live || !t) { void stopLive(); return; }
+    const lead = laneShift(timeline, timeline.guitars[liveIndex]!) / t.sampleRate;
     playheadAt = Math.max(0, e.filePosition - lead);
     const end = selection?.[1];
     if (!e.filePlaying || (end !== undefined && playheadAt >= end)) { void stopLive(); return; }
@@ -210,7 +292,7 @@
     if (live) { void stopLive(); return; }
     if (listening) { audio?.pause(); return; }
     if (canPlayLive) { void playLive(); return; }
-    if ((!take && !backing) || working) return;
+    if ((!hasTake && !backing) || working) return;
     working = 'listen'; error = '';
     try {
       const result = await render(defaultContent);
@@ -236,6 +318,33 @@
     void stopLive();
     mode = next;
     forgetRender();
+    persist();
+  }
+
+  function addTrack() {
+    if (tracks.length >= MAX_TRACKS || recording) return;
+    forgetRender();
+    tracks = [...tracks, newTrack()];
+    armed = tracks.length - 1;
+    persist();
+  }
+  async function removeTrack(index: number) {
+    if (tracks.length <= 1 || recording || busy) return;
+    const last = tracks.length - 1;
+    void stopLive();
+    forgetRender();
+    version++;
+    tracks = tracks.filter((_, i) => i !== index);
+    if (armed >= tracks.length || armed > index) armed = Math.max(0, armed - 1);
+    persist();
+    // Media is kept by position: every track after the removed one moves up one.
+    for (let i = index; i < tracks.length; i++) await saveTrackMedia(i);
+    await deleteMedia(mediaId(last));
+  }
+  function arm(index: number) {
+    if (recording) return;
+    armed = index;
+    seconds = tracks[index]?.take ? tracks[index].take.samples.length / tracks[index].take.sampleRate : 0;
     persist();
   }
 
@@ -267,29 +376,30 @@
 
   const isAudio = (file: File) => file.type.startsWith('audio/') || /\.(wav|mp3|ogg|oga|flac|m4a|aac|webm)$/i.test(file.name);
 
-  /** A DI dropped on the guitar lane: the take, as if it had been recorded, with no latency to line up. */
-  async function useDi(file: File | undefined) {
+  /** A DI dropped on a guitar lane: that track's take, as if it had been recorded, with no latency to line up. */
+  async function useDi(file: File | undefined, index: number) {
     if (!file || recording) return;
     error = '';
     if (!isAudio(file)) { error = 'Choose an audio file for the guitar.'; return; }
     try {
-      const sampleRate = engine?.sampleRate ?? 48_000;
+      // At the other tracks' rate, so they share one timeline.
+      const others = tracks.find((t, i) => i !== index && t.take)?.take;
+      const sampleRate = others?.sampleRate ?? engine?.sampleRate ?? 48_000;
       const samples = await decodeBacking(file, sampleRate);
-      if (disposed) return;
-      const next: Recording = { samples, sampleRate, latencyFrames: 0 };
+      if (disposed || !tracks[index]) return;
       changed = true;
-      setTake(next);
-      takeFromFile = true;
+      setTrack(index, { take: { samples, sampleRate, latencyFrames: 0 }, fromFile: true });
+      armed = index;
       seconds = samples.length / sampleRate;
       selection = null;
-      syncMs = null;
+      if (takes.length === 1) syncMs = null;
       persist();
-      await saveMedia(new File([encodeWav(next)], 'last-recording.wav', { type: 'audio/wav' }), 'take', 'last-recording');
+      await saveTrackMedia(index);
     } catch { if (!disposed) error = 'That file could not be decoded.'; }
   }
 
   async function useBacking(file: File | undefined) {
-    // The second lane only takes a file: nothing is recorded into it, and nothing replaces it mid-take.
+    // The backing lane only takes a file: nothing is recorded into it, and nothing replaces it mid-take.
     if (!file || recording) return;
     error = '';
     if (!isAudio(file)) {
@@ -323,9 +433,8 @@
     forgetRender();
     persist();
   }
-  function setGuitarLevel(level: number) {
-    guitarLevel = level;
-    forgetRender();
+  function setGuitarLevel(index: number, level: number) {
+    setTrack(index, { level });
     persist();
   }
   function setBackingLevel(level: number) {
@@ -353,7 +462,7 @@
     if (!e || !file || e.backingLoaded) return;
     void e.loadBacking(file).then(() => e.setBackingLevel(backingLevel)).catch(() => {});
   });
-  // Decoded at the take's rate, which a restored take can change.
+  // Decoded at the takes' rate, which a restored take can change.
   $effect(() => {
     const file = backingFile, r = rate;
     if (!file || (backing && backingDecodedAt === r)) return;
@@ -373,43 +482,61 @@
     }
   }
   async function start() {
-    if (!engine || busy || recording) return;
+    if (!engine || busy || recording || working) return;
+    const others = tracks.some((t, i) => i !== armed && t.take);
+    if (others && rate !== engine.sampleRate) {
+      error = `The other tracks are at ${rate} Hz and the interface runs at ${engine.sampleRate} Hz. Set it back to ${rate} Hz to record over them.`;
+      return;
+    }
     busy = true; error = ''; changed = true;
     await stopLive();
     stopListening();
     stopPreview();
+    const e = engine;
+    recordingEngine = e;
+    overdubbing = others;
     try {
-      recordingEngine = engine;
-      await recordingEngine.startRecording();
+      if (others) {
+        working = 'prepare';
+        try { await e.loadBacking(await renderMonitor(armed)); }
+        finally { working = null; }
+        e.setBackingLevel(1);
+      }
+      await e.startRecording();
       recording = true; seconds = 0;
       void pollRecording();
-    } catch (e) { error = e instanceof Error ? e.message : 'Could not start recording.'; }
+    } catch (err) {
+      // Cancelling the preparation is not a failure worth a message.
+      if (!(abortedByPlayer(err))) error = err instanceof Error ? err.message : 'Could not start recording.';
+      if (others && !disposed) await restoreBacking(e).catch(() => {});
+    }
     finally { busy = false; }
   }
   async function stop() {
     if (!recordingEngine || busy) return;
     busy = true; clearTimeout(poll);
+    const index = armed;
     try {
       const captured = await recordingEngine.stopRecording();
-      if (disposed) return;
-      setTake(captured); seconds = captured.samples.length / captured.sampleRate;
-      takeFromFile = false;
+      if (overdubbing) await restoreBacking(recordingEngine).catch(() => {});
+      if (disposed || !tracks[index]) return;
+      setTrack(index, { take: { ...captured, overdub: overdubbing }, fromFile: false });
+      seconds = captured.samples.length / captured.sampleRate;
       selection = null;
-      syncMs = null;
+      if (takes.length === 1) syncMs = null;
       persist();
-      const file = new File([encodeWav(captured)], 'last-recording.wav', { type: 'audio/wav' });
-      await saveMedia(file, 'take', 'last-recording');
+      await saveTrackMedia(index);
     } catch (e) { error = e instanceof Error ? e.message : 'Could not save the recording.'; }
     finally { recording = false; busy = false; }
   }
-  async function download(content: ExportContent) {
+  async function download(content: ExportContent, only?: number) {
     menu = false;
-    if (working || !available(content)) return;
+    if (working || !available(content, only)) return;
     working = 'export'; error = '';
     try {
-      const result = await render(content);
+      const result = await render(content, only);
       if (!result || disposed) return;
-      const what = content === 'backing' ? 'backing' : `${content === 'mix' ? 'cover-' : ''}${mode === 'di' ? 'DI' : 'amp'}`;
+      const what = content === 'backing' ? 'backing' : `${content === 'mix' ? 'cover-' : ''}${only !== undefined ? `track${only + 1}-` : ''}${mode === 'di' ? 'DI' : 'amp'}`;
       const link = document.createElement('a');
       link.href = result.url; link.download = `tonecraft-${what}-${new Date().toISOString().replace(/[:.]/g, '-')}.wav`;
       document.body.appendChild(link); link.click(); link.remove();
@@ -420,19 +547,34 @@
     if (menu && !(e.target instanceof Element && e.target.closest('.export-menu'))) menu = false;
   }
 
+  interface SavedTrack { level?: unknown; fromFile?: unknown; latencyFrames?: unknown; overdub?: unknown }
   onMount(() => {
     void (async () => {
-      const saved = await dbGet<{ mode?: unknown; guitarLevel?: unknown; backingLevel?: unknown; latencyFrames?: unknown; syncMs?: unknown; fromFile?: unknown }>(STORES.state, STATE_KEY).catch(() => null);
+      const saved = await dbGet<{ mode?: unknown; guitarLevel?: unknown; backingLevel?: unknown; latencyFrames?: unknown; syncMs?: unknown; fromFile?: unknown; tracks?: unknown; armed?: unknown }>(STORES.state, STATE_KEY).catch(() => null);
       if (disposed) return;
       if (saved?.mode === 'di' || saved?.mode === 'processed') mode = saved.mode;
       if (typeof saved?.backingLevel === 'number' && saved.backingLevel >= 0 && saved.backingLevel <= 1) backingLevel = saved.backingLevel;
-      if (typeof saved?.guitarLevel === 'number' && saved.guitarLevel >= 0 && saved.guitarLevel <= 1) guitarLevel = saved.guitarLevel;
       if (typeof saved?.syncMs === 'number' && saved.syncMs >= 0 && saved.syncMs <= 300) syncMs = saved.syncMs;
-      const latencyFrames = typeof saved?.latencyFrames === 'number' && saved.latencyFrames >= 0 ? saved.latencyFrames : 0;
-      const file = await loadMedia('last-recording').catch(() => null);
-      if (file && !disposed && !changed) {
-        const restored = await decodeRecording(file).catch(() => null);
-        if (restored && !disposed && !changed) { setTake({ ...restored, latencyFrames }); takeFromFile = saved?.fromFile === true; seconds = restored.samples.length / restored.sampleRate; }
+      // Sessions from before tracks kept one take's fields at the top level.
+      const list: SavedTrack[] = Array.isArray(saved?.tracks) ? (saved.tracks as SavedTrack[]).slice(0, MAX_TRACKS)
+        : [{ level: saved?.guitarLevel, fromFile: saved?.fromFile, latencyFrames: saved?.latencyFrames }];
+      const restored: Track[] = [];
+      for (const [i, entry] of list.entries()) {
+        const level = typeof entry.level === 'number' && entry.level >= 0 && entry.level <= 1 ? entry.level : 1;
+        const latencyFrames = typeof entry.latencyFrames === 'number' && entry.latencyFrames >= 0 ? entry.latencyFrames : 0;
+        const file = await loadMedia(mediaId(i)).catch(() => null);
+        const take = file ? await decodeRecording(file).catch(() => null) : null;
+        restored.push({ ...newTrack(), level, fromFile: entry.fromFile === true,
+          take: take ? { ...take, latencyFrames, overdub: entry.overdub === true } : null });
+      }
+      if (disposed) return;
+      if (!changed && restored.length > 0) {
+        tracks = restored;
+        version++;
+        const a = typeof saved?.armed === 'number' && Number.isInteger(saved.armed) ? saved.armed : 0;
+        armed = Math.min(Math.max(0, a), tracks.length - 1);
+        const t = tracks[armed]?.take;
+        seconds = t ? t.samples.length / t.sampleRate : 0;
       }
       const backingSaved = await loadMedia('last-backing').catch(() => null);
       if (backingSaved && !disposed && !backingFile) await useBacking(backingSaved);
@@ -444,7 +586,7 @@
     stopListening();
     stopPreview();
     if (rendered) URL.revokeObjectURL(rendered.url);
-    if (recording) void recordingEngine?.stopRecording().catch(() => {});
+    if (recording) void recordingEngine?.stopRecording().then(() => overdubbing && recordingEngine ? restoreBacking(recordingEngine) : undefined).catch(() => {});
   });
 </script>
 
@@ -459,14 +601,14 @@
       {/each}
     </div>
     <div class="actions">
-      <button class="listen" aria-label={listening ? 'Pause take' : 'Listen to take'} disabled={(!take && !backing) || recording || busy || working !== null} onclick={() => void listen()}>{working === 'listen' ? `${Math.round(progress * 100)}%` : listening ? '❚❚' : '▶'}</button>
-      <button class:recording disabled={busy || working !== null || (!engine && !recording)} onclick={() => recording ? void stop() : void start()}>{busy ? 'Saving…' : recording ? '■ Stop recording' : take ? '● New take' : '● Record'}</button>
+      <button class="listen" aria-label={listening ? 'Pause take' : 'Listen to take'} disabled={(!hasTake && !backing) || recording || busy || working !== null} onclick={() => void listen()}>{working === 'listen' ? `${Math.round(progress * 100)}%` : listening ? '❚❚' : '▶'}</button>
+      <button class:recording disabled={busy || working !== null || (!engine && !recording)} onclick={() => recording ? void stop() : void start()}>{working === 'prepare' ? `Preparing ${Math.round(progress * 100)}%` : busy ? (recording ? 'Saving…' : 'Starting…') : recording ? '■ Stop recording' : armedTake ? '● New take' : '● Record'}</button>
       <div class="export-menu">
-        <button class="export" aria-haspopup="menu" aria-expanded={menu} disabled={(!take && !backing) || recording || busy || working !== null} onclick={() => { menu = !menu; }}>{working === 'export' ? `Exporting ${Math.round(progress * 100)}%` : 'Export WAV ▾'}</button>
+        <button class="export" aria-haspopup="menu" aria-expanded={menu} disabled={(!hasTake && !backing) || recording || busy || working !== null} onclick={() => { menu = !menu; }}>{working === 'export' ? `Exporting ${Math.round(progress * 100)}%` : 'Export WAV ▾'}</button>
         {#if menu}
           <div class="menu" role="menu" aria-label="What to export">
-            {#each CONTENTS as [id, label] (id)}
-              <button type="button" role="menuitem" disabled={!available(id)} onclick={() => void download(id)}>{label}{#if id !== 'backing'}<small>{mode === 'di' ? 'DI' : 'processed'}</small>{/if}</button>
+            {#each contents as [id, label, only] (label)}
+              <button type="button" role="menuitem" disabled={!available(id, only)} onclick={() => void download(id, only)}>{label}{#if id !== 'backing'}<small>{mode === 'di' ? 'DI' : 'processed'}</small>{/if}</button>
             {/each}
           </div>
         {/if}
@@ -477,21 +619,35 @@
 
   <div class="timeline">
     <div class="lane-names">
-      <label class="lane-head"><span>GUITAR</span><input type="range" min="0" max="1" step="0.01" value={guitarLevel} aria-label="Guitar level" oninput={e => setGuitarLevel(Number(e.currentTarget.value))} /></label>
+      {#each tracks as track, i (track.id)}
+        <div class="lane-head" class:armed={tracks.length > 1 && armed === i}>
+          <div class="lane-title">
+            {#if tracks.length > 1}
+              <button type="button" class="arm" role="radio" aria-checked={armed === i} aria-label={`Record into ${trackName(i)}`} disabled={recording || busy} onclick={() => arm(i)}><span></span>{trackName(i).toUpperCase()}</button>
+              <button type="button" class="remove" aria-label={`Remove ${trackName(i)}`} disabled={recording || busy} onclick={() => void removeTrack(i)}>✕</button>
+            {:else}
+              <span>GUITAR</span>
+            {/if}
+          </div>
+          <input type="range" min="0" max="1" step="0.01" value={track.level} aria-label={`${trackName(i)} level`} oninput={e => setGuitarLevel(i, Number(e.currentTarget.value))} />
+        </div>
+      {/each}
       <label class="lane-head"><span>BACKING</span><input type="range" min="0" max="1" step="0.01" value={backingLevel} aria-label="Backing track level" oninput={e => setBackingLevel(Number(e.currentTarget.value))} /></label>
     </div>
     <div class="lanes" role="group" aria-label="Recording timeline"
       onpointerdown={selectStart} onpointermove={selectMove} onpointerup={selectEnd} onpointercancel={selectEnd}>
-      <div class="lane guitar-lane" class:over={diOver} role="region" aria-label="Guitar"
-        ondragover={e => { e.preventDefault(); diOver = true; }} ondragleave={() => { diOver = false; }}
-        ondrop={e => { e.preventDefault(); diOver = false; void useDi(e.dataTransfer?.files[0]); }}>
-        {#if guitarPath}
-          <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label="Recorded guitar"><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="#4e4e4e"/><polyline points={guitarPath} fill="none" stroke="#c7c0b5" stroke-width="1" /></svg>
-        {:else}
-          <button type="button" class="drop-hint" disabled={recording} onclick={() => diInput?.click()}><span>Press ● Record to record your guitar, or drop a DI (a dry guitar recording, no amp), or <u>choose a file</u></span></button>
-        {/if}
-        <input class="hidden-file" bind:this={diInput} type="file" accept="audio/*" aria-label="Guitar DI file" onchange={e => { void useDi(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} />
-      </div>
+      {#each tracks as track, i (track.id)}
+        <div class="lane guitar-lane" class:over={diOver === i} class:armed={tracks.length > 1 && armed === i} role="region" aria-label={trackName(i)}
+          ondragover={e => { e.preventDefault(); diOver = i; }} ondragleave={() => { diOver = -1; }}
+          ondrop={e => { e.preventDefault(); diOver = -1; void useDi(e.dataTransfer?.files[0], i); }}>
+          {#if guitarPaths[i]}
+            <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label={i === 0 ? 'Recorded guitar' : `Recorded guitar ${i + 1}`}><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="#4e4e4e"/><polyline points={guitarPaths[i]} fill="none" stroke="#c7c0b5" stroke-width="1" /></svg>
+          {:else}
+            <button type="button" class="drop-hint" disabled={recording} onclick={() => { arm(i); diInputs[i]?.click(); }}><span>{#if hasTake}Press ● Record to play over the other tracks, or drop a DI, or <u>choose a file</u>{:else}Press ● Record to record your guitar, or drop a DI (a dry guitar recording, no amp), or <u>choose a file</u>{/if}</span></button>
+          {/if}
+          <input class="hidden-file" bind:this={diInputs[i]} type="file" accept="audio/*" aria-label={`${trackName(i)} DI file`} onchange={e => { void useDi(e.currentTarget.files?.[0], i); e.currentTarget.value = ''; }} />
+        </div>
+      {/each}
       <div class="lane backing-lane" class:over={dragOver} role="region" aria-label="Backing track"
         ondragover={e => { e.preventDefault(); dragOver = true; }} ondragleave={() => { dragOver = false; }}
         ondrop={e => { e.preventDefault(); dragOver = false; void useBacking(e.dataTransfer?.files[0]); }}>
@@ -508,17 +664,21 @@
   </div>
 
   <div class="record-tools">
+    {#if tracks.length < MAX_TRACKS}
+      <button class="small add-track" disabled={recording || busy} onclick={addTrack}>+ Add track</button>
+    {/if}
     {#if backingFile}
       <span class="backing-name" title={backingFile.name}>{backingFile.name}</span>
       <button class="small" disabled={!engine || recording} onclick={preview}>{previewing ? '■ Stop' : '▶ Preview'}</button>
       <button class="small" disabled={recording} onclick={() => replaceInput?.click()}>Replace</button>
       <input class="hidden-file" bind:this={replaceInput} type="file" accept="audio/*" aria-label="Replace backing track" onchange={e => { void useBacking(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} />
       <button class="small" aria-label="Remove backing track" disabled={recording} onclick={removeBacking}>✕</button>
-      {#if take}
-        <label class="level sync">Sync<input type="range" min="0" max="300" step="1" value={Math.round((alignFrames / take.sampleRate) * 1000)} aria-label="Guitar sync"
-          oninput={e => setSync(Number(e.currentTarget.value))} /><output>{Math.round((alignFrames / take.sampleRate) * 1000)} ms</output></label>
-        {#if syncMs !== null}<button class="small" onclick={() => setSync(null)}>Measured {measuredMs} ms</button>{/if}
-      {/if}
+    {/if}
+    {#if syncShown && measured}
+      {@const shownMs = syncMs ?? measuredMs}
+      <label class="level sync">Sync<input type="range" min="0" max="300" step="1" value={shownMs} aria-label="Guitar sync"
+        oninput={e => setSync(Number(e.currentTarget.value))} /><output>{shownMs} ms</output></label>
+      {#if syncMs !== null}<button class="small" onclick={() => setSync(null)}>Measured {measuredMs} ms</button>{/if}
     {/if}
     {#if selection}
       <span class="selection-info">Selection {timestamp(selection[0])}–{timestamp(selection[1])}</span>
@@ -535,8 +695,9 @@
   .actions{display:flex;align-items:center;gap:10px;margin-left:auto}
   button,.small{font:12px var(--body);color:#ddd;background:#303030;border:1px solid #505050;border-radius:4px;min-height:38px;padding:8px 14px;cursor:pointer;white-space:nowrap}button:hover{background:#414141}button:disabled{opacity:.45;cursor:default}.listen{min-width:46px;font-variant-numeric:tabular-nums}.recording{color:#ffc6b7;border-color:#ae7666}.export{background:#dedbd5;color:#222;border-color:#dedbd5}.export:hover{background:#f3f0ea}
   .export-menu{position:relative}.menu{position:absolute;right:0;top:calc(100% + 6px);z-index:5;display:grid;min-width:210px;padding:6px;background:#262626;border:1px solid #4a4a4a;border-radius:6px;box-shadow:0 10px 24px #0008}.menu button{display:flex;justify-content:space-between;gap:16px;border:0;background:none;text-align:left;min-height:34px}.menu button:hover:not(:disabled){background:#353535}.menu small{font:10px var(--mono);color:#9c9c9c}
-  .timeline{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;margin-top:16px}.lane-names{display:grid;grid-template-rows:48px 48px;gap:6px;font:9px var(--mono);letter-spacing:1.4px;color:#8f8f8f}.lane-head{display:flex;flex-direction:column;justify-content:center;gap:6px}.lane-head input{width:100%;height:16px;margin:0;accent-color:#c2a9c8;cursor:pointer}
-  .lanes{position:relative;display:grid;grid-template-rows:48px 48px;gap:6px;touch-action:none;cursor:crosshair}.lane{position:relative;overflow:hidden;background:#181818;border:1px solid #373737;border-radius:3px}.lane svg{display:block;width:100%;height:100%}
+  .timeline{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;margin-top:16px}.lane-names{display:grid;grid-auto-rows:48px;gap:6px;font:9px var(--mono);letter-spacing:1.4px;color:#8f8f8f}.lane-head{display:flex;flex-direction:column;justify-content:center;gap:6px}.lane-head input{width:100%;height:16px;margin:0;accent-color:#c2a9c8;cursor:pointer}
+  .lanes{position:relative;display:grid;grid-auto-rows:48px;gap:6px;touch-action:none;cursor:crosshair}.lane{position:relative;overflow:hidden;background:#181818;border:1px solid #373737;border-radius:3px}.lane svg{display:block;width:100%;height:100%}
+  .lane-title{display:flex;align-items:center;justify-content:space-between;gap:4px}.arm,.remove,.arm:hover,.remove:hover{display:flex;align-items:center;gap:6px;min-height:0;padding:0;border:0;background:none;font:9px var(--mono);letter-spacing:1.4px;color:#8f8f8f}.arm span{width:6px;height:6px;border-radius:50%;border:1px solid #6a6a6a}.armed .arm{color:#ededed}.armed .arm span{background:var(--ember);border-color:var(--ember)}.remove{font-size:10px;padding:2px 4px}.remove:hover:not(:disabled){color:#ededed}.guitar-lane.armed{border-color:#5a5a5a}
   .backing-lane.over,.guitar-lane.over{border-color:#d8c2dd}.drop-hint,.drop-hint:hover{position:absolute;inset:0;display:grid;place-items:center;min-height:0;padding:0 12px;text-align:center;line-height:1.4;border:0;border-radius:0;background:none;font-size:11px;color:#9c9c9c;cursor:pointer}.drop-hint>span{min-width:0;max-width:100%;white-space:normal}.drop-hint u{color:#dedbd5}.drop-hint input,.hidden-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
   .selection{position:absolute;top:0;bottom:0;background:#d8c2dd22;border-left:1px solid #d8c2dd;border-right:1px solid #d8c2dd;pointer-events:none}
   .playhead-track{position:absolute;inset:0;pointer-events:none}.playhead{position:absolute;inset:0;will-change:transform}.playhead::before{content:'';position:absolute;left:0;top:0;bottom:0;width:1px;background:#e8dfd0}
