@@ -1,17 +1,18 @@
 <script lang="ts">
   // Studio shell owns audio state; amplifier materials are scoped to its head.
   import { onDestroy } from 'svelte';
-  import { Engine, EngineError, readCatalog, type Meters, type Backend, type LoopMeters,
+  import { Engine, EngineError, checkCabIR, readCatalog, type Meters, type Backend, type LoopMeters,
            type InputChannel, type InputDevice, type OutputDevice, type Source } from '../engine/engine.ts';
   import type { NativeOpened } from '../engine/native-host.ts';
   import { openInput } from '../engine/input.ts';
-  import { CABS } from '../engine/ir.ts';
+  import { CABS, CUSTOM_CAB, DEFAULT_CAB } from '../engine/ir.ts';
   import { detectPitch, noteFromFrequency, type PitchReading } from '../engine/tuner.ts';
   import { bpmFromFourTaps, Metronome, MIN_BPM, MAX_BPM } from '../engine/metronome.ts';
   import type { Capture } from '../engine/catalog.ts';
   import { PARAMS, STAGES, type Param } from '../schema/params.ts';
   import { PRESETS, DEFAULT_PRESET, type Preset } from './presets.ts';
   import { loadSession, saveSession } from '../store/session.ts';
+  import { loadMedia, saveMedia } from '../store/media.ts';
   import Knob from './Knob.svelte';
   import Meter from './Meter.svelte';
   import Segmented from './Segmented.svelte';
@@ -450,6 +451,13 @@
   let cab = $state('v30mod');
   /** Whether the player has chosen a cabinet themselves since the last capture. */
   let cabTouched = $state(false);
+  /** The cabinet IR the player loaded; one at a time, kept on their machine. */
+  let customCab = $state<File | null>(null);
+  let cabRevision = $state(0);
+  let cabFileInput = $state<HTMLInputElement>();
+  const CAB_IR_MEDIA = 'cabinet-ir';
+  /** A select value that is an action, not a cabinet. */
+  const LOAD_CAB = 'load-ir';
   let preset = $state<string | null>(DEFAULT_PRESET);
   /** The preset double-click returns to; survives an edit, unlike `preset`. */
   let resetPreset: string | null = DEFAULT_PRESET;
@@ -588,6 +596,8 @@
     if (saved.preset !== undefined) preset = saved.preset;
     if (saved.captureFile !== undefined) captureFile = saved.captureFile;
     if (saved.cab !== undefined) cab = saved.cab;
+    customCab = await loadMedia(CAB_IR_MEDIA);
+    if (cab === CUSTOM_CAB && customCab === null) cab = DEFAULT_CAB;
     if (saved.cabTouched !== undefined) cabTouched = saved.cabTouched;
     if (saved.deviceId !== undefined) deviceId = saved.deviceId;
     if (saved.outputId !== undefined) outputId = saved.outputId;
@@ -652,7 +662,24 @@
       : null;
   }
 
+  async function loadCabFile(file: File): Promise<void> {
+    const ok = engine !== null ? await engine.loadCab(file) : await checkCabIR(file);
+    if (!ok) {
+      notice = `${file.name} could not be read as an impulse response. A WAV file of the cabinet works.`;
+      return;
+    }
+    notice = null;
+    customCab = file;
+    cabRevision++;
+    cab = CUSTOM_CAB;
+    cabTouched = true;
+    preset = null;
+    void saveMedia(file, 'ir', CAB_IR_MEDIA);
+    persist();
+  }
+
   function chooseCab(id: string): void {
+    if (id === LOAD_CAB) { cabFileInput?.click(); return; }
     cab = id;
     cabTouched = true;
     preset = null;
@@ -973,6 +1000,7 @@
       settleCapture();
       engine.setInputChannel(channel);
       await engine.setCapture(captureFile);
+      if (customCab !== null) await engine.loadCab(customCab);
       engine.setCab(cab);
       // A remembered output is the player's choice and takes precedence over
       // following the input. It is set before start so the context is built
@@ -1141,7 +1169,8 @@
       <div class="gate-control"><Knob param={param('gate_threshold')} value={values.gate_threshold!} resetValue={resetValues.gate_threshold} onchange={v => setParam('gate_threshold',v)} label="Gate" /><button class="enable" aria-label="Gate enabled" aria-pressed={values.gate_bypass !== 1} onclick={() => setParam('gate_bypass',values.gate_bypass === 1 ? 0 : 1)}>{values.gate_bypass === 1 ? 'OFF' : 'ON'}</button></div>
       <div class="rig-selectors">
         <label class="selector"><span>AMPLIFIER</span><select aria-label="Capture" value={captureFile} onchange={e => chooseCapture(e.currentTarget.value)}>{#each captures as c}<option value={c.file}>{c.file === PRESETS[0]?.capture ? 'GUILT · Lead' : c.name}</option>{/each}</select></label>
-        <label class="selector"><span>CABINET</span><select aria-label="Cabinet" value={cab} onchange={e => chooseCab(e.currentTarget.value)}>{#each CABS as c}<option value={c.id}>{c.name}</option>{/each}</select></label>
+        <label class="selector"><span>CABINET</span><select aria-label="Cabinet" value={cab} onchange={e => { const id = e.currentTarget.value; e.currentTarget.value = cab; chooseCab(id); }}>{#each CABS as c}<option value={c.id}>{c.name}</option>{/each}{#if customCab !== null}<option value={CUSTOM_CAB}>IR · {customCab.name.replace(/\.[^.]+$/, '')}</option>{/if}<option value={LOAD_CAB}>Load an IR…</option></select></label>
+        <input bind:this={cabFileInput} aria-label="Cabinet IR file" type="file" accept=".wav,.aif,.aiff,.flac,audio/*" hidden onchange={e => { const f = e.currentTarget.files?.[0]; e.currentTarget.value = ''; if (f) void loadCabFile(f); }} />
       </div>
       <div class="tone-selector"><span class="eyebrow">TONE PRESET</span><div class="preset-picker"><button aria-label="Previous preset" onclick={() => nextPreset(-1)}>‹</button><select aria-label="Tone preset" value={preset ?? ''} onchange={e => { const p = PRESETS.find(p => p.name === e.currentTarget.value); if(p) void applyPreset(p); }}><option value="" disabled>Custom tone</option>{#each PRESETS as p}<option value={p.name}>{p.name}</option>{/each}</select><button aria-label="Next preset" onclick={() => nextPreset(1)}>›</button></div></div>
       <div class="io-control output-control"><Knob param={param('out_master')} value={values.out_master!} resetValue={resetValues.out_master} onchange={v => setParam('out_master',v)} label="Output" /><Meter level={meters.outputRms} /></div>
@@ -1237,7 +1266,7 @@
 
     {#if mode === 'musician'}
       <Recorder engine={engineState === 'running' ? engine : null} sinkId={engine?.outputId ?? outputId}
-        tone={{ values, capture: captures.find(c => c.file === captureFile) ?? null, cab }} />
+        tone={{ values, capture: captures.find(c => c.file === captureFile) ?? null, cab, cabRevision }} />
     {/if}
     <TabReader ontempo={takeScoreTempo} onwrite={() => { if (touring) wroteNote = true; }} />
   </main>

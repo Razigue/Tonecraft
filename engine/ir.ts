@@ -220,6 +220,60 @@ export function cabIR(sampleRate: number, id: string): Float32Array<ArrayBuffer>
   return out;
 }
 
+/** The cabinet id that means "the IR the player loaded", not one synthesised here. */
+export const CUSTOM_CAB = 'custom';
+
+/**
+ * Longest custom IR kept. A cabinet's response is over in a few tens of ms;
+ * what IR packs ship past that is room and silence. At 48 kHz 200 ms is 75
+ * partitions in the convolver, about 0.3% of a core by the reverb's measured
+ * 487 partitions for 2%.
+ */
+const CUSTOM_MAX_S = 0.2;
+/** Below this, relative to the IR's peak, a sample is silence: -60 dB before the onset, -80 dB for the tail. */
+const ONSET = 1e-3;
+const TAIL = 1e-4;
+
+/**
+ * A player's cabinet IR, made fit for the chain: mono, already decoded at the
+ * chain's rate.
+ *
+ * - **Its pre-delay is cut.** An IR exported with a few ms of silence, or with
+ *   the pre-ringing of a linear-phase edit, would delay the whole chain by
+ *   that much, and nothing in the chain adds latency of its own.
+ * - **Its tail is cut** where it falls below -80 dB, and at 200 ms at most,
+ *   with the same half-cosine the synthesised ones end on.
+ * - **It is levelled at 1 kHz**, like the synthesised cabinets: the captures'
+ *   trims were measured through one of those, and an IR loaded hot or quiet
+ *   would otherwise be a volume jump rather than a change of tone.
+ *
+ * Returns null for an IR with nothing in it.
+ */
+export function shapeCabIR(samples: Float32Array, sampleRate: number): Float32Array<ArrayBuffer> | null {
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) peak = Math.max(peak, Math.abs(samples[i]!));
+  if (!(peak > 0) || !Number.isFinite(peak)) return null;
+
+  let start = 0;
+  while (Math.abs(samples[start]!) < peak * ONSET) start++;
+  let end = samples.length;
+  while (end > start + 1 && Math.abs(samples[end - 1]!) < peak * TAIL) end--;
+  const len = Math.min(end - start, Math.round(sampleRate * CUSTOM_MAX_S));
+
+  const out = new Float32Array(len);
+  const fadeStart = Math.floor(len * 0.9);
+  for (let i = 0; i < len; i++) {
+    const w = i < fadeStart ? 1 : 0.5 * (1 + Math.cos((Math.PI * (i - fadeStart)) / (len - fadeStart)));
+    out[i] = samples[start + i]! * w;
+  }
+
+  const g = gainAt(out, len, 1000, sampleRate);
+  // A notch exactly at 1 kHz is not a cabinet; level on the peak rather than blow it up.
+  const level = g > peak * 1e-3 ? g : peak;
+  for (let i = 0; i < len; i++) out[i]! /= level;
+  return out;
+}
+
 /**
  * A small dark plate, enough to place the sound without drowning it. Mono, for
  * the reason the cabinet is. Its 14 ms of pre-delay are exact zeros, which the

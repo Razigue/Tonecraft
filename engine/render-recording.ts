@@ -14,7 +14,7 @@ export async function renderRecording(take: Recording, tone: RecordingTone, wasm
   PARAMS.forEach((p, index) => core.call('tc_set_param', [index, tone.values[p.id] ?? p.default]));
   core.call('tc_set_capture_trim', [tone.capture.trimDb]);
   if (core.call('tc_load_model', [], model) !== 1) throw new Error(core.lastError() || 'The amplifier could not be loaded.');
-  core.call('tc_set_ir', [IR_SLOTS.cab], cabIR(rate, tone.cab));
+  core.call('tc_set_ir', [IR_SLOTS.cab], tone.cabIR ?? cabIR(rate, tone.cab));
   core.call('tc_set_ir', [IR_SLOTS.reverb], reverbIR(rate, 1.3));
   core.inputs[0]!.fill(0);
   for (let i = 0; i < rate / 2; i += 128) core.process(128, 1);

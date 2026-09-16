@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { Engine } from '../engine/engine.ts';
+  import { CUSTOM_CAB } from '../engine/ir.ts';
   import {
     encodeWav, decodeRecording, decodeBacking, exportRecording, laneFrames,
     type ExportContent, type Recording, type RecordingTone, type Timeline,
@@ -137,8 +138,9 @@
     abort = new AbortController();
     try {
       // Snapshot at the click: edits made while rendering belong to the next render.
-      const snapshot = guitarTone ? { values: { ...guitarTone.values }, capture: guitarTone.capture ? { ...guitarTone.capture } : null, cab: guitarTone.cab } : null;
       const source = take ? { ...take, latencyFrames: alignFrames } : { samples: new Float32Array(0), sampleRate: rate };
+      const snapshot = guitarTone ? { values: { ...guitarTone.values }, capture: guitarTone.capture ? { ...guitarTone.capture } : null, cab: guitarTone.cab,
+        ...(guitarTone.cab === CUSTOM_CAB && engine ? { cabIR: await engine.cabIRAt(source.sampleRate, CUSTOM_CAB) } : {}) } : null;
       const wav = await exportRecording(source, snapshot, value => { progress = value; }, abort.signal,
         { content, backing, guitarLevel, backingLevel, range });
       if (disposed) return null;

@@ -6,7 +6,15 @@ export interface Recording {
   /** The round trip it was recorded with, in frames: how late the guitar reached the DI behind a backing track it was played to. */
   latencyFrames?: number;
 }
-export interface RecordingTone { values: Record<string, number>; capture: Capture | null; cab: string }
+export interface RecordingTone {
+  values: Record<string, number>;
+  capture: Capture | null;
+  cab: string;
+  /** Bumped each time the player loads another cabinet IR, so a render of the old one is not reused. */
+  cabRevision?: number;
+  /** The cabinet as the chain had it, at the take's rate. Required for a loaded IR, which a worker cannot synthesise. */
+  cabIR?: Float32Array<ArrayBuffer>;
+}
 
 /** Reload only our own float WAV; retaining its native rate avoids resampling DI. */
 export async function decodeRecording(file: Blob): Promise<Recording> {

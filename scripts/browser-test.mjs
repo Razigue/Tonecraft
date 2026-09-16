@@ -366,6 +366,34 @@ await page.getByRole('combobox', { name: 'Cabinet', exact: true }).selectOption(
 await page.waitForTimeout(500);
 ok('the cabinet can be changed while playing');
 
+// A player's own IR, as IR packs export them: a few ms of silence, then a
+// decaying cabinet-ish impulse. It becomes the cabinet in use, by name.
+const irFile = path.join(ROOT, 'node_modules', '.cache', 'tonecraft-my-cab.wav');
+{
+  const rate = 48_000, ir = new Float32Array(rate / 2);
+  let seed = 7;
+  for (let i = 240; i < 240 + 2048; i++) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    ir[i] = (seed / 0x3fffffff - 1) * Math.exp(-(i - 240) / 200) * 0.5;
+  }
+  writeWav(irFile, rate, [ir]);
+}
+const cabinet = page.getByRole('combobox', { name: 'Cabinet', exact: true });
+await page.getByLabel('Cabinet IR file', { exact: true }).setInputFiles(irFile);
+await page.waitForFunction(() => document.querySelector('select[aria-label="Cabinet"]')?.value === 'custom', null, { timeout: 5000 }).catch(() => {});
+check('a cabinet IR file becomes the cabinet in use', await cabinet.inputValue() === 'custom',
+  (await cabinet.locator('option:checked').textContent()) ?? '');
+const junk = path.join(ROOT, 'node_modules', '.cache', 'tonecraft-not-an-ir.wav');
+fs.writeFileSync(junk, 'not audio');
+await page.getByLabel('Cabinet IR file', { exact: true }).setInputFiles(junk);
+await page.waitForTimeout(800);
+check('a file that is not audio is refused, and the cabinet stays', await cabinet.inputValue() === 'custom'
+  && await page.getByText('could not be read as an impulse response').isVisible());
+// Back to a synthesised cabinet: the tone checks below measure through one.
+await cabinet.selectOption('v30mod');
+await page.waitForTimeout(300);
+check('and a synthesised cabinet can be chosen again', await cabinet.inputValue() === 'v30mod');
+
 // A DI dropped on the recorder's guitar lane plays live through the chain, at a
 // level a guitar actually arrives at.
 const take = path.join(ROOT, 'node_modules', '.cache', 'tonecraft-take.wav');

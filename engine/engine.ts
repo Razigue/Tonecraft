@@ -28,7 +28,7 @@
 
 import { PARAMS } from '../schema/params.ts';
 import { IR_SLOTS, CHANNEL_CODES, CLICK_WAVES, LOOP_STATES, meterIndex, type LoopState } from '../schema/chain.ts';
-import { cabIR, reverbIR, DEFAULT_CAB } from './ir.ts';
+import { cabIR, reverbIR, shapeCabIR, CUSTOM_CAB, DEFAULT_CAB } from './ir.ts';
 import { loadCatalog, EMPTY_CATALOG, type Catalog, type Capture } from './catalog.ts';
 import { classifyDevice } from './input.ts';
 import {
@@ -147,6 +147,15 @@ async function decodeAt(bytes: ArrayBuffer, sampleRate: number): Promise<AudioBu
   return ctx.decodeAudioData(bytes.slice(0));
 }
 
+/** Whether a file is a cabinet IR the chain can use, without an engine to load it into. */
+export async function checkCabIR(file: Blob): Promise<boolean> {
+  try {
+    return shapeCabIR((await decodeAt(await file.arrayBuffer(), 48_000)).getChannelData(0), 48_000) !== null;
+  } catch {
+    return false;
+  }
+}
+
 /** One or two channels, planar, as `tc_file_load` takes them. */
 function planar(buffer: AudioBuffer): Float32Array<ArrayBuffer> {
   const channels = Math.min(2, buffer.numberOfChannels);
@@ -175,6 +184,8 @@ export class Engine {
   #catalog: Catalog = EMPTY_CATALOG;
   #capture: Capture | null = null;
   #cab = DEFAULT_CAB;
+  /** The player's own cabinet IR, as the file's bytes: decoded again at each chain's rate. */
+  #cabBytes: ArrayBuffer | null = null;
 
   #source: Source = 'live';
   #direct = false;
@@ -354,7 +365,7 @@ export class Engine {
     host.send('tc_file_loop', [this.#fileLoop ? 1 : 0]);
     host.send('tc_loop_level', [this.#loopLevel]);
     this.#syncLive();
-    host.send('tc_set_ir', [IR_SLOTS.cab], cabIR(host.sampleRate, this.#cab));
+    await this.#sendCab(host);
     host.send('tc_set_ir', [IR_SLOTS.reverb], reverbIR(host.sampleRate, 1.3));
     if (this.#fileBytes !== null) {
       // Decoded again at the chain's rate: a take loaded before starting was
@@ -545,11 +556,55 @@ export class Engine {
 
   get direct(): boolean { return this.#direct; }
 
-  /** Instant: the IR is synthesised in a few milliseconds, no file to fetch. */
+  /**
+   * Instant for the synthesised cabinets: the IR is made in a few milliseconds,
+   * no file to fetch. `CUSTOM_CAB` selects the IR last given to `loadCab`.
+   */
   setCab(id: string): void {
     this.#cab = id;
     const host = this.#host;
-    if (host !== null) host.send('tc_set_ir', [IR_SLOTS.cab], cabIR(host.sampleRate, id));
+    if (host !== null) void this.#sendCab(host);
+  }
+
+  /**
+   * A cabinet IR from a file (WAV, or anything the browser decodes), selected
+   * at once. Works before the engine is started. False when the file does not
+   * decode or holds only silence; the cabinet in use is then left as it was.
+   * Audio, not tone: like a backing track it never enters a tone link.
+   */
+  async loadCab(file: Blob): Promise<boolean> {
+    const bytes = await file.arrayBuffer();
+    const rate = this.#host?.sampleRate ?? 48_000;
+    if (await this.#decodeCab(bytes, rate) === null) return false;
+    this.#cabBytes = bytes;
+    this.setCab(CUSTOM_CAB);
+    return true;
+  }
+
+  get hasCustomCab(): boolean { return this.#cabBytes !== null; }
+
+  /** The cabinet IR as the chain gets it, at any rate: an export renders through exactly this. */
+  async cabIRAt(rate: number, id = this.#cab): Promise<Float32Array<ArrayBuffer>> {
+    if (id === CUSTOM_CAB && this.#cabBytes !== null) {
+      const ir = await this.#decodeCab(this.#cabBytes, rate);
+      if (ir !== null) return ir;
+    }
+    return cabIR(rate, id === CUSTOM_CAB ? DEFAULT_CAB : id);
+  }
+
+  async #decodeCab(bytes: ArrayBuffer, rate: number): Promise<Float32Array<ArrayBuffer> | null> {
+    try {
+      return shapeCabIR((await decodeAt(bytes, rate)).getChannelData(0), rate);
+    } catch {
+      return null;
+    }
+  }
+
+  async #sendCab(host: ChainHost): Promise<void> {
+    const id = this.#cab;
+    const ir = await this.cabIRAt(host.sampleRate, id);
+    // Decoding a file takes a moment; a cabinet chosen meanwhile wins.
+    if (this.#host === host && this.#cab === id) host.send('tc_set_ir', [IR_SLOTS.cab], ir);
   }
 
   /** Engineering units (AD-9); the chain glides to it (AD-20). */

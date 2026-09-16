@@ -12,7 +12,7 @@
 import { STORES, dbDelete, dbGet, dbGetAll, dbPut } from './db.ts';
 
 /** Append new kinds; never rename one, it is written in the player's database. */
-export type MediaKind = 'take' | 'score' | 'backing';
+export type MediaKind = 'take' | 'score' | 'backing' | 'ir';
 
 export interface MediaRecord {
   readonly id: string;
