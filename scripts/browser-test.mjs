@@ -369,6 +369,7 @@ ok('the cabinet can be changed while playing');
 // A player's own IR, as IR packs export them: a few ms of silence, then a
 // decaying cabinet-ish impulse. It becomes the cabinet in use, by name.
 const irFile = path.join(ROOT, 'node_modules', '.cache', 'tonecraft-my-cab.wav');
+fs.mkdirSync(path.dirname(irFile), { recursive: true });
 {
   const rate = 48_000, ir = new Float32Array(rate / 2);
   let seed = 7;
