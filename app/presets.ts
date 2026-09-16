@@ -29,7 +29,7 @@ export const PRESETS: readonly Preset[] = [
     cab: 'v30mod',
     values: {
       // Kept in step with the schema defaults by npm run check.
-      in_trim: 11.4, gate_threshold: -65, drive_gain: 25.0, drive_tone: 6011,
+      in_trim: 11.4, gate_threshold: -58, drive_gain: 25.0, drive_tone: 6011,
       tone_bass: -1.7, tone_mid: 3.4, tone_treble: 1.7, tone_presence: 1.0,
       pitch_shift: 0, reverb_bypass: 0, reverb_mix: 0.30, out_master: -12.4,
     },
