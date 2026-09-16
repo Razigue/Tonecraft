@@ -6,12 +6,15 @@
     onchange,
     label = param.label,
     resetValue = param.default,
+    powered,
   }: {
     param: Param;
     value: number;
     onchange: (v: number) => void;
     label?: string;
     resetValue?: number;
+    /** Opt-in cabinet illumination; absent on the neutral studio controls. */
+    powered?: boolean;
   } = $props();
 
   const logarithmic = $derived(param.taper === 'logarithmic' && param.min > 0);
@@ -62,7 +65,10 @@
 </script>
 <label class="knob">
   <span class="label">{label}</span>
-  <span class="dial" style={`--angle:${-135 + position * 270}deg;--progress:${position * 270}deg`}>
+  <span class="dial" class:power-dial={powered !== undefined} class:powered={powered === true} style={`--angle:${-135 + position * 270}deg;--progress:${position * 270}deg`}>
+    {#if powered !== undefined}
+      <span class="dial-light" aria-hidden="true"><span class="sweep-half first"></span><span class="sweep-half second"></span></span>
+    {/if}
     <span class="cap"><span class="indicator"></span></span>
     <input
       type="range"
@@ -84,4 +90,50 @@
 </label>
 <style>
   .knob{display:flex;flex-direction:column;align-items:center;gap:11px;min-width:66px}.label{font-size:10px;text-transform:uppercase;letter-spacing:1.7px;color:var(--control-label,#adadad)}.dial{position:relative;width:62px;height:62px;border-radius:50%;background:conic-gradient(from 225deg,var(--knob-accent,#b7b7b7) 0deg var(--progress),#454545 var(--progress) 270deg,transparent 270deg);display:grid;place-items:center}.dial:before{content:'';position:absolute;inset:3px;border-radius:50%;background:#232323}.cap{position:absolute;inset:9px;border:1px solid #686868;border-radius:50%;background:var(--knob-material,linear-gradient(140deg,#5a5a5a,#262626 60%,#191919));box-shadow:0 3px 6px #0009,inset 0 1px 1px #ffffff30;transform:rotate(var(--angle))}.indicator{position:absolute;top:4px;left:calc(50% - 1px);height:10px;width:2px;background:var(--knob-accent,#cfcfcf);border-radius:2px}input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:ns-resize;touch-action:none}.dial:focus-within{outline:2px solid var(--iris);outline-offset:5px}.value{font:10px var(--mono);color:var(--control-label,#adadad);white-space:nowrap}.knob:hover .label{color:#eee}
+  /* Two rotating half-rings reveal a fixed light texture. The static mask
+     clips the sweep at the saved value; no gradient or filter animates. */
+  .power-dial .dial-light {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
+    transform: rotate(225deg);
+    mask-image: conic-gradient(#000 0deg var(--progress),transparent var(--progress));
+    opacity: 0;
+    transition: opacity 400ms ease-out;
+  }
+  .sweep-half { position: absolute; inset: 0; clip-path: inset(0 0 0 50%); }
+  .sweep-half.second { transform: rotate(180deg); }
+  .sweep-half::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 3px solid #d7bedf;
+    border-radius: 50%;
+    clip-path: inset(0 50% 0 0);
+    transform: rotate(0deg);
+    transition: transform 0s 400ms;
+  }
+  .power-dial.powered .dial-light { opacity: 1; transition: opacity 250ms ease-in; }
+  .powered .first::before { transform: rotate(180deg); transition: transform 600ms linear 100ms; }
+  .powered .second::before { transform: rotate(90deg); transition: transform 300ms linear 700ms; }
+  .power-dial .indicator { background: #655e6b; }
+  .power-dial .indicator::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: #d7bedf;
+    box-shadow: 0 0 4px #d6b6e388;
+    opacity: 0;
+    transition: opacity 400ms ease-out;
+  }
+  .power-dial.powered .indicator::after { opacity: 1; transition: opacity 850ms ease-in 100ms; }
+  @starting-style {
+    .power-dial.powered .dial-light,.power-dial.powered .indicator::after { opacity: 0; }
+    .powered .first::before,.powered .second::before { transform: rotate(0deg); }
+  }
+  @media(prefers-reduced-motion:reduce) {
+    .power-dial .dial-light,.sweep-half::before,.power-dial .indicator::after { transition: none !important; }
+  }
 </style>

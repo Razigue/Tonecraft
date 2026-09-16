@@ -533,6 +533,7 @@
   const cabInfo = $derived(CABS.find((c) => c.id === cab) ?? CABS[0]!);
   const level = (v: number): number => Math.min(1, Math.sqrt(Math.max(0, v)) * 1.6);
   const isGuilt = $derived(captureFile === PRESETS[0]?.capture);
+  const ampIlluminated = $derived(engineState === 'running' && !poweredOff);
   /**
    * How lit the front of the amp is, 0 to 1, from the output RMS.
    *
@@ -1176,7 +1177,7 @@
       <div class="io-control output-control"><Knob param={param('out_master')} value={values.out_master!} resetValue={resetValues.out_master} onchange={v => setParam('out_master',v)} label="Output" /><Meter level={meters.outputRms} /></div>
     </section>
 
-    <section class="amp-head" class:guilt={isGuilt} class:bypassed={poweredOff} aria-label={isGuilt ? 'GUILT amplifier' : 'Tonecraft amplifier'}>
+    <section class="amp-head" class:guilt={isGuilt} class:illuminated={isGuilt && ampIlluminated} class:bypassed={poweredOff} aria-label={isGuilt ? 'GUILT amplifier' : 'Tonecraft amplifier'}>
       {#if isGuilt}
         <div class="guilt-handle" aria-hidden="true"><span></span></div>
         <div class="guilt-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
@@ -1206,20 +1207,34 @@
       <div class="glass-window">
         {#if isGuilt}<img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt="Purple Gothic stained glass with a central rose window" width="2172" height="724" decoding="async" /><div class="veil" style={`opacity:${veil}`}></div>{:else}<div class="neutral-art"><span>TC</span><small>AMPLIFICATION</small></div>{/if}
         {#if isGuilt}
-          <div class="glass-glow" aria-hidden="true" style={`opacity:${0.28 + light * 0.44}`}>
-            <img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt="" width="2172" height="724" decoding="async" />
+          <div class="glass-bloom-power" aria-hidden="true">
+            <div class="glass-glow" style={`opacity:${0.28 + light * 0.44}`}>
+              <img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt="" width="2172" height="724" decoding="async" />
+            </div>
           </div>
         {/if}
-        {#if isGuilt}<div class="glass-reflections" aria-hidden="true"></div>{/if}
+        {#if isGuilt}
+          <div class="glass-reflections" aria-hidden="true"></div>
+          <div class="glass-night" aria-hidden="true"></div>
+        {/if}
         <div class="amp-brand"><span class="brand-rule"></span><h1>{isGuilt ? 'GUILT' : 'TONECRAFT'}</h1><span class="brand-rule"></span><p>{isGuilt ? 'LUX EX SONO' : 'FIND YOUR FREQUENCY'}</p></div>
       </div>
       <div class="amp-panel">
         <div class="amp-signature"><span class="sig-symbol">✧</span><span>{isGuilt ? 'Guilt' : 'Tonecraft'}</span><small>{isGuilt ? 'LEAD AMPLIFIER' : 'CAPTURE SERIES'}</small></div>
-        <div class="control-group tone-group"><button class="group-label" aria-label="Tone enabled" aria-pressed={values.tone_bypass !== 1} onclick={() => setParam('tone_bypass',values.tone_bypass === 1 ? 0 : 1)}>TONE <span>{values.tone_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['tone_bass','tone_mid','tone_treble','tone_presence'] as id}<Knob param={param(id)} value={values[id]!} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
-        <div class="control-group"><button class="group-label" aria-label="Pitch enabled" aria-pressed={values.pitch_bypass !== 1} onclick={() => setParam('pitch_bypass',values.pitch_bypass === 1 ? 0 : 1)}>PITCH <span>{values.pitch_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['pitch_shift','pitch_mix'] as id}<Knob param={param(id)} value={values[id]!} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
-        <div class="control-group"><button class="group-label" aria-label="Boost enabled" aria-pressed={values.drive_bypass !== 1} onclick={() => setParam('drive_bypass',values.drive_bypass === 1 ? 0 : 1)}>BOOST <span>{values.drive_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['drive_gain','drive_tone'] as id}<Knob param={param(id)} value={values[id]!} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
-        <div class="control-group"><button class="group-label" aria-label="Reverb enabled" aria-pressed={values.reverb_bypass !== 1} onclick={() => setParam('reverb_bypass',values.reverb_bypass === 1 ? 0 : 1)}>REVERB <span>{values.reverb_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row"><Knob param={param('reverb_mix')} value={values.reverb_mix!} resetValue={resetValues.reverb_mix} onchange={v => setParam('reverb_mix',v)} /></div></div>
-        <button class="power-indicator" type="button" aria-label="Amplifier power" aria-pressed={engineState === 'running' && !poweredOff} aria-busy={engineState === 'starting'} disabled={engineState === 'starting' || detecting} onclick={power}><span class:lit={engineState === 'running' && !poweredOff}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></span><small>POWER</small></button>
+        <div class="control-group tone-group"><button class="group-label" aria-label="Tone enabled" aria-pressed={values.tone_bypass !== 1} onclick={() => setParam('tone_bypass',values.tone_bypass === 1 ? 0 : 1)}>TONE <span>{values.tone_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['tone_bass','tone_mid','tone_treble','tone_presence'] as id}<Knob param={param(id)} value={values[id]!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
+        <div class="control-group"><button class="group-label" aria-label="Pitch enabled" aria-pressed={values.pitch_bypass !== 1} onclick={() => setParam('pitch_bypass',values.pitch_bypass === 1 ? 0 : 1)}>PITCH <span>{values.pitch_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['pitch_shift','pitch_mix'] as id}<Knob param={param(id)} value={values[id]!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
+        <div class="control-group"><button class="group-label" aria-label="Boost enabled" aria-pressed={values.drive_bypass !== 1} onclick={() => setParam('drive_bypass',values.drive_bypass === 1 ? 0 : 1)}>BOOST <span>{values.drive_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['drive_gain','drive_tone'] as id}<Knob param={param(id)} value={values[id]!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
+        <div class="control-group"><button class="group-label" aria-label="Reverb enabled" aria-pressed={values.reverb_bypass !== 1} onclick={() => setParam('reverb_bypass',values.reverb_bypass === 1 ? 0 : 1)}>REVERB <span>{values.reverb_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row"><Knob param={param('reverb_mix')} value={values.reverb_mix!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues.reverb_mix} onchange={v => setParam('reverb_mix',v)} /></div></div>
+        <button class="power-indicator" type="button" aria-label="Amplifier power" aria-pressed={ampIlluminated} aria-busy={engineState === 'starting'} disabled={engineState === 'starting' || detecting} onclick={power}>
+          {#if isGuilt}
+            <span class="power-rocker" class:lit={ampIlluminated} aria-hidden="true">
+              <span class="rocker-face"><span class="rocker-on">I</span><span class="rocker-lamp"></span><span class="rocker-off">O</span></span>
+            </span>
+          {:else}
+            <span class:lit={ampIlluminated}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></span>
+          {/if}
+          <small>POWER</small>
+        </button>
       </div>
     </section>
     <div class="amp-foot"><span></span><span></span></div>
@@ -1740,18 +1755,20 @@
   /* GUILT is viewed head-on, just above the cabinet: a shallow, symmetric
      top plane and rounded rails surround the recessed glass and faceplate. */
   .amp-head.guilt {
+    --guilt-rim: 26px;
+    --guilt-piping: 19px;
     --leather-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3' stitchTiles='stitch'/%3E%3CfeDiffuseLighting surfaceScale='2' diffuseConstant='.65' lighting-color='%23b5a9a3'%3E%3CfeDistantLight azimuth='225' elevation='45'/%3E%3C/feDiffuseLighting%3E%3C/filter%3E%3Cpath fill='%23201c21' filter='url(%23grain)' opacity='.24' d='M0 0h180v180H0z'/%3E%3C/svg%3E");
     --knob-material: conic-gradient(from 35deg,#27232a,#89818d 55deg,#49424e 105deg,#211e24 175deg,#514a57 260deg,#a39aa6 310deg,#27232a);
-    --knob-accent: #d7bedf;
+    --knob-accent: #655e6b;
     --control-label: #c6bcc9;
     isolation: isolate;
     margin-top: 48px;
     margin-right: 0;
-    padding: 22px;
-    border: 1px solid #555257;
-    border-radius: 15px;
-    background: var(--leather-grain),linear-gradient(90deg,#343236,#1a191c 3%,#232125 50%,#1a191c 97%,#343236);
-    box-shadow: inset 0 3px 2px #b4adb15c,inset 3px 0 4px #8a858b40,inset -3px 0 4px #8a858b30,inset 0 -5px 5px #000c,0 3px 0 #0c0b0d,0 16px 18px -5px #000b,0 30px 35px -15px #000b;
+    padding: var(--guilt-rim);
+    border: 1px solid #454348;
+    border-radius: 20px;
+    background: linear-gradient(180deg,#b8b0ab22,transparent 7px,#0005 18px,transparent 27px,transparent calc(100% - 22px),#a49b9d14 calc(100% - 12px),#0008),var(--leather-grain),linear-gradient(90deg,#403c40,#252327 7px,#18171a 20px,#201e22 50%,#18171a calc(100% - 20px),#252327 calc(100% - 7px),#373439);
+    box-shadow: inset 0 2px 1px #c2b9b54d,inset 2px 0 3px #9d969c33,inset -2px 0 3px #9d969c22,inset 0 -5px 6px #000d,0 2px 0 #080709,0 12px 12px -5px #000b,0 28px 30px -12px #000c;
   }
   .amp-head.guilt::before,.amp-head.guilt::after {
     content: '';
@@ -1761,28 +1778,28 @@
     border: 1px solid #4c494e;
   }
   .amp-head.guilt::before {
-    height: 14px;
-    left: 3px;
-    right: 3px;
-    top: -9px;
-    clip-path: polygon(10px 0,calc(100% - 10px) 0,100% 100%,0 100%);
-    border-radius: 12px 12px 0 0;
-    background: var(--leather-grain),linear-gradient(#272529,#555056 65%,#242226);
-    box-shadow: inset 0 1px 1px #b1a3ae55;
+    height: 16px;
+    left: 5px;
+    right: 5px;
+    top: -8px;
+    clip-path: polygon(12px 0,calc(100% - 12px) 0,100% 100%,0 100%);
+    border-radius: 15px 15px 0 0;
+    background: var(--leather-grain),linear-gradient(#201e22,#454047 55%,#302d32 80%,#151317);
+    box-shadow: inset 0 1px 1px #b1a3ae44;
   }
   .amp-head.guilt::after {
-    inset: 7px;
-    border-color: #131215;
-    border-radius: 10px;
-    box-shadow: 0 1px 1px #b6aeb338,inset 0 2px 3px #000b,inset 2px 0 3px #0008,inset -2px 0 3px #0008;
+    inset: 5px;
+    border-color: #0d0c0f;
+    border-radius: 15px;
+    box-shadow: 0 1px 0 #b6aeb32b,inset 0 1px 2px #0008;
   }
   .guilt-handle {
     position: absolute;
     z-index: -2;
-    top: -17px;
-    left: calc(50% - 110px);
-    width: 220px;
-    height: 12px;
+    top: -23px;
+    left: calc(50% - 115px);
+    width: 230px;
+    height: 17px;
     pointer-events: none;
     border-bottom: 5px solid #161317;
     filter: drop-shadow(0 3px 2px #0008);
@@ -1793,9 +1810,9 @@
     bottom: -4px;
     width: 27px;
     height: 9px;
-    border: 1px solid #6d686b;
+    border: 1px solid #8b7e69;
     border-radius: 3px;
-    background: linear-gradient(#827b75,#393635 45%,#211e20);
+    background: linear-gradient(#b0a18b,#62594e 40%,#292526 80%);
   }
   .guilt-handle::before { left: 0; }
   .guilt-handle::after { right: 0; }
@@ -1804,29 +1821,50 @@
     inset: 0 17px 0;
     border: 4px solid #242226;
     border-bottom: 0;
-    border-radius: 14px 14px 0 0;
+    border-radius: 50% 50% 0 0 / 14px 14px 0 0;
     box-shadow: inset 0 2px 1px #897b8444,0 -1px 0 #615b60;
     background: linear-gradient(#39353b,#201e22 65%,transparent 66%);
   }
-  .guilt-corners { position: absolute; inset: 0; pointer-events: none; }
+  .guilt-corners { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+  /* One continuous piping line ties the glass and control plate into a
+     recessed front, while the outer seam describes the rolled leather edge. */
+  .guilt-corners::before,.guilt-corners::after {
+    content: '';
+    position: absolute;
+    border-radius: 8px;
+  }
+  .guilt-corners::before {
+    inset: var(--guilt-piping);
+    border: 1px solid;
+    border-color: #9a8d78 #6c6155 #554c46 #897b69;
+    box-shadow: 0 0 0 1px #09080b,0 1px 0 1px #c9bba226,inset 0 1px 1px #e7d8bc22;
+  }
+  .guilt-corners::after {
+    inset: calc(var(--guilt-piping) + 3px);
+    border: 1px solid #09080c;
+    border-radius: 6px;
+    box-shadow: inset 0 7px 7px #000a,inset 3px 0 4px #0006,inset -3px 0 4px #0006,0 0 2px #000;
+  }
   .guilt-corners i {
     position: absolute;
-    width: 36px;
-    height: 36px;
-    border: 1px solid #666268;
-    background: linear-gradient(135deg,#6b666d,#39363c 20%,#222025 50%,#423e45 76%,#19171b);
-    box-shadow: 0 2px 3px #0009,inset 1px 1px 2px #d5cdd044;
+    width: 40px;
+    height: 40px;
+    border: 1px solid #565359;
+    background: linear-gradient(135deg,#68636b,#302d33 22%,#1a181d 50%,#332f37 76%,#121014);
+    box-shadow: 0 2px 3px #0009,inset 1px 1px 2px #d5cdd033;
   }
-  .guilt-corners i:nth-child(1) { top: -2px; left: -2px; border-radius: 15px 4px 5px 4px; clip-path: polygon(0 0,100% 0,100% 30%,30% 30%,30% 100%,0 100%); }
-  .guilt-corners i:nth-child(2) { top: -2px; right: -2px; border-radius: 4px 15px 4px 5px; clip-path: polygon(0 0,100% 0,100% 100%,70% 100%,70% 30%,0 30%); }
-  .guilt-corners i:nth-child(3) { bottom: -2px; left: -2px; border-radius: 4px 5px 4px 15px; clip-path: polygon(0 0,30% 0,30% 70%,100% 70%,100% 100%,0 100%); }
-  .guilt-corners i:nth-child(4) { bottom: -2px; right: -2px; border-radius: 5px 4px 15px 4px; clip-path: polygon(70% 0,100% 0,100% 100%,0 100%,0 70%,70% 70%); }
-  .guilt .tl,.guilt .tr { top: 3px; }
-  .guilt .bl,.guilt .br { bottom: 3px; }
+  .guilt-corners i:nth-child(1) { top: -1px; left: -1px; border-radius: 20px 4px 5px 4px; clip-path: polygon(0 0,100% 0,100% 27%,27% 27%,27% 100%,0 100%); }
+  .guilt-corners i:nth-child(2) { top: -1px; right: -1px; border-radius: 4px 20px 4px 5px; clip-path: polygon(0 0,100% 0,100% 100%,73% 100%,73% 27%,0 27%); }
+  .guilt-corners i:nth-child(3) { bottom: -1px; left: -1px; border-radius: 4px 5px 4px 20px; clip-path: polygon(0 0,27% 0,27% 73%,100% 73%,100% 100%,0 100%); }
+  .guilt-corners i:nth-child(4) { bottom: -1px; right: -1px; border-radius: 5px 4px 20px 4px; clip-path: polygon(73% 0,100% 0,100% 100%,0 100%,0 73%,73% 73%); }
+  .guilt .tl,.guilt .tr { top: 4px; }
+  .guilt .bl,.guilt .br { bottom: 4px; }
+  .guilt .tl,.guilt .bl { left: 26px; }
+  .guilt .tr,.guilt .br { right: 26px; }
   .guilt .screw {
     width: 5px;
     height: 5px;
-    z-index: 1;
+    z-index: 4;
     background: linear-gradient(135deg,#b5a9ad,#4d444d 40%,#171319 42% 56%,#a0939c 58%,#3d353e);
     box-shadow: 0 1px 2px #000,inset 0 0 0 1px #c0b0b044;
   }
@@ -1838,8 +1876,43 @@
     box-shadow: 0 0 0 1px #0b090e,0 -2px 3px #000c,0 1px 0 #8b7d9144;
   }
   .glass-filters { position: absolute; pointer-events: none; }
-  .guilt .glass-window { isolation: isolate; }
+  .guilt .glass-window { isolation: isolate; opacity: 1; }
+  /* Dim the glass against black, never the cabinet behind it: lowering the
+     whole window's opacity let the grey leather show through the dark glass. */
+  .glass-night {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: #010104;
+    opacity: .94;
+    transition: opacity 500ms ease-out;
+  }
+  .guilt.illuminated .glass-night { opacity: 0; animation: guilt-ignite 1500ms linear; }
+  .guilt .glass-window .veil { transition: opacity 150ms linear; }
+  .guilt:not(.illuminated) .glass-window .veil { transition-duration: 500ms; }
+  /* Two restrained ignition dips, then steady RMS illumination. No loop. */
+  @keyframes guilt-ignite {
+    0% { opacity: .94; }
+    20% { opacity: .18; }
+    30% { opacity: .18; }
+    36% { opacity: .94; }
+    48% { opacity: .08; }
+    60% { opacity: .08; }
+    66% { opacity: .94; }
+    84% { opacity: .04; }
+    100% { opacity: 0; }
+  }
   .guilt .glass-window>img { filter: url(#guilt-glass-relief) brightness(1.8) contrast(1.13) saturate(.9); }
+  .glass-bloom-power {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    mix-blend-mode: screen;
+    opacity: 0;
+    transition: opacity 500ms ease-out;
+  }
+  .guilt.illuminated .glass-bloom-power { opacity: 1; transition: opacity 1200ms ease-in; }
   .glass-glow {
     position: absolute;
     inset: 0;
@@ -1878,18 +1951,83 @@
   }
   .guilt .amp-signature { color: #ccbacc; text-shadow: 0 1px 0 #09070d,0 -1px 0 #ffffff22; }
   .guilt :global(.dial) { box-shadow: 0 1px 0 #d5c0de22,0 -1px 2px #000b; }
+  .guilt :global(.dial) { background: conic-gradient(from 225deg,#514b57 0deg var(--progress),#363139 var(--progress) 270deg,transparent 270deg); }
   .guilt :global(.dial::before) { background: radial-gradient(circle at 40% 32%,#433a49,#17121e 75%); box-shadow: inset 0 2px 4px #000; }
   .guilt :global(.cap) { border-color: #9a899d #4b414f #27202e #796c80; box-shadow: 2px 5px 5px #000b,0 2px 0 2px #141018,inset 0 0 0 2px #c5b0d022,inset 0 1px 2px #eee2f455; }
-  .guilt :global(.indicator) { box-shadow: 0 0 3px #d6b6e355; }
-  .guilt .power-indicator>span { background: radial-gradient(circle at 35% 25%,#635467,#2b2331 65%); border-color: #2c2530; box-shadow: 0 0 0 1px #9c8aa0,0 3px 0 2px #141018,2px 5px 6px #0009,inset 0 1px 2px #e2c9e644; }
-  .guilt .power-indicator>span.lit { background: radial-gradient(circle at 35% 25%,#b88ec5,#61436f 70%); box-shadow: 0 0 0 1px #b29ab9,0 3px 0 2px #141018,0 0 15px #c47adf66,inset 0 1px 3px #f8ddff77; }
+  .guilt .group-label span { position: relative; display: inline-block; }
+  .guilt .group-label span::after {
+    content: '●';
+    position: absolute;
+    inset: 0;
+    color: #d7bedf;
+    text-shadow: 0 0 5px #d6b6e399;
+    opacity: 0;
+    transition: opacity 400ms ease-out;
+  }
+  .guilt.illuminated .group-label[aria-pressed=true] span::after { opacity: 1; transition: opacity 900ms ease-in 120ms; }
+  .guilt .power-indicator { gap: 11px; padding: 8px 4px; min-width: 48px; }
+  .guilt .power-indicator>span.power-rocker {
+    position: relative;
+    display: block;
+    width: 36px;
+    height: 58px;
+    padding: 3px;
+    border: 1px solid;
+    border-color: #645b68 #39313e #84758b #4d4355;
+    border-radius: 5px;
+    background: #0b080f;
+    perspective: 180px;
+    box-shadow: 0 0 0 2px #121016,0 3px 5px #000b,inset 0 2px 4px #000;
+  }
+  .rocker-face {
+    position: absolute;
+    inset: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-around;
+    border: 1px solid #544c5c;
+    border-radius: 3px;
+    background: linear-gradient(#4c4553,#29232f 48%,#17121e 52%,#211b28);
+    transform: rotateX(-13deg);
+    box-shadow: 0 -3px 0 #211a29,0 -4px 1px #73677c,inset 0 1px 1px #b2a0bd33;
+    color: #9a8dA3;
+    font: 10px var(--mono);
+    text-shadow: 0 1px 1px #000;
+  }
+  .rocker-on { color: #7d7187; }
+  .rocker-off { color: #ddd1e2; }
+  .rocker-lamp { position: relative; width: 15px; height: 3px; border-radius: 2px; background: #312236; box-shadow: inset 0 1px 2px #000; }
+  .rocker-lamp::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: #eac0fc;
+    box-shadow: 0 0 4px #eccbff,0 0 12px #c875efaa,inset 0 1px 0 #fff8;
+    opacity: 0;
+    transition: opacity 400ms ease-out;
+  }
+  .power-rocker.lit .rocker-face {
+    transform: rotateX(13deg);
+    background: linear-gradient(#201a29,#302637 48%,#494050 52%,#332b3e);
+    box-shadow: 0 3px 0 #18111f,0 4px 1px #5b4b67,inset 0 1px 3px #0008;
+  }
+  .power-rocker.lit .rocker-on { color: #f1e1f7; }
+  .power-rocker.lit .rocker-off { color: #85728f; }
+  .power-rocker.lit .rocker-lamp::after { opacity: 1; transition: opacity 650ms ease-in; }
+  .guilt .power-indicator:hover:not(:disabled) .power-rocker { border-color: #a091aa; }
+  .guilt .power-indicator:active:not(:disabled) .rocker-face { transform: rotateX(0deg) translateZ(-1px); }
   .guilt+.amp-foot { margin: 0 58px; }
   .guilt+.amp-foot span { width: 55px; height: 20px; border-radius: 0 0 10px 10px; background: linear-gradient(90deg,#111014,#3a363e 25%,#201d25 75%,#100d14); border-bottom: 3px solid #0b090e; box-shadow: 0 5px 5px #0007,inset 0 5px 6px #000; }
   @media(prefers-reduced-motion:reduce) {
-    .glass-glow { opacity: .34 !important; will-change: auto; }
+    .glass-night { animation: none !important; transition: none; }
+    .glass-bloom-power,.guilt .glass-window .veil,.guilt .group-label span::after,.rocker-lamp::after { transition: none !important; }
+    .glass-glow { will-change: auto; }
+    .guilt.illuminated .glass-glow { opacity: .34 !important; }
   }
   @media(max-width:760px) {
-    .amp-head.guilt { margin-top: 40px; padding: 17px 12px; }
+    .amp-head.guilt { --guilt-rim: 18px; --guilt-piping: 12px; margin-top: 40px; }
     .amp-head.guilt::before { height: 11px; top: -6px; }
     .amp-head.guilt::after { inset: 5px; }
     .guilt-handle { top: -14px; width: 150px; left: calc(50% - 75px); }
