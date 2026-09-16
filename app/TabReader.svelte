@@ -244,6 +244,10 @@
       core: { fontDirectory: `${BASE}font/`, engine: 'svg', enableLazyLoading: false },
       display: { scale: zoom / 100, padding: [24, 28, 24, 28], layoutMode: alpha.LayoutMode.Horizontal,
         staveProfile: notation === 'tab' ? alpha.StaveProfile.Tab : alpha.StaveProfile.ScoreTab },
+      // The footer — the copyright and its "All Rights Reserved" second line,
+      // which alphaTab draws only under a copyright — is a page of print, not
+      // a line to read along. The header above the music stays.
+      notation: { elements: new Map([[alpha.NotationElement.ScoreCopyright, false]]) },
       player: {
         // The soundfont is loaded below rather than named here: see soundFont().
         playerMode: alpha.PlayerMode.EnabledSynthesizer,
