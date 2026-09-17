@@ -321,7 +321,10 @@
 
 <style>
   .tour-shade{position:fixed;inset:0;z-index:70;background:#030303d9;animation:tour-in .25s ease-out}
-  .tour-card{position:fixed;left:0;top:0;z-index:72;display:flex;flex-direction:column;width:min(430px,calc(100vw - 32px));max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow:hidden;box-sizing:border-box;padding:20px 24px 18px;touch-action:pan-y;border:1px solid var(--violet-700);border-radius:var(--radius);background:var(--surface-1);box-shadow:var(--shadow);color:var(--ink);opacity:0;transition:transform .3s ease-out}
+  /* The card never takes the whole height: a card as tall as the window has
+     nowhere to go but over the window it explains, and the control the step
+     asks to press ends up under it. What does not fit scrolls inside it. */
+  .tour-card{position:fixed;left:0;top:0;z-index:72;display:flex;flex-direction:column;width:min(430px,calc(100vw - 32px));max-height:calc(100vh - 140px);max-height:calc(100dvh - 140px);overflow:hidden;box-sizing:border-box;padding:20px 24px 18px;touch-action:pan-y;border:1px solid var(--violet-700);border-radius:var(--radius);background:var(--surface-1);box-shadow:var(--shadow);color:var(--ink);opacity:0;transition:transform .3s ease-out}
   .tour-card.wide{width:min(470px,calc(100vw - 32px))}
   .tour-card.placed{opacity:1}
   .tour-head,.tour-task,.tour-actions{flex:none}

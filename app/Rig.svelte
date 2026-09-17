@@ -554,7 +554,7 @@
   });
   let captures = $state<readonly Capture[]>([]);
   let captureFile = $state('');
-  let cab = $state('v30mod');
+  let cab = $state(PRESETS.find((p) => p.name === DEFAULT_PRESET)?.cab ?? DEFAULT_CAB);
   /** Whether the player has chosen a cabinet themselves since the last capture. */
   let cabTouched = $state(false);
   /** The cabinet IR the player loaded; one at a time, kept on their machine. */
@@ -1252,7 +1252,7 @@
      nothing scrolling. A tester arrived with no guitar to try any of it with, so
      they get a page to read: the same bar, the same chain, the same head, the
      demo and the reader under it, scrolling as a page does (CLAUDE.md §4). -->
-<div class="page" class:tester data-view={tester ? 'tone' : view} style:--dock={`${dockHeight}px`}>
+<div class="page" class:tester class:touring data-view={tester ? 'tone' : view} style:--dock={`${dockHeight}px`}>
   <StudioBar view={tester ? 'tone' : view} onview={chooseView} {latencyMs} {latencyDetail} {touring} showTour={tester} showModes={!tester} settingsDisabled={engineState === 'starting'}
     ontour={() => (touring = true)} onsettings={openSettings} />
 
@@ -1266,9 +1266,11 @@
     <div class="capture-info" data-capture={latencyMs === null ? 'idle' : captureLoaded ? 'loaded' : 'silent'}></div>
     <!-- Over the top of the stage, so a message never moves what is under it. -->
     <div class="messages">
-      {#if engineState === 'running' && !captureLoaded}<p class="alert">{t.rig.captureSilent}</p>{/if}
+      <!-- Both speak to someone playing through the rig: a tester has no guitar
+           to hear dry and no engine of their own to update. -->
+      {#if engineState === 'running' && !captureLoaded && !tester}<p class="alert">{t.rig.captureSilent}</p>{/if}
       <p class="notice" role="status">{notice ?? ''}</p>
-      {#if engineLatest !== null && backend === 'native'}
+      {#if engineLatest !== null && backend === 'native' && !tester}
         <div class="engine-update" role="status">
           <span>{t.rig.engineUpdate(engineLatest.latest, engineLatest.current)}</span>
           <a class="update-button" href={engineDownload} rel="noopener">{t.rig.updateEngine}</a>
@@ -1293,7 +1295,7 @@
            there is no transport to hold them, and nothing here is played by
            hand — the tab keeps the transport's own row above it. -->
       <section class="demo-panel tc-plate" aria-label={t.rig.demo}>{@render demoPanel()}</section>
-      <section class="tab-column tc-plate">
+      <section class="tab-column tc-plate" class:reading={deck.loaded}>
         <!-- Only once a score is open: with none, the reader's own header is
              already where a tab is opened, and two invitations is one too many. -->
         {#if deck.loaded}<div class="tab-row"><TabTransport {deck} view="play" syncBpm={metronomeSync ? metronomeBpm : null} /></div>{/if}
@@ -1640,12 +1642,24 @@
   .page.tester {
     display: flex;
     flex-direction: column;
+    align-items: center;
     height: auto;
     min-height: 100dvh;
     overflow: visible;
+    /* The corner launchers stand in the room under the last plate. */
     padding-bottom: calc(var(--gutter) + 66px);
   }
-  .page.tester .stage { display: flex; flex: none; flex-direction: column; gap: var(--gutter); }
+  /* One centred column, as the page was before the studio became an
+     instrument: the bands do not stretch to the window, they are the head's
+     own width and stack under it. */
+  .page.tester > :global(*) { width: min(100%, var(--column)); }
+  .page.tester > :global(.bar) { width: 100%; }
+  .page.tester .stage { display: flex; flex: none; flex-direction: column; gap: var(--gutter); width: min(100%, var(--column)); }
+  /* While the tutorial runs, and only then: it brings each window to the top of
+     the screen to explain it, and the last one can only get there if the page
+     has somewhere left to scroll. Empty room under a page nobody is being
+     walked through would just be empty room. */
+  .page.tester.touring { padding-bottom: calc(var(--gutter) + 66px + 30vh); }
   .page.tester .amp-slot { flex: none; padding: calc(var(--u) * 3) 0 calc(var(--u) * 5); }
   .page.tester .demo-panel { padding: 18px 20px; }
   .page.tester .tab-column { display: flex; flex-direction: column; overflow: hidden; }
@@ -1662,13 +1676,16 @@
      tutorial lights this box, and an empty state floating in a tall dark
      rectangle reads as a bug. */
   /* A firm height, not a minimum: the reader asks for 100% of its slot, and a
-     slot that only has a minimum is still auto to a percentage. */
-  .page.tester .tab-stage { display: flex; flex: none; height: 520px; overflow: hidden; }
+     slot that only has a minimum is still auto to a percentage. Open, the slot
+     is tall enough for the score, the scale bar and the neck under them — the
+     reader drops the neck when its own stage falls under 480 px. */
+  .page.tester .tab-stage { display: flex; flex: none; height: 420px; overflow: hidden; }
+  .page.tester .reading .tab-stage { height: 660px; }
   .page.tester .tab-stage > :global(.reader) { flex: 1; min-height: 0; }
   /* On a phone the page is already scrolling: the reader grows with its neck
      rather than clipping it inside a fixed box. */
   @media (max-width: 760px) {
-    .page.tester .tab-stage { display: block; height: auto; min-height: 520px; overflow: visible; }
+    .page.tester .tab-stage, .page.tester .reading .tab-stage { display: block; height: auto; min-height: 520px; overflow: visible; }
     .page.tester .tab-stage > :global(.reader) { height: auto; }
   }
 
