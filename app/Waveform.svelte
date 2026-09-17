@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lang } from './locale.svelte.ts';
   /**
    * The file source's timeline.
    *
@@ -102,7 +103,7 @@
     preserveAspectRatio="none"
     role="slider"
     tabindex="0"
-    aria-label="Position in the file"
+    aria-label={lang.ui.waveform.position}
     aria-valuemin={0}
     aria-valuemax={Number(duration.toFixed(2))}
     aria-valuenow={Number(shown.toFixed(2))}

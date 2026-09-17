@@ -11,6 +11,7 @@
    */
   import { untrack } from 'svelte';
   import { PEAK_CLIPPING } from '../engine/diagnosis';
+  import { lang } from './locale.svelte.ts';
 
   interface Props {
     /** 0 to 1: RMS at the output, peak at the input. */
@@ -93,12 +94,12 @@
   const bandHeight = (dbToHeight(SWEET_HIGH_DB) - dbToHeight(SWEET_LOW_DB)) * H;
 
   const valueText = $derived(kind !== 'peak' ? undefined
-    : clipping ? 'Clipping'
-    : level < 1e-4 ? 'No signal'
-    : `${toDb(level).toFixed(0)} dBFS${sweet ? ', in the sweet spot' : heldDb < SWEET_LOW_DB ? ', low' : heldDb > SWEET_HIGH_DB ? ', hot' : ''}`);
+    : clipping ? lang.ui.meter.clipping
+    : level < 1e-4 ? lang.ui.meter.silent
+    : `${toDb(level).toFixed(0)} dBFS${sweet ? lang.ui.meter.sweet : heldDb < SWEET_LOW_DB ? lang.ui.meter.low : heldDb > SWEET_HIGH_DB ? lang.ui.meter.hot : ''}`);
 </script>
 
-<div class="meter" class:sweet class:clipping role="meter" aria-label={kind === 'peak' ? 'Input level' : 'Level'}
+<div class="meter" class:sweet class:clipping role="meter" aria-label={kind === 'peak' ? lang.ui.meter.input : lang.ui.meter.level}
      aria-valuemin={0} aria-valuemax={1} aria-valuenow={Number(level.toFixed(3))} aria-valuetext={valueText}>
   <svg width="9" height={TOP + H} viewBox={`0 0 9 ${TOP + H}`} aria-hidden="true">
     {#if kind === 'peak'}

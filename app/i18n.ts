@@ -191,48 +191,48 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
         {
           title: 'Réglages généraux',
           body: [
-            '[Input](input) règle le **gain d’entrée**, c’est-à-dire l’intensité du signal de votre guitare à son arrivée dans la chaîne. Le vumètre à côté montre ce qui entre.',
+            '[Entrée](input) règle le **gain d’entrée**, c’est-à-dire l’intensité du signal de votre guitare à son arrivée dans la chaîne. Le vumètre à côté montre ce qui entre.',
             '[Gate](gate) supprime le souffle qu’on entend entre les notes jouées. Plus il est haut, plus il coupe tôt ; le voyant à côté de son nom l’active ou le désactive.',
-            '[Tone preset](preset) charge un son complet en un seul geste : l’[ampli](amp), le [baffle](cab) et tous leurs réglages. Les flèches ‹ et › passent d’un preset à l’autre.',
-            '[Output](output) règle le volume final, celui que vous entendez au casque.',
+            '[Preset de son](preset) charge un son complet en un seul geste : l’[ampli](amp), le [baffle](cab) et tous leurs réglages. Les flèches ‹ et › passent d’un preset à l’autre.',
+            '[Sortie](output) règle le volume final, celui que vous entendez au casque.',
           ],
         },
         {
           title: 'L’ampli',
           body: [
-            '[Tone](tone) façonne le timbre : graves, médiums, aigus et présence.',
-            '[Pitch](pitch) transpose : la guitare sonne plus grave ou plus aiguë que son accordage réel, sans toucher aux cordes. Shift règle l’écart en demi-tons, Mix dose le son transposé.',
-            '[Boost](boost) pousse l’ampli plus fort pour obtenir davantage de saturation ; son Color règle la brillance.',
-            '[Reverb](reverb) ajoute de l’écho, comme si vous jouiez dans une grande pièce. Mix règle la quantité d’écho.',
-            'Cliquez sur le [nom d’un bloc](blocks) pour l’allumer ou l’éteindre. [Power](power) coupe toute la chaîne pour entendre la guitare brute.',
+            '[Timbre](tone) façonne le timbre : graves, médiums, aigus et présence.',
+            '[Hauteur](pitch) transpose : la guitare sonne plus grave ou plus aiguë que son accordage réel, sans toucher aux cordes. Transpo règle l’écart en demi-tons, Mix dose le son transposé.',
+            '[Boost](boost) pousse l’ampli plus fort pour obtenir davantage de saturation ; son réglage Couleur règle la brillance.',
+            '[Réverb](reverb) ajoute de l’écho, comme si vous jouiez dans une grande pièce. Mix règle la quantité d’écho.',
+            'Cliquez sur le [nom d’un bloc](blocks) pour l’allumer ou l’éteindre. [Marche](power) coupe toute la chaîne pour entendre la guitare brute.',
           ],
         },
         {
           title: 'La démo',
           body: [
-            '[Listen to a demo](demo) lance une guitare enregistrée sans aucun effet, qui passe en direct dans l’ampli.',
+            '[Écouter une démo](demo) lance une guitare enregistrée sans aucun effet, qui passe en direct dans l’ampli.',
             'Tournez un bouton pendant la lecture : le changement s’entend immédiatement. C’est la meilleure façon de comprendre ce que fait chaque réglage.',
-            'Une fois la démo ouverte, cliquez sur la [forme d’onde](wave) pour vous déplacer, et cochez [Loop](loop) pour l’écouter en boucle.',
+            'Une fois la démo ouverte, cliquez sur la [forme d’onde](wave) pour vous déplacer, et cochez [En boucle](loop) pour l’écouter en boucle.',
           ],
         },
         {
           title: 'Le lecteur de tablatures',
           body: [
-            '[Import tab](import) ouvre une tablature Guitar Pro, MusicXML, Capella ou alphaTex ; vous pouvez aussi la glisser directement ici. Elle défile pendant la lecture, jouée par de vrais instruments.',
-            'Chaque piste se règle séparément : [Solo](solo) isole son audio pour l’entendre seule, [Mute](mute) la coupe, et son [curseur](volume) règle son volume.',
-            'Sous la tablature, le [manche](neck) montre où poser les doigts, et [Scale](scale) peut y afficher une gamme.',
+            '[Importer une tab](import) ouvre une tablature Guitar Pro, MusicXML, Capella ou alphaTex ; vous pouvez aussi la glisser directement ici. Elle défile pendant la lecture, jouée par de vrais instruments.',
+            'Chaque piste se règle séparément : [Solo](solo) isole son audio pour l’entendre seule, [Muet](mute) la coupe, et son [curseur](volume) règle son volume.',
+            'Sous la tablature, le [manche](neck) montre où poser les doigts, et [Gamme](scale) peut y afficher une gamme.',
           ],
         },
         {
           title: 'Écrire sa tablature',
           body: [
-            '[Write a tab](write) ouvre une tablature vide pour composer la vôtre.',
+            '[Écrire une tab](write) ouvre une tablature vide pour composer la vôtre.',
             'Choisissez d’abord le [tempo](tempo), la [signature rythmique](signature) (4/4, 3/4, 6/8…) et l’[accordage](tuning), ainsi que le nombre de cordes.',
             'Écrivez les notes avec les [chiffres](digits) de votre clavier, sur le pavé numérique ou la rangée au-dessus des lettres : tapez 1 puis 2 pour la case 12. Vous pouvez aussi cliquer une case sur le [manche](neck).',
             'Parcourez les temps de la mesure avec les [flèches](arrows) ← et →, et changez de corde avec ↑ et ↓. Plusieurs notes sur un même temps forment un accord. **Suppr** efface la note, **Retour arrière** le temps entier.',
             '**+** et **−** raccourcissent ou allongent la note, **Espace** fait écouter ce que vous avez écrit, et **Export .gp** l’enregistre au format Guitar Pro.',
           ],
-          task: 'À vous : cliquez sur **Write a tab**, puis tapez un chiffre au clavier ou touchez une case du manche. Vous entendrez la note au moment où elle s’écrit.',
+          task: 'À vous : cliquez sur **Écrire une tab**, puis tapez un chiffre au clavier ou touchez une case du manche. Vous entendrez la note au moment où elle s’écrit.',
         },
         {
           title: 'Le métronome',

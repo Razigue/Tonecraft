@@ -7,12 +7,14 @@
   import { STORES, dbGet, dbPut } from '../store/db.ts';
   import { restoreFadedVolume } from '../engine/tab-fades.ts';
   import { syncedSpeed } from '../engine/metronome.ts';
+  import { lang } from './locale.svelte.ts';
   import {
     DURATIONS, SIGNATURES, STRING_COUNTS, TUNINGS, addTrack, barTicks, clearString, deleteBeat, emptyTab, layout as layBeats, makeRest, nudgeDuration,
     pickFret, readTab, removeTrack, setDuration, setSignature, setStrings, setTempo, setTuning, stepBeat, stepString, toAlphaTex, toggleDotted, typeDigit,
     type Cursor, type EditTab, type PendingDigit,
   } from '../engine/tab-editor.ts';
 
+  const words = $derived(lang.ui.reader);
   let { ontempo, onwrite, syncBpm = null, onsyncstart }: {
     ontempo?: (bpm: number) => void;
     /** The metronome's tempo while the tab is synced to it; null when it is not. */
@@ -228,9 +230,9 @@
       const worker = new Worker(new URL('../engine/soundfont-worker.ts', import.meta.url), { type: 'module' });
       worker.onmessage = (e: MessageEvent<{ bytes?: Uint8Array; error?: string }>) => {
         worker.terminate();
-        if (e.data.bytes) resolve(e.data.bytes); else reject(new Error(e.data.error ?? 'the instruments did not load'));
+        if (e.data.bytes) resolve(e.data.bytes); else reject(new Error(e.data.error ?? words.instrumentsFailed));
       };
-      worker.onerror = e => { worker.terminate(); reject(new Error(e.message || 'the instruments did not load')); };
+      worker.onerror = e => { worker.terminate(); reject(new Error(e.message || words.instrumentsFailed)); };
       worker.postMessage(new URL(`${BASE}musescore-general/MuseScore_General.sf3`, location.href).href);
     }).catch(e => { instruments = null; throw e; });
     return instruments;
@@ -282,9 +284,9 @@
     const created = api;
     void soundFont().then(bytes => {
       if (api !== created || disposed) return;
-      if (!created.loadSoundFont(bytes, false)) error = 'Playback is unavailable: the synthesizer did not start.';
+      if (!created.loadSoundFont(bytes, false)) error = words.noSynth;
     }).catch(e => {
-      if (api === created) error = `Playback is unavailable: ${e instanceof Error ? e.message : String(e)}.`;
+      if (api === created) error = words.unavailable(e instanceof Error ? e.message : String(e));
     });
     api.masterVolume = volume / 100;
     // alphaTab's own handler for this layout parks the cursor on the left edge.
@@ -352,7 +354,7 @@
   async function open(file: File, remember = true) {
     if (busy) return;
     if (!/\.(gp[345x]?|musicxml|xml|mxl|capx?|alphatex|atex)$/i.test(file.name)) {
-      error = 'Choose a Guitar Pro, MusicXML, Capella or alphaTex file.'; return;
+      error = words.unsupported; return;
     }
     if (file.size > 20 * 1024 * 1024) { error = 'This score exceeds the 20 MB import limit.'; return; }
     busy = true; error = ''; storageNote = '';
@@ -384,11 +386,11 @@
         // would overwrite a tempo they may have changed since.
         ontempo?.(Math.round(parsed.tempo));
         const saved = await saveMedia(file, 'score', 'last-score');
-        if (saved === null) storageNote = 'Opened for this session. Browser storage is unavailable.';
+        if (saved === null) storageNote = words.sessionOnly;
       }
     } catch (e) {
       console.warn('[tab reader]', e);
-      error = `Could not open ${file.name}: the file may be damaged or unsupported.`;
+      error = words.cannotOpen(file.name);
     } finally { busy = false; }
   }
 
@@ -662,7 +664,7 @@
     } catch (e) {
       console.warn('[tab reader]', e);
       editing = false;
-      error = 'The editor could not start.';
+      error = words.editorFailed;
     } finally { busy = false; }
   }
 
@@ -807,7 +809,7 @@
     const bytes = new alpha.exporter.Gp7Exporter().export(importer.readScore(), new alpha.Settings());
     const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' }));
     const link = document.createElement('a');
-    link.href = url; link.download = 'Untitled.gp';
+    link.href = url; link.download = `${words.untitled}.gp`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   }
@@ -842,91 +844,91 @@
   onDestroy(() => { disposed = true; cancelCue(); signature.disconnect(); api?.destroy(); });
 </script>
 
-<section class="reader" class:focused role="application" aria-label="Tab reader" tabindex="-1"
+<section class="reader" class:focused role="application" aria-label={words.region} tabindex="-1"
   bind:this={section} onkeydown={keydown} onpointerdown={grabKeys}>
   <div class="reader-heading">
-    <div><span class="eyebrow">PRACTICE</span><h2>Tab reader</h2></div>
+    <div><span class="eyebrow">{words.eyebrow}</span><h2>{words.title}</h2></div>
     <div class="heading-actions">
-      {#if score}<button class="secondary" aria-pressed={focused} onclick={() => setFocused(!focused)}> {focused ? 'Exit focus' : 'Focus view'} </button>{/if}
-      <button class="secondary write-tab" aria-pressed={editing} disabled={busy} onclick={() => (editing ? stopEditing() : startEditing())}>{editing ? 'Close editor' : 'Write a tab'}</button>
-      <button class="primary" class:settled={!!score} disabled={busy} onclick={() => picker.click()}>{busy ? 'Opening…' : score ? 'Open another tab' : 'Import tab'}</button>
+      {#if score}<button class="secondary" aria-pressed={focused} onclick={() => setFocused(!focused)}> {focused ? words.exitFocus : words.focus} </button>{/if}
+      <button class="secondary write-tab" aria-pressed={editing} disabled={busy} onclick={() => (editing ? stopEditing() : startEditing())}>{editing ? words.closeEditor : words.write}</button>
+      <button class="primary" class:settled={!!score} disabled={busy} onclick={() => picker.click()}>{busy ? words.opening : score ? words.openAnother : words.import}</button>
     </div>
-    <input bind:this={picker} type="file" accept={ACCEPT} aria-label="Import tablature" onchange={e => { const f = e.currentTarget.files?.[0]; if (f) void open(f); e.currentTarget.value = ''; }} />
+    <input bind:this={picker} type="file" accept={ACCEPT} aria-label={words.importLabel} onchange={e => { const f = e.currentTarget.files?.[0]; if (f) void open(f); e.currentTarget.value = ''; }} />
   </div>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if storageNote}<p class="storage-note" role="status">{storageNote}</p>{/if}
-  <div class="drop-surface" class:dragging role="region" aria-label="Drop a tablature file"
+  <div class="drop-surface" class:dragging role="region" aria-label={words.dropFile}
     ondragover={e => { e.preventDefault(); dragging = true; }}
     ondragleave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) dragging = false; }}
     ondrop={e => { e.preventDefault(); dragging = false; const f = e.dataTransfer?.files[0]; if (f) void open(f); }}>
     {#if score}
       <div class="transport">
         <div class="playback">
-          <button class="play primary" class:cueing aria-label={cueing ? 'Cancel synced start' : playing ? 'Pause tablature' : 'Play tablature'} disabled={!ready || busy} onclick={() => void togglePlay()}>{playing || cueing ? 'Ⅱ' : '▶'}</button>
-          <button aria-label="Stop tablature" onclick={() => { cancelCue(); api?.stop(); }}>■</button>
+          <button class="play primary" class:cueing aria-label={cueing ? words.cancelCue : playing ? words.pauseTab : words.playTab} disabled={!ready || busy} onclick={() => void togglePlay()}>{playing || cueing ? 'Ⅱ' : '▶'}</button>
+          <button aria-label={words.stopTab} onclick={() => { cancelCue(); api?.stop(); }}>■</button>
           <span class="clock">{time(position)} <span>/ {time(duration)}</span></span>
         </div>
-        <input class="scrub" type="range" aria-label="Playback position" min="0" max={Math.max(1, duration)} step="100"
+        <input class="scrub" type="range" aria-label={words.position} min="0" max={Math.max(1, duration)} step="100"
           value={position} disabled={duration === 0} oninput={e => seek(Number(e.currentTarget.value))} />
-        {#if syncBpm !== null}<span class="synced" title="Synced to the metronome">Sync · {syncBpm} BPM</span>
-        {:else}<label>Speed<select aria-label="Playback speed" bind:value={speed}>{#each [25, 50, 60, 70, 80, 90, 100, 110, 125, 150] as n}<option value={n}>{n}%</option>{/each}</select></label>{/if}
-        <button class:active={looping} aria-pressed={looping} onclick={() => { looping = !looping; if (api) api.isLooping = looping; }}>↻ {selection ? 'Loop selection' : 'Loop song'}</button>
-        {#if selection}<button onclick={() => { if (api) api.playbackRange = null; }}>Clear selection</button>{/if}
-        <label class="volume">Volume<input type="range" aria-label="Tab playback volume" min="0" max="100" bind:value={volume} oninput={() => { if (api) api.masterVolume = volume / 100; }} /></label>
-        <label class="view-select">View<select aria-label="Notation view" bind:value={notation} onchange={updateDisplay}><option value="tab">Tab</option><option value="both">Score + tab</option></select></label>
-        <label>Zoom<select aria-label="Tab zoom" bind:value={zoom} onchange={updateDisplay}>{#each [75, 90, 100, 110, 125, 150] as n}<option value={n}>{n}%</option>{/each}</select></label>
+        {#if syncBpm !== null}<span class="synced" title={words.syncedTitle}>{words.synced(syncBpm)}</span>
+        {:else}<label>{words.speed}<select aria-label={words.speedLabel} bind:value={speed}>{#each [25, 50, 60, 70, 80, 90, 100, 110, 125, 150] as n}<option value={n}>{n}%</option>{/each}</select></label>{/if}
+        <button class:active={looping} aria-pressed={looping} onclick={() => { looping = !looping; if (api) api.isLooping = looping; }}>↻ {selection ? words.loopSelection : words.loopSong}</button>
+        {#if selection}<button onclick={() => { if (api) api.playbackRange = null; }}>{words.clearSelection}</button>{/if}
+        <label class="volume">{words.volume}<input type="range" aria-label={words.volumeLabel} min="0" max="100" bind:value={volume} oninput={() => { if (api) api.masterVolume = volume / 100; }} /></label>
+        <label class="view-select">{words.view}<select aria-label={words.viewLabel} bind:value={notation} onchange={updateDisplay}><option value="tab">{words.viewTab}</option><option value="both">{words.viewBoth}</option></select></label>
+        <label>{words.zoom}<select aria-label={words.zoomLabel} bind:value={zoom} onchange={updateDisplay}>{#each [75, 90, 100, 110, 125, 150] as n}<option value={n}>{n}%</option>{/each}</select></label>
       </div>
     {/if}
     {#if editing && score}
-      <div class="editor-bar" role="toolbar" aria-label="Tab editor">
-        <label>BPM<input class="tempo" type="number" aria-label="Tempo" min="30" max="300" step="1" value={draft.tempo}
+      <div class="editor-bar" role="toolbar" aria-label={words.editor}>
+        <label>{words.bpm}<input class="tempo" type="number" aria-label={words.tempo} min="30" max="300" step="1" value={draft.tempo}
           onchange={e => act(setTempo(draft, Number(e.currentTarget.value)))} /></label>
-        <label>Time<select aria-label="Time signature" value={`${draft.signature.numerator}/${draft.signature.denominator}`}
+        <label>{words.time}<select class="signature-select" aria-label={words.signature} value={`${draft.signature.numerator}/${draft.signature.denominator}`}
           onchange={e => { const [n, d] = e.currentTarget.value.split('/').map(Number); act(setSignature(draft, n!, d!)); }}>
           {#each SIGNATURES as s}<option value={`${s.numerator}/${s.denominator}`}>{s.numerator}/{s.denominator}</option>{/each}
         </select></label>
-        <div class="durations" role="group" aria-label="Duration">
+        <div class="durations" role="group" aria-label={words.duration}>
           {#each DURATIONS as d}<button aria-pressed={editBeat?.duration === d} onclick={() => act(setDuration(draft, cursor, d))}>1/{d}</button>{/each}
-          <button aria-pressed={editBeat?.dotted ?? false} onclick={() => act(toggleDotted(draft, cursor))}>Dotted</button>
-          <button aria-pressed={editBeat !== null && editBeat.notes.length === 0} onclick={() => act(makeRest(draft, cursor))}>Rest</button>
+          <button aria-pressed={editBeat?.dotted ?? false} onclick={() => act(toggleDotted(draft, cursor))}>{words.dotted}</button>
+          <button aria-pressed={editBeat !== null && editBeat.notes.length === 0} onclick={() => act(makeRest(draft, cursor))}>{words.rest}</button>
         </div>
-        <button title="Delete" disabled={!editBeat?.notes.some(n => n.string === cursor.string)} onclick={() => act(clearString(draft, cursor))}>Delete note</button>
-        <button title="Backspace" disabled={editTrack.beats.length <= 1 && editBeat?.notes.length === 0} onclick={() => { const removed = deleteBeat(draft, cursor); act(removed.tab, removed.cursor); }}>Delete beat</button>
-        <label>Strings<select aria-label="String count" value={editTrack.tuning.length}
+        <button title={words.deleteKey} disabled={!editBeat?.notes.some(n => n.string === cursor.string)} onclick={() => act(clearString(draft, cursor))}>{words.deleteNote}</button>
+        <button title={words.backspaceKey} disabled={editTrack.beats.length <= 1 && editBeat?.notes.length === 0} onclick={() => { const removed = deleteBeat(draft, cursor); act(removed.tab, removed.cursor); }}>{words.deleteBeat}</button>
+        <label>{words.strings}<select aria-label={words.stringCount} value={editTrack.tuning.length}
           onchange={e => { const n = Number(e.currentTarget.value); act(setStrings(draft, cursor.track, n), { ...cursor, string: cursor.string + n - editTrack.tuning.length }); }}>
           {#each STRING_COUNTS as n}<option value={n}>{n}</option>{/each}
         </select></label>
-        <label>Tuning<select aria-label="Tuning" value={tuningIndex}
+        <label>{words.tuning}<select class="tuning-select" aria-label={words.tuning} value={tuningIndex}
           onchange={e => { const t = tunings[Number(e.currentTarget.value)]; if (t) act(setTuning(draft, cursor.track, t.notes)); }}>
-          {#each tunings as t, i}<option value={i}>{t.name}</option>{/each}
+          {#each tunings as t, i}<option value={i}>{words.tuningName(t.name)}</option>{/each}
         </select></label>
-        <button onclick={() => act(addTrack(draft), { track: draft.tracks.length, beat: 0, string: 6 })}>+ Track</button>
-        <button disabled={draft.tracks.length <= 1} onclick={deleteTrack}>Delete track</button>
-        <button class="primary export" onclick={exportGp}>Export .gp</button>
+        <button onclick={() => act(addTrack(draft), { track: draft.tracks.length, beat: 0, string: 6 })}>{words.addTrack}</button>
+        <button disabled={draft.tracks.length <= 1} onclick={deleteTrack}>{words.deleteTrack}</button>
+        <button class="primary export" onclick={exportGp}>{words.exportGp}</button>
       </div>
     {/if}
     <div class="reader-body" class:empty={!score}>
       {#if score}
-        <aside aria-label="Score tracks">
-          <span class="eyebrow">{score.tracks.length} {score.tracks.length === 1 ? 'TRACK' : 'TRACKS'}</span>
+        <aside aria-label={words.scoreTracks}>
+          <span class="eyebrow">{words.tracks(score.tracks.length)}</span>
           <div class="tracks">{#each score.tracks as t, i}
             <div class="track-row">
-              <button class:selected={track === i} class:muted={mutedTracks.has(i)} class:silenced={soloed.size > 0 && !soloed.has(i)} aria-pressed={track === i} onclick={() => chooseTrack(i)}><span class="track-number">{String(i + 1).padStart(2, '0')}</span><span class="track-name">{t.name || `Track ${i + 1}`}</span>{#if soloed.has(i)}<span class="flag solo" title="Solo">S</span>{/if}{#if mutedTracks.has(i)}<span class="flag mute" title="Muted">M</span>{/if}<span class="track-bars" title="{activity[i]?.bars ?? 0} of {score.masterBars.length} bars have notes">{activity[i]?.bars ?? 0}</span></button>
-              <input class="track-volume" type="range" min="0" max="100" step="1" aria-label={`Volume of ${t.name || `Track ${i + 1}`}`}
+              <button class:selected={track === i} class:muted={mutedTracks.has(i)} class:silenced={soloed.size > 0 && !soloed.has(i)} aria-pressed={track === i} onclick={() => chooseTrack(i)}><span class="track-number">{String(i + 1).padStart(2, '0')}</span><span class="track-name">{t.name || words.trackN(i + 1)}</span>{#if soloed.has(i)}<span class="flag solo" title={words.soloTitle}>{words.soloFlag}</span>{/if}{#if mutedTracks.has(i)}<span class="flag mute" title={words.mutedTitle}>{words.muteFlag}</span>{/if}<span class="track-bars" title={words.barsWithNotes(activity[i]?.bars ?? 0, score.masterBars.length)}>{activity[i]?.bars ?? 0}</span></button>
+              <input class="track-volume" type="range" min="0" max="100" step="1" aria-label={words.volumeOf(t.name || words.trackN(i + 1))}
                 value={Math.round((trackVolumes.get(i) ?? 1) * 100)}
                 oninput={e => setTrackVolume(i, Number(e.currentTarget.value) / 100)} />
             </div>
           {/each}</div>
           <div class="track-tools">
-            <button aria-pressed={solo} class:active={solo} onclick={toggleSolo}>Solo</button>
-            <button aria-pressed={muted} class:active={muted} onclick={toggleMute}>Mute</button>
+            <button aria-pressed={solo} class:active={solo} onclick={toggleSolo}>{words.solo}</button>
+            <button aria-pressed={muted} class:active={muted} onclick={toggleMute}>{words.mute}</button>
           </div>
           <p class="plays">
             {#if selected.first >= 0}<b>{selected.first + 1}–{selected.last + 1}</b> · {selected.bars}/{score.masterBars.length}
-              <button class="jump quiet" onclick={goToTrack}>Go to its first bar</button>
+              <button class="jump quiet" onclick={goToTrack}>{words.firstBar}</button>
             {:else}0/{score.masterBars.length}{/if}
           </p>
-          <p>{syncBpm ?? Math.round(score.tempo * speed / 100)} BPM <span>· {score.masterBars.length} bars</span></p>
+          <p>{syncBpm ?? Math.round(score.tempo * speed / 100)} BPM <span>· {words.bars(score.masterBars.length)}</span></p>
         </aside>
       {/if}
       <div class="stage">
@@ -943,15 +945,15 @@
       </div>
       {#if score && stave}
         <div class="scale-bar">
-          <span class="eyebrow">SCALE</span>
-          <label>Key<select aria-label="Scale key" bind:value={scaleRoot} onchange={rememberScale}>{#each KEYS as k}<option value={k.root}>{k.label}</option>{/each}</select></label>
-          <label>Scale<select aria-label="Scale" bind:value={scaleId} onchange={rememberScale}>
-            <option value="">None</option>
-            {#each SCALE_GROUPS as group}<optgroup label={group}>{#each SCALES.filter(s => s.group === group) as s}<option value={s.id}>{s.name}</option>{/each}</optgroup>{/each}
+          <span class="eyebrow">{words.scale}</span>
+          <label>{words.key}<select aria-label={words.scaleKey} bind:value={scaleRoot} onchange={rememberScale}>{#each KEYS as k}<option value={k.root}>{k.label}</option>{/each}</select></label>
+          <label>{words.scale}<select aria-label={words.scale} bind:value={scaleId} onchange={rememberScale}>
+            <option value="">{words.none}</option>
+            {#each SCALE_GROUPS as group}<optgroup label={words.scaleGroups[group] ?? group}>{#each SCALES.filter(s => s.group === group) as s}<option value={s.id}>{words.scales[s.id] ?? s.name}</option>{/each}</optgroup>{/each}
           </select></label>
           {#if scaleDef}
-            <span class="scale-notes" aria-label="Notes of the scale">{scaleNames.join(' · ')}</span>
-            <span class="legend" aria-hidden="true"><i class="root"></i>Root<i class="tone"></i>Scale<i class="play"></i>Playing</span>
+            <span class="scale-notes" aria-label={words.scaleNotes}>{scaleNames.join(' · ')}</span>
+            <span class="legend" aria-hidden="true"><i class="root"></i>{words.root}<i class="tone"></i>{words.scaleTone}<i class="play"></i>{words.playing}</span>
           {/if}
         </div>
         <Fretboard strings={stave.tuning} {lit} capo={stave.capo} scale={scaleNotes} onpick={editing && !playing ? pickOnNeck : undefined} />

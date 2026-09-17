@@ -23,7 +23,8 @@
   import TabReader from './TabReader.svelte';
   import Recorder from './Recorder.svelte';
   import Tour, { type TourFigure, type TourStep } from './Tour.svelte';
-  import { MESSAGES, detectLocale, saveLocale, type Locale } from './i18n.ts';
+  import type { Locale } from './i18n.ts';
+  import { lang, engineMessage, failure } from './locale.svelte.ts';
   import { NativeLink, detectPlatform, downloadUrl, releasesUrl } from '../engine/native-host.ts';
   import { engineUpdate } from '../engine/engine-update.ts';
   import './tokens.css';
@@ -72,7 +73,7 @@
       devices = await detector.listInputs();
       outputs = await detector.listOutputs();
     } catch (error) {
-      settingsError = error instanceof Error ? error.message : 'Unable to detect audio inputs.';
+      settingsError = error instanceof Error ? engineMessage(error.message) : t.rig.detectFailed;
     } finally {
       stream?.getTracks().forEach(track => track.stop());
       detecting = false;
@@ -103,7 +104,7 @@
       tunerDialog?.showModal();
       tunerFrame = requestAnimationFrame(tickTuner);
     } catch (error) {
-      notice = error instanceof Error ? error.message : 'The tuner could not open.';
+      notice = error instanceof Error ? engineMessage(error.message) : t.rig.tunerFailed;
       engine?.setTunerActive(false);
     } finally {
       tunerOpening = false;
@@ -164,7 +165,7 @@
       metronome.setVolume(metronomeVolume);
       metronomeDialog?.showModal();
     } catch {
-      notice = 'The metronome could not start. Check the browser audio output.';
+      notice = t.rig.metronomeFailed;
     } finally {
       metronomeOpening = false;
     }
@@ -240,7 +241,7 @@
       metronome.play(metronomeBpm);
       metronomePlaying = true;
     } catch {
-      notice = 'The metronome could not start. Check the browser audio output.';
+      notice = t.rig.metronomeFailed;
     } finally {
       metronomeOpening = false;
     }
@@ -286,7 +287,7 @@
     try {
       await metronome.prepare(engine?.outputId ?? outputId);
     } catch {
-      notice = 'The metronome could not start. Check the browser audio output.';
+      notice = t.rig.metronomeFailed;
       return null;
     }
     metronome.setVolume(metronomeVolume);
@@ -356,8 +357,8 @@
     scale: '.scale-bar',
     write: '.write-tab',
     tempo: '.editor-bar .tempo, .tour-figure [data-term="tempo"]',
-    signature: '.editor-bar [aria-label="Time signature"], .tour-figure [data-term="signature"]',
-    tuning: '.editor-bar [aria-label="Tuning"], .tour-figure [data-term="tuning"]',
+    signature: '.editor-bar .signature-select, .tour-figure [data-term="signature"]',
+    tuning: '.editor-bar .tuning-select, .tour-figure [data-term="tuning"]',
     digits: '.tour-figure [data-term="digits"]',
     arrows: '.tour-figure [data-term="arrows"]',
     metronome: '.metronome-launch',
@@ -369,14 +370,14 @@
   let wroteNote = $state(false);
   $effect(() => { if (!touring) wroteNote = false; });
 
-  let locale = $state<Locale>(detectLocale());
-  const text = $derived(MESSAGES[locale]);
+  const locale = $derived(lang.locale);
+  const text = $derived(lang.messages);
+  const t = $derived(lang.ui);
   const testerTour = $derived<readonly TourStep[]>(text.tour.steps.map((step, i) => ({ ...step, ...TOUR_LAYOUT[i]!, done: wroteNote })));
   $effect(() => { document.documentElement.lang = locale; });
   const LANGUAGES = [{ value: 'en', label: 'English' }, { value: 'fr', label: 'Français' }] as const;
   function chooseLocale(next: Locale): void {
-    locale = next;
-    saveLocale(next);
+    lang.set(next);
   }
 
   async function chooseTester(): Promise<void> {
@@ -427,15 +428,12 @@
    * exists when there is one to make. "Follow" is the honest default: many
    * interfaces declare stereo with only one side wired.
    */
-  const CHANNELS = [
-    { value: 'follow', label: 'Auto' },
-    { value: 'left', label: 'L' },
-    { value: 'right', label: 'R' },
-    { value: 'sum', label: 'Both' },
-  ] as const;
+  const CHANNELS = $derived((['follow', 'left', 'right', 'sum'] as const).map((value) => ({ value, label: t.rig.channels[value] })));
 
   let engineState = $state<State>('idle');
-  let problem = $state<{ cause: string; fix: string } | null>(null);
+  let problemKind = $state<Parameters<typeof failure>[0] | null>(null);
+  // Derived, so a failure already on screen follows a change of language.
+  const problem = $derived(problemKind === null ? null : failure(problemKind));
   /**
    * The round trip, and only that.
    *
@@ -688,14 +686,14 @@
     persist();
     const ok = await engine?.setCapture(file);
     notice = ok === false
-      ? 'That capture did not load. Reload the page; if it persists, run `npm run vendor`.'
+      ? t.rig.captureFailed
       : null;
   }
 
   async function loadCabFile(file: File): Promise<void> {
     const ok = engine !== null ? await engine.loadCab(file) : await checkCabIR(file);
     if (!ok) {
-      notice = `${file.name} could not be read as an impulse response. A WAV file of the cabinet works.`;
+      notice = t.rig.cabUnreadable(file.name);
       return;
     }
     notice = null;
@@ -752,15 +750,10 @@
   // power button beside it switches the looper off, and the loop with it.
 
   /** What pressing the button will do next, which is what it is labelled. */
-  const LOOP_ACTION = {
-    empty: 'Rec', recording: 'Stop', playing: 'Overdub', overdubbing: 'Stop', stopped: 'Play',
-  } as const;
-  const LOOP_STATUS = {
-    empty: 'Empty', recording: 'Recording', playing: 'Playing', overdubbing: 'Overdubbing', stopped: 'Stopped',
-  } as const;
+
   const LOOP_KEY = 'l';
 
-  const loopAction = $derived(LOOP_ACTION[loop.state]);
+  const loopAction = $derived(t.rig.loopAction[loop.state]);
   const loopOn = $derived(loop.state !== 'empty');
 
   function loopPress(): void {
@@ -832,8 +825,8 @@
   function onEngineError(message: string): void {
     captureLoaded = false;
     notice = backend === 'native'
-      ? `${message}. Start Tonecraft Engine again, or switch the audio engine back to the browser in the settings.`
-      : `The amplifier engine did not start (${message}). Reload the page; if it persists, run \`npm run build:dsp\`.`;
+      ? t.rig.nativeStopped(engineMessage(message))
+      : t.rig.engineFailed(engineMessage(message));
   }
 
   /**
@@ -881,23 +874,13 @@
        garbage the collector has to come back for — on the one thread that
        must not stall. */
     const key = parts === null ? '' :
-      `${backend}/${parts.input.toFixed(1)}/${parts.output.toFixed(1)}/${outputs.length > 1}/${m.pitchDelayMs > 0.05}`;
+      `${locale}/${backend}/${parts.input.toFixed(1)}/${parts.output.toFixed(1)}/${outputs.length > 1}/${m.pitchDelayMs > 0.05}`;
     if (key !== latencyKey) {
       latencyKey = key;
       latencyDetail = parts === null ? '' : backend === 'native'
-        ? `${parts.input.toFixed(1)} ms in and ${parts.output.toFixed(1)} ms out, as the driver reports them` +
-          (nativeOpened?.bufferSize == null ? '' : ` at ${nativeOpened.bufferSize}-frame buffers`) +
-          '. The chain itself adds nothing; a smaller buffer in the settings lowers both.'
-        : `${parts.input.toFixed(1)} ms of render buffer, which is one block and cannot ` +
-          `go lower, and ${parts.output.toFixed(1)} ms in the output device` +
-          (outputs.length > 1 ? ', which the Output selector can change' : '') +
-          '. The chain itself adds a tenth of a millisecond. The input path is not ' +
-          'reported by the browser and is not in this number.';
-      if (m.pitchDelayMs > 0.05) {
-        latencyDetail += ` The transposer is adding ${m.pitchDelayMs.toFixed(1)} ms on top: ` +
-          'shifting a note means waiting for its waveform to come round again. ' +
-          'Switching it off gives that back.';
-      }
+        ? t.rig.latencyNative(parts.input.toFixed(1), parts.output.toFixed(1), nativeOpened?.bufferSize ?? null)
+        : t.rig.latencyBrowser(parts.input.toFixed(1), parts.output.toFixed(1), outputs.length > 1);
+      if (m.pitchDelayMs > 0.05) latencyDetail += t.rig.latencyPitch(m.pitchDelayMs.toFixed(1));
     }
   }
 
@@ -929,7 +912,8 @@
     return peaks;
   }
 
-  const DEMO_NAME = 'Demo take (Tonecraft)';
+  /** A sentinel, never shown: the name on screen is the page's language. */
+  const DEMO_NAME = 'demo';
 
   async function loadDemo(): Promise<void> {
     if (engine === null) return;
@@ -945,13 +929,13 @@
       filePosition = 0;
       notice = null;
     } catch {
-      notice = 'The demo take is not installed. It lives in public/di/.';
+      notice = t.rig.demoMissing;
     }
   }
 
   function play(): void {
     if (engine === null || filePeaks === null) return;
-    if (engineState !== 'running') { notice = 'Press start to power the chain.'; return; }
+    if (engineState !== 'running') { notice = t.rig.pressStart; return; }
     engine.playFile();
     filePlaying = true;
   }
@@ -1008,7 +992,7 @@
   async function start(intent: Intent = 'play'): Promise<void> {
     if (engineState === 'starting' || engineState === 'running' || detecting) return;
     engineState = 'starting';
-    problem = null;
+    problemKind = null;
     // Milliseconds after load, long settled by the first click; awaited so a
     // very fast one cannot start the chain on defaults.
     await ready;
@@ -1074,7 +1058,7 @@
       engine.setLoop(fileLoop);
       if (intent === 'demo' || fileName === DEMO_NAME) await loadDemo();
       else if (source === 'file' && filePeaks !== null) {
-        notice = 'Load the file again — stopping released it.';
+        notice = t.rig.loadAgain;
         filePeaks = null;
         fileName = '';
       }
@@ -1097,22 +1081,13 @@
         await start(intent);
         // The selector shows what is running, not what was wished for.
         if ((engineState as State) === 'running') {
-          notice = 'Tonecraft Engine is not running, so this is playing in the browser. ' +
-            'Start it and choose ASIO again in the audio settings to go back.';
+          notice = t.rig.nativeFallback;
         }
         return;
       }
       // Cause in one sentence, fix in one sentence, no apology. Nothing is
       // blocked: the control stays available (FR-12).
-      if (error instanceof EngineError) {
-        const [cause, fix] = error.message.split(/(?<=\.)\s+/, 2);
-        problem = { cause: cause ?? error.message, fix: fix ?? '' };
-      } else {
-        problem = {
-          cause: 'The audio engine did not start.',
-          fix: 'Reload the page and try again.',
-        };
-      }
+      problemKind = error instanceof EngineError ? error.failure.kind : 'unknown';
       engineState = 'failed';
       // Dismissing the sheet must not hide the reason the engine did not start.
       asking = true;
@@ -1180,19 +1155,19 @@
   </header>
 
   <main class="workspace">
-    <section class="global-controls" aria-label="Global controls">
-      <div class="io-control"><Meter level={meters.input} kind="peak" label="In" /><Knob param={param('in_trim')} value={values.in_trim!} resetValue={resetValues.in_trim} onchange={v => setParam('in_trim',v)} label="Input" /></div>
-      <div class="gate-control"><Knob param={param('gate_threshold')} value={values.gate_threshold!} resetValue={resetValues.gate_threshold} onchange={v => setParam('gate_threshold',v)} label="Gate" /><button class="enable" aria-label="Gate enabled" title={values.gate_bypass === 1 ? 'Gate off' : 'Gate on'} aria-pressed={values.gate_bypass !== 1} onclick={() => setParam('gate_bypass',values.gate_bypass === 1 ? 0 : 1)}><span></span></button></div>
+    <section class="global-controls" aria-label={t.rig.globalControls}>
+      <div class="io-control"><Meter level={meters.input} kind="peak" label={t.rig.meterIn} /><Knob param={param('in_trim')} value={values.in_trim!} resetValue={resetValues.in_trim} onchange={v => setParam('in_trim',v)} label={t.params.in_trim} /></div>
+      <div class="gate-control"><Knob param={param('gate_threshold')} value={values.gate_threshold!} resetValue={resetValues.gate_threshold} onchange={v => setParam('gate_threshold',v)} label={t.params.gate_threshold} /><button class="enable" aria-label={t.rig.gateEnabled} title={values.gate_bypass === 1 ? t.rig.gateOff : t.rig.gateOn} aria-pressed={values.gate_bypass !== 1} onclick={() => setParam('gate_bypass',values.gate_bypass === 1 ? 0 : 1)}><span></span></button></div>
       <div class="rig-selectors">
-        <label class="selector"><span>AMPLIFIER</span><select aria-label="Capture" value={captureFile} onchange={e => chooseCapture(e.currentTarget.value)}>{#each captures as c}<option value={c.file}>{c.file === PRESETS[0]?.capture ? 'GUILT · Lead' : c.name}</option>{/each}</select></label>
-        <label class="selector"><span>CABINET</span><select aria-label="Cabinet" value={cab} onchange={e => { const id = e.currentTarget.value; e.currentTarget.value = cab; chooseCab(id); }}>{#each CABS as c}<option value={c.id}>{c.name}</option>{/each}{#if customCab !== null}<option value={CUSTOM_CAB}>IR · {customCab.name.replace(/\.[^.]+$/, '')}</option>{/if}<option value={LOAD_CAB}>Load an IR…</option></select></label>
-        <input bind:this={cabFileInput} aria-label="Cabinet IR file" type="file" accept=".wav,.aif,.aiff,.flac,audio/*" hidden onchange={e => { const f = e.currentTarget.files?.[0]; e.currentTarget.value = ''; if (f) void loadCabFile(f); }} />
+        <label class="selector"><span>{t.rig.amplifier}</span><select aria-label={t.rig.capture} value={captureFile} onchange={e => chooseCapture(e.currentTarget.value)}>{#each captures as c}<option value={c.file}>{c.file === PRESETS[0]?.capture ? 'GUILT · Lead' : c.name}</option>{/each}</select></label>
+        <label class="selector"><span>{t.rig.cabinet}</span><select aria-label={t.rig.cabinet} value={cab} onchange={e => { const id = e.currentTarget.value; e.currentTarget.value = cab; chooseCab(id); }}>{#each CABS as c}<option value={c.id}>{t.rig.cabs[c.id] ?? c.name}</option>{/each}{#if customCab !== null}<option value={CUSTOM_CAB}>IR · {customCab.name.replace(/\.[^.]+$/, '')}</option>{/if}<option value={LOAD_CAB}>{t.rig.loadIr}</option></select></label>
+        <input bind:this={cabFileInput} aria-label={t.rig.cabinetIrFile} type="file" accept=".wav,.aif,.aiff,.flac,audio/*" hidden onchange={e => { const f = e.currentTarget.files?.[0]; e.currentTarget.value = ''; if (f) void loadCabFile(f); }} />
       </div>
-      <div class="tone-selector"><span class="eyebrow">TONE PRESET</span><div class="preset-picker"><button aria-label="Previous preset" onclick={() => nextPreset(-1)}>‹</button><select aria-label="Tone preset" value={preset ?? ''} onchange={e => { const p = PRESETS.find(p => p.name === e.currentTarget.value); if(p) void applyPreset(p); }}><option value="" disabled>Custom tone</option>{#each PRESETS as p}<option value={p.name}>{p.name}</option>{/each}</select><button aria-label="Next preset" onclick={() => nextPreset(1)}>›</button></div></div>
-      <div class="io-control output-control"><Knob param={param('out_master')} value={values.out_master!} resetValue={resetValues.out_master} onchange={v => setParam('out_master',v)} label="Output" /><Meter level={meters.outputRms} label="Out" /></div>
+      <div class="tone-selector"><span class="eyebrow">{t.rig.tonePreset}</span><div class="preset-picker"><button aria-label={t.rig.previousPreset} onclick={() => nextPreset(-1)}>‹</button><select aria-label={t.rig.tonePreset} value={preset ?? ''} onchange={e => { const p = PRESETS.find(p => p.name === e.currentTarget.value); if(p) void applyPreset(p); }}><option value="" disabled>{t.rig.customTone}</option>{#each PRESETS as p}<option value={p.name}>{t.rig.presets[p.name] ?? p.name}</option>{/each}</select><button aria-label={t.rig.nextPreset} onclick={() => nextPreset(1)}>›</button></div></div>
+      <div class="io-control output-control"><Knob param={param('out_master')} value={values.out_master!} resetValue={resetValues.out_master} onchange={v => setParam('out_master',v)} label={t.params.out_master} /><Meter level={meters.outputRms} label={t.rig.meterOut} /></div>
     </section>
 
-    <section class="amp-head" class:guilt={isGuilt} class:illuminated={isGuilt && ampIlluminated} class:bypassed={poweredOff} aria-label={isGuilt ? 'GUILT amplifier' : 'Tonecraft amplifier'}>
+    <section class="amp-head" class:guilt={isGuilt} class:illuminated={isGuilt && ampIlluminated} class:bypassed={poweredOff} aria-label={isGuilt ? t.rig.guiltAmp : t.rig.neutralAmp}>
       {#if isGuilt}
         <div class="guilt-handle" aria-hidden="true"><span></span></div>
         <div class="guilt-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
@@ -1220,7 +1195,7 @@
       {/if}
       <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
       <div class="glass-window">
-        {#if isGuilt}<img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt="Purple Gothic stained glass with a central rose window" width="2172" height="724" decoding="async" /><div class="veil" style={`opacity:${veil}`}></div>{:else}<div class="neutral-art"><span>TC</span><small>AMPLIFICATION</small></div>{/if}
+        {#if isGuilt}<img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt={t.rig.glassAlt} width="2172" height="724" decoding="async" /><div class="veil" style={`opacity:${veil}`}></div>{:else}<div class="neutral-art"><span>TC</span><small>AMPLIFICATION</small></div>{/if}
         {#if isGuilt}
           <div class="glass-bloom-power" aria-hidden="true">
             <div class="glass-glow" style={`opacity:${0.28 + light * 0.44}`}>
@@ -1232,15 +1207,15 @@
           <div class="glass-reflections" aria-hidden="true"></div>
           <div class="glass-night" aria-hidden="true"></div>
         {/if}
-        <div class="amp-brand"><span class="brand-rule"></span><h1>{isGuilt ? 'GUILT' : 'TONECRAFT'}</h1><span class="brand-rule"></span><p>{isGuilt ? 'LUX EX SONO' : 'FIND YOUR FREQUENCY'}</p></div>
+        <div class="amp-brand"><span class="brand-rule"></span><h1>{isGuilt ? 'GUILT' : 'TONECRAFT'}</h1><span class="brand-rule"></span><p>{isGuilt ? 'LUX EX SONO' : t.rig.neutralMotto}</p></div>
       </div>
       <div class="amp-panel">
-        <div class="amp-signature"><svg class="sig-symbol" width="30" height="30" viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><circle cx="15" cy="15" r="13.5"/><path d="M15 3.8a5.6 5.6 0 0 1 0 11.2 5.6 5.6 0 0 1 0-11.2ZM15 15a5.6 5.6 0 0 1 0 11.2A5.6 5.6 0 0 1 15 15ZM3.8 15a5.6 5.6 0 0 1 11.2 0 5.6 5.6 0 0 1-11.2 0ZM15 15a5.6 5.6 0 0 1 11.2 0A5.6 5.6 0 0 1 15 15Z"/><circle cx="15" cy="15" r="2"/></svg><span>{isGuilt ? 'Guilt' : 'Tonecraft'}</span><small>{isGuilt ? 'LEAD AMPLIFIER' : 'CAPTURE SERIES'}</small></div>
-        <div class="control-group tone-group"><button class="group-label" aria-label="Tone enabled" aria-pressed={values.tone_bypass !== 1} onclick={() => setParam('tone_bypass',values.tone_bypass === 1 ? 0 : 1)}>TONE <span>{values.tone_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['tone_bass','tone_mid','tone_treble','tone_presence'] as id}<Knob param={param(id)} value={values[id]!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
-        <div class="control-group"><button class="group-label" aria-label="Pitch enabled" aria-pressed={values.pitch_bypass !== 1} onclick={() => setParam('pitch_bypass',values.pitch_bypass === 1 ? 0 : 1)}>PITCH <span>{values.pitch_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['pitch_shift','pitch_mix'] as id}<Knob param={param(id)} value={values[id]!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
-        <div class="control-group"><button class="group-label" aria-label="Boost enabled" aria-pressed={values.drive_bypass !== 1} onclick={() => setParam('drive_bypass',values.drive_bypass === 1 ? 0 : 1)}>BOOST <span>{values.drive_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['drive_gain','drive_tone'] as id}<Knob param={param(id)} label={id === 'drive_gain' ? 'Gain' : 'Color'} value={values[id]!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
-        <div class="control-group"><button class="group-label" aria-label="Reverb enabled" aria-pressed={values.reverb_bypass !== 1} onclick={() => setParam('reverb_bypass',values.reverb_bypass === 1 ? 0 : 1)}>REVERB <span>{values.reverb_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row"><Knob param={param('reverb_mix')} value={values.reverb_mix!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues.reverb_mix} onchange={v => setParam('reverb_mix',v)} /></div></div>
-        <button class="power-indicator" type="button" aria-label="Amplifier power" aria-pressed={ampIlluminated} aria-busy={engineState === 'starting'} disabled={engineState === 'starting' || detecting} onclick={power}>
+        <div class="amp-signature"><svg class="sig-symbol" width="30" height="30" viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><circle cx="15" cy="15" r="13.5"/><path d="M15 3.8a5.6 5.6 0 0 1 0 11.2 5.6 5.6 0 0 1 0-11.2ZM15 15a5.6 5.6 0 0 1 0 11.2A5.6 5.6 0 0 1 15 15ZM3.8 15a5.6 5.6 0 0 1 11.2 0 5.6 5.6 0 0 1-11.2 0ZM15 15a5.6 5.6 0 0 1 11.2 0A5.6 5.6 0 0 1 15 15Z"/><circle cx="15" cy="15" r="2"/></svg><span>{isGuilt ? 'Guilt' : 'Tonecraft'}</span><small>{isGuilt ? t.rig.leadAmplifier : t.rig.captureSeries}</small></div>
+        <div class="control-group tone-group"><button class="group-label" aria-label={t.rig.groupEnabled.tone} aria-pressed={values.tone_bypass !== 1} onclick={() => setParam('tone_bypass',values.tone_bypass === 1 ? 0 : 1)}>{t.rig.groups.tone.toUpperCase()} <span>{values.tone_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['tone_bass','tone_mid','tone_treble','tone_presence'] as id}<Knob param={param(id)} label={t.params[id]} value={values[id]!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
+        <div class="control-group"><button class="group-label" aria-label={t.rig.groupEnabled.pitch} aria-pressed={values.pitch_bypass !== 1} onclick={() => setParam('pitch_bypass',values.pitch_bypass === 1 ? 0 : 1)}>{t.rig.groups.pitch.toUpperCase()} <span>{values.pitch_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['pitch_shift','pitch_mix'] as id}<Knob param={param(id)} label={t.params[id]} value={values[id]!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
+        <div class="control-group"><button class="group-label" aria-label={t.rig.groupEnabled.boost} aria-pressed={values.drive_bypass !== 1} onclick={() => setParam('drive_bypass',values.drive_bypass === 1 ? 0 : 1)}>{t.rig.groups.boost.toUpperCase()} <span>{values.drive_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['drive_gain','drive_tone'] as id}<Knob param={param(id)} label={t.params[id]} value={values[id]!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
+        <div class="control-group"><button class="group-label" aria-label={t.rig.groupEnabled.reverb} aria-pressed={values.reverb_bypass !== 1} onclick={() => setParam('reverb_bypass',values.reverb_bypass === 1 ? 0 : 1)}>{t.rig.groups.reverb.toUpperCase()} <span>{values.reverb_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row"><Knob param={param('reverb_mix')} label={t.params.reverb_mix} value={values.reverb_mix!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues.reverb_mix} onchange={v => setParam('reverb_mix',v)} /></div></div>
+        <button class="power-indicator" type="button" aria-label={t.rig.amplifierPower} aria-pressed={ampIlluminated} aria-busy={engineState === 'starting'} disabled={engineState === 'starting' || detecting} onclick={power}>
           {#if isGuilt}
             <span class="power-rocker" class:lit={ampIlluminated} aria-hidden="true">
               <span class="rocker-face"><span class="rocker-on">I</span><span class="rocker-lamp"></span><span class="rocker-off">O</span></span>
@@ -1248,27 +1223,27 @@
           {:else}
             <span class:lit={ampIlluminated}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></span>
           {/if}
-          <small>POWER</small>
+          <small>{t.rig.power.toUpperCase()}</small>
         </button>
       </div>
     </section>
     <div class="amp-foot"><span></span><span></span></div>
     <div class="capture-info" data-capture={latencyMs === null ? 'idle' : captureLoaded ? 'loaded' : 'silent'}></div>
-    {#if engineState === 'running' && !captureLoaded}<p class="alert">This capture is not running: you are hearing your dry guitar. Reload the page.</p>{/if}
+    {#if engineState === 'running' && !captureLoaded}<p class="alert">{t.rig.captureSilent}</p>{/if}
     <p class="notice" role="status">{notice ?? ''}</p>
     {#if engineLatest !== null && backend === 'native'}
       <div class="engine-update" role="status">
-        <span>Tonecraft Engine {engineLatest.latest} is available — this computer runs {engineLatest.current}. Quit it from its icon, then open the new one.</span>
-        <a class="update-button" href={engineDownload} rel="noopener">Update Tonecraft Engine</a>
+        <span>{t.rig.engineUpdate(engineLatest.latest, engineLatest.current)}</span>
+        <a class="update-button" href={engineDownload} rel="noopener">{t.rig.updateEngine}</a>
       </div>
     {/if}
     <div class="rack">
     {#if mode === 'tester'}
-      <section class="demo-panel" aria-label="Demo">
+      <section class="demo-panel" aria-label={t.rig.demo}>
         {#if !demoOpen}
           <button class="demo-launch" type="button" disabled={engineState === 'starting'} onclick={() => void openDemo()}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3" /><rect x="3" y="14" width="4" height="7" rx="1.5" /><rect x="17" y="14" width="4" height="7" rx="1.5" /></svg>
-            <span>Listen to a demo</span>
+            <span>{t.rig.listenDemo}</span>
             <span class="demo-play" aria-hidden="true">▶</span>
           </button>
         {:else if filePeaks !== null}
@@ -1276,43 +1251,43 @@
             <Waveform peaks={filePeaks} duration={fileDuration} position={filePosition} onseek={seek} />
             <div class="transport">
               <button class="start small" type="button" onclick={() => (filePlaying ? pause() : play())}>
-                {filePlaying ? 'Pause' : 'Play'}
+                {filePlaying ? t.rig.pause : t.rig.play}
               </button>
               <label class="check t-small">
                 <input
                   type="checkbox"
                   checked={fileLoop}
                   onchange={(e) => { fileLoop = e.currentTarget.checked; engine?.setLoop(fileLoop); persist(); }}
-                /> Loop
+                /> {t.rig.loop}
               </label>
-              <span class="t-small name">{fileName}</span>
+              <span class="t-small name">{fileName === DEMO_NAME ? t.rig.demoName : fileName}</span>
             </div>
           </div>
         {/if}
       </section>
     {/if}
     {#if mode === 'musician'}
-      <section class="session-bar" aria-label="Audio session">
+      <section class="session-bar" aria-label={t.rig.audioSession}>
         <!-- The looper. It records what leaves the rig, so a part stays as it
              was played while the capture, the preset and the boost move on
              under it. One button does rec, stop and overdub, as a pedal does,
              because both hands are on the guitar; the other one is power. -->
-        <div class="looper" aria-label="Looper">
-          <span class="eyebrow">LOOPER</span>
-          <span class="loop-status" data-state={loop.state}><span class="loop-dot"></span>{LOOP_STATUS[loop.state]}</span>
+        <div class="looper" aria-label={t.rig.looper}>
+          <span class="eyebrow">{t.rig.looper}</span>
+          <span class="loop-status" data-state={loop.state}><span class="loop-dot"></span>{t.rig.loopStatus[loop.state]}</span>
           <button
             class="loop-main"
             type="button"
             data-state={loop.state}
             disabled={engineState !== 'running'}
-            title={engineState === 'running' ? `${loopAction} (L)` : 'Start the amplifier to use the looper'}
+            title={engineState === 'running' ? `${loopAction} (L)` : t.rig.loopNeedsEngine}
             onclick={loopPress}
           >{loopAction}</button>
           <button
             class="loop-power"
             type="button"
-            aria-label="Looper off"
-            title="Looper off: erases the loop"
+            aria-label={t.rig.looperOff}
+            title={t.rig.looperOffTitle}
             aria-pressed={loopOn}
             disabled={engineState !== 'running' || !loopOn}
             onclick={loopPower}
@@ -1320,8 +1295,8 @@
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8 1.8v5.6M4.4 4a5 5 0 1 0 7.2 0" /></svg>
           </button>
           <label class="loop-level">
-            <span class="eyebrow">LEVEL</span>
-            <input type="range" min="0" max="1" step="0.01" value={loopLevel} aria-label="Loop level" oninput={(e) => setLoopLevel(Number(e.currentTarget.value))} />
+            <span class="eyebrow">{t.rig.level}</span>
+            <input type="range" min="0" max="1" step="0.01" value={loopLevel} aria-label={t.rig.loopLevel} oninput={(e) => setLoopLevel(Number(e.currentTarget.value))} />
           </label>
         </div>
       </section>
@@ -1339,8 +1314,8 @@
     <button
       class="tuner-launch"
       type="button"
-      aria-label="Open tuner"
-      title="Tuner"
+      aria-label={t.rig.openTuner}
+      title={t.rig.tuner}
       aria-busy={tunerOpening}
       disabled={engineState === 'starting' || tunerOpening}
       onclick={() => void openTuner()}
@@ -1356,8 +1331,8 @@
     class="metronome-toggle"
     class:active={metronomePlaying}
     type="button"
-    aria-label={metronomePlaying ? 'Pause metronome' : 'Start metronome'}
-    title={metronomeBpm === null ? 'Set a tempo first' : metronomePlaying ? 'Pause metronome' : 'Start metronome'}
+    aria-label={metronomePlaying ? t.rig.pauseMetronome : t.rig.startMetronome}
+    title={metronomeBpm === null ? t.rig.setTempoFirst : metronomePlaying ? t.rig.pauseMetronome : t.rig.startMetronome}
     aria-pressed={metronomePlaying}
     disabled={metronomeBpm === null || metronomeOpening}
     onclick={() => void toggleMetronome()}
@@ -1371,8 +1346,8 @@
   <button
     class="metronome-launch"
     type="button"
-    aria-label="Open metronome"
-    title={metronomeBpm === null ? 'Metronome' : `Metronome · ${metronomeBpm} BPM`}
+    aria-label={t.rig.openMetronome}
+    title={metronomeBpm === null ? t.rig.metronome : `${t.rig.metronome} · ${metronomeBpm} BPM`}
     aria-busy={metronomeOpening}
     disabled={metronomeOpening}
     onclick={() => void openMetronome()}
@@ -1399,7 +1374,7 @@
   <!-- One settings sheet. The language is detected, so it is changed here and
        nowhere on the rig; a tester has nothing else to set. -->
   <dialog class="tc-dialog settings" bind:this={settingsDialog} aria-labelledby="settings-title">
-    <button class="tc-close" type="button" aria-label="Close settings" onclick={() => settingsDialog?.close()}><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" /></svg></button>
+    <button class="tc-close" type="button" aria-label={t.rig.closeSettings} onclick={() => settingsDialog?.close()}><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" /></svg></button>
     <h2 class="tc-dialog-title" id="settings-title">{text.settings}</h2>
     <section class="settings-section" aria-labelledby="settings-language">
       <h3 class="eyebrow" id="settings-language">{text.language}</h3>
@@ -1407,20 +1382,20 @@
     </section>
     {#if mode === 'musician'}
     <section class="settings-section audio-settings" aria-labelledby="settings-audio">
-    <h3 class="eyebrow" id="settings-audio">Audio</h3>
+    <h3 class="eyebrow" id="settings-audio">{t.rig.audio}</h3>
     <EngineSettings {backend} opened={nativeOpened} onbackend={chooseBackend} />
     {#if backend === 'native'}
-    {#if nativeOpened !== null && channelCount > 1}<div class="device-controls"><Segmented label="Input channel" options={CHANNELS} value={channel} onchange={chooseChannel}/><div class="levels">{#each meters.channelPeaks as peak}<span class="level"><span class="level-fill" style={`transform:scaleX(${level(peak)})`}></span></span>{/each}</div></div>{/if}
+    {#if nativeOpened !== null && channelCount > 1}<div class="device-controls"><Segmented label={t.rig.inputChannel} options={CHANNELS} value={channel} onchange={chooseChannel}/><div class="levels">{#each meters.channelPeaks as peak}<span class="level"><span class="level-fill" style={`transform:scaleX(${level(peak)})`}></span></span>{/each}</div></div>{/if}
     {:else}
-    <button class="secondary detect" disabled={detecting || engineState === 'starting'} onclick={detectInputs}>{detecting ? 'Detecting inputs…' : 'Detect audio inputs'}</button>
+    <button class="secondary detect" disabled={detecting || engineState === 'starting'} onclick={detectInputs}>{detecting ? t.rig.detecting : t.rig.detect}</button>
     <div aria-busy={detecting}>
-    <div class="device-controls">{#if devices.length > 0}<label class="field"><span class="t-small">Input device</span><select disabled={detecting} value={deviceId} onchange={e => chooseDevice(e.currentTarget.value)}><option value="">Default input</option>{#each devices as d}<option value={d.id}>{d.label || 'Input'}</option>{/each}</select></label>{/if}{#if channelCount > 1}<Segmented label="Input channel" options={CHANNELS} value={channel} onchange={chooseChannel}/><div class="levels">{#each meters.channelPeaks as peak}<span class="level"><span class="level-fill" style={`transform:scaleX(${level(peak)})`}></span></span>{/each}</div>{/if}{#if outputs.length > 1}<label class="field"><span class="t-small">Output device</span><select value={outputId} onfocus={() => void probeOutputs()} onchange={e => chooseOutput(e.currentTarget.value)}><option value="">Same as input</option>{#each outputs as d}<option value={d.id}>{d.label || 'Output'}{d.outputMs === undefined ? '' : ` — ${d.outputMs.toFixed(0)} ms`}</option>{/each}</select></label>{/if}</div>
+    <div class="device-controls">{#if devices.length > 0}<label class="field"><span class="t-small">{t.rig.inputDevice}</span><select disabled={detecting} value={deviceId} onchange={e => chooseDevice(e.currentTarget.value)}><option value="">{t.rig.defaultInput}</option>{#each devices as d}<option value={d.id}>{d.label || t.rig.input}</option>{/each}</select></label>{/if}{#if channelCount > 1}<Segmented label={t.rig.inputChannel} options={CHANNELS} value={channel} onchange={chooseChannel}/><div class="levels">{#each meters.channelPeaks as peak}<span class="level"><span class="level-fill" style={`transform:scaleX(${level(peak)})`}></span></span>{/each}</div>{/if}{#if outputs.length > 1}<label class="field"><span class="t-small">{t.rig.outputDevice}</span><select value={outputId} onfocus={() => void probeOutputs()} onchange={e => chooseOutput(e.currentTarget.value)}><option value="">{t.rig.sameAsInput}</option>{#each outputs as d}<option value={d.id}>{d.label || t.rig.output}{d.outputMs === undefined ? '' : ` — ${d.outputMs.toFixed(0)} ms`}</option>{/each}</select></label>{/if}</div>
     </div>
     {/if}
     {#if settingsError}<p class="failure" role="alert">{settingsError}</p>{/if}
     </section>
     {/if}
-    <button class="connect" disabled={detecting || engineState === 'starting'} onclick={() => { settingsDialog?.close(); if (mode === 'musician' && engineState !== 'running') void power(); }}>Done</button>
+    <button class="connect" disabled={detecting || engineState === 'starting'} onclick={() => { settingsDialog?.close(); if (mode === 'musician' && engineState !== 'running') void power(); }}>{t.rig.done}</button>
   </dialog>
 
   <dialog class="tc-dialog welcome" bind:this={welcomeDialog} aria-labelledby="welcome-title" oncancel={() => (asking = false)}>

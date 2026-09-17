@@ -19,6 +19,7 @@
 </script>
 
 <script lang="ts">
+  import { lang } from './locale.svelte.ts';
   import { onDestroy, tick, untrack } from 'svelte';
 
   let { steps, terms, labels, onclose }: {
@@ -275,13 +276,13 @@
   <div class="tour-body">
   {#if step.figure === 'tracks'}
     <div class="tour-figure fig-tracks" aria-hidden="true">
-      <div class="fig-track"><span class="fig-name"><b>01</b> Lead</span><span class="fig-btn on" data-term="solo">Solo</span><span class="fig-btn">Mute</span><span class="fig-level" data-term="volume"><i style="transform:scaleX(.85)"></i></span></div>
-      <div class="fig-track muted"><span class="fig-name"><b>02</b> Rhythm</span><span class="fig-btn">Solo</span><span class="fig-btn on" data-term="mute">Mute</span><span class="fig-level"><i style="transform:scaleX(.6)"></i></span></div>
-      <div class="fig-track"><span class="fig-name"><b>03</b> Bass</span><span class="fig-btn">Solo</span><span class="fig-btn">Mute</span><span class="fig-level"><i style="transform:scaleX(.7)"></i></span></div>
+      <div class="fig-track"><span class="fig-name"><b>01</b> {lang.ui.tourFigure.lead}</span><span class="fig-btn on" data-term="solo">{lang.ui.tourFigure.solo}</span><span class="fig-btn">{lang.ui.tourFigure.mute}</span><span class="fig-level" data-term="volume"><i style="transform:scaleX(.85)"></i></span></div>
+      <div class="fig-track muted"><span class="fig-name"><b>02</b> {lang.ui.tourFigure.rhythm}</span><span class="fig-btn">{lang.ui.tourFigure.solo}</span><span class="fig-btn on" data-term="mute">{lang.ui.tourFigure.mute}</span><span class="fig-level"><i style="transform:scaleX(.6)"></i></span></div>
+      <div class="fig-track"><span class="fig-name"><b>03</b> {lang.ui.tourFigure.bass}</span><span class="fig-btn">{lang.ui.tourFigure.solo}</span><span class="fig-btn">{lang.ui.tourFigure.mute}</span><span class="fig-level"><i style="transform:scaleX(.7)"></i></span></div>
     </div>
   {:else if step.figure === 'compose'}
     <div class="tour-figure fig-compose" aria-hidden="true">
-      <div class="fig-chips"><span data-term="tempo">120 BPM</span><span data-term="signature">4/4</span><span data-term="tuning">E standard</span></div>
+      <div class="fig-chips"><span data-term="tempo">120 BPM</span><span data-term="signature">4/4</span><span data-term="tuning">{lang.ui.tourFigure.tuning}</span></div>
       <svg class="fig-tab" viewBox="0 0 290 84">
         {#each [0, 1, 2, 3, 4, 5] as s}<line x1="4" x2="286" y1={12 + s * 12} y2={12 + s * 12} />{/each}
         <line class="bar" x1="4" x2="4" y1="12" y2="72" /><line class="bar" x1="286" x2="286" y1="12" y2="72" />

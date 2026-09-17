@@ -738,7 +738,18 @@ check('a tester’s settings hold the language and no audio',
   (await demoPage.getByRole('dialog', { name: 'Settings' }).getByRole('radio', { name: 'Français' }).count()) === 1
     && (await demoPage.locator('.audio-settings').count()) === 0);
 await demoPage.getByRole('radio', { name: 'Français', exact: true }).click();
-await demoPage.getByRole('button', { name: 'Done', exact: true }).click();
+// The sheet itself switches on the spot.
+await demoPage.getByRole('button', { name: 'Terminé', exact: true }).click();
+// The language is state the whole studio reads, not the welcome's and the
+// tutorial's alone: the rig, the amp and the reader follow at once.
+check('French reaches the whole studio, not only the tutorial',
+  await demoPage.evaluate(() => {
+    const text = (selector) => document.querySelector(selector)?.textContent?.trim() ?? '';
+    return text('.global-controls .io-control .label') === 'Entrée'
+      && text('.amp-panel .tone-group .group-label').startsWith('TIMBRE')
+      && text('.reader h2') === 'Lecteur de tablatures'
+      && document.querySelector('.power-indicator')?.getAttribute('aria-label') === 'Mise en marche de l’ampli';
+  }));
 await demoPage.getByRole('button', { name: 'Tutoriel', exact: true }).click();
 await demoPage.locator('.tour-card').waitFor();
 check('and in French once French is chosen',

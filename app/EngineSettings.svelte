@@ -13,6 +13,7 @@
    * the moment it starts. Nothing about the tone changes with the choice.
    */
   import Segmented from './Segmented.svelte';
+  import { lang } from './locale.svelte.ts';
   import {
     NativeLink, detectPlatform, browserBlocksLoopback, downloadUrl, releasesUrl,
     type NativeConfig, type NativeDevice, type NativeInfo, type NativeOpened,
@@ -30,12 +31,12 @@
 
   const platform = detectPlatform();
   const blocked = browserBlocksLoopback();
-  const OPTIONS = [
-    { value: 'browser', label: 'Browser' },
-    { value: 'native', label: platform === 'windows' ? 'ASIO' : 'Native' },
-  ] as const;
+  const words = $derived(lang.ui.engine);
+  const OPTIONS = $derived([
+    { value: 'browser', label: words.browser },
+    { value: 'native', label: platform === 'windows' ? 'ASIO' : words.native },
+  ]);
   const SYSTEM = { windows: 'Windows', macos: 'macOS', linux: 'Linux' } as const;
-  const DRIVER = { windows: 'your interface’s ASIO driver', macos: 'CoreAudio', linux: 'ALSA' } as const;
 
   /** Buffer sizes worth offering, inside what the device accepts. */
   const SIZES = [16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 2048];
@@ -133,23 +134,23 @@
 
 {#if platform !== 'mobile'}
   <div class="engine">
-    <Segmented label="Audio engine" options={OPTIONS} value={backend} onchange={(v) => onbackend(v as Backend)} />
+    <Segmented label={words.audioEngine} options={OPTIONS} value={backend} onchange={(v) => onbackend(v as Backend)} />
 
     {#if backend === 'browser'}
       {#if platform === 'windows'}
-        <p class="t-small note">An interface with an ASIO driver plays with less delay through ASIO: choose it above.</p>
+        <p class="t-small note">{words.asioHint}</p>
       {/if}
     {:else if blocked}
-      <p class="failure"><span>Safari cannot reach Tonecraft Engine.</span><span class="fix">Use Chrome, Edge or Firefox for ASIO.</span></p>
+      <p class="failure"><span>{words.safariCause}</span><span class="fix">{words.safariFix}</span></p>
     {:else if status === 'connected' && info !== null}
-      <p class="t-small note">Tonecraft Engine {info.version} is running: the sound leaves through it.</p>
+      <p class="t-small note">{words.running(info.version)}</p>
       {#if latest !== null}
-        <p class="update t-small"><span>Version {latest} is available. Quit the engine from its icon, then open the new one.</span>
-          <a class="download update-link" href={updateHref} rel="noopener">Update Tonecraft Engine</a></p>
+        <p class="update t-small"><span>{words.updateAvailable(latest)}</span>
+          <a class="download update-link" href={updateHref} rel="noopener">{words.update}</a></p>
       {/if}
 
       {#if info.hosts.length > 1}
-        <label class="field"><span class="t-small">Driver</span>
+        <label class="field"><span class="t-small">{words.driver}</span>
           <select value={host ?? ''} onchange={(e) => chooseHost(e.currentTarget.value)}>
             {#each info.hosts as h (h.id)}<option value={h.id}>{h.name}</option>{/each}
           </select>
@@ -157,23 +158,23 @@
       {/if}
 
       {#if devices === null}
-        <p class="t-small note">Reading devices…</p>
+        <p class="t-small note">{words.readingDevices}</p>
       {:else if devices.inputs.length === 0 && devices.outputs.length === 0}
-        <p class="failure"><span>No device answers on this driver.</span><span class="fix">Connect the interface, or choose another driver.</span></p>
+        <p class="failure"><span>{words.noDeviceCause}</span><span class="fix">{words.noDeviceFix}</span></p>
       {:else}
         {#if isAsio}
-          <label class="field"><span class="t-small">Interface</span>
+          <label class="field"><span class="t-small">{words.interface}</span>
             <select value={input?.id ?? ''} onchange={(e) => chooseInterface(e.currentTarget.value)}>
               {#each devices.inputs as d (d.id)}<option value={d.id}>{d.name}</option>{/each}
             </select>
           </label>
         {:else}
-          <label class="field"><span class="t-small">Input device</span>
+          <label class="field"><span class="t-small">{words.inputDevice}</span>
             <select value={input?.id ?? ''} onchange={(e) => set({ input: e.currentTarget.value, inputChannels: null })}>
               {#each devices.inputs as d (d.id)}<option value={d.id}>{d.name}</option>{/each}
             </select>
           </label>
-          <label class="field"><span class="t-small">Output device</span>
+          <label class="field"><span class="t-small">{words.outputDevice}</span>
             <select value={output?.id ?? ''} onchange={(e) => set({ output: e.currentTarget.value, outputChannels: null })}>
               {#each devices.outputs as d (d.id)}<option value={d.id}>{d.name}</option>{/each}
             </select>
@@ -184,27 +185,27 @@
           <!-- By default, ASIO keeps the buffer set in the interface's own
                control panel, which other programs share; elsewhere, the
                smallest the device offers. Any other size is the player's call. -->
-          <label class="field"><span class="t-small">Buffer</span>
+          <label class="field"><span class="t-small">{words.buffer}</span>
             <select value={config?.bufferSize == null ? '' : String(config.bufferSize)}
                     onchange={(e) => set({ bufferSize: e.currentTarget.value === '' ? null : Number(e.currentTarget.value) })}>
-              <option value="">{isAsio ? 'Interface setting' : `Smallest — ${sizes[0]} frames, ${ms(sizes[0]!)} ms`}</option>
-              {#each sizes as n (n)}<option value={String(n)}>{n} frames — {ms(n)} ms</option>{/each}
+              <option value="">{isAsio ? words.interfaceSetting : words.smallest(sizes[0]!, ms(sizes[0]!))}</option>
+              {#each sizes as n (n)}<option value={String(n)}>{words.frames(n, ms(n))}</option>{/each}
             </select>
           </label>
         {/if}
 
         {#if rates.length > 1}
-          <label class="field"><span class="t-small">Sample rate</span>
+          <label class="field"><span class="t-small">{words.sampleRate}</span>
             <select value={config?.sampleRate == null ? '' : String(config.sampleRate)}
                     onchange={(e) => set({ sampleRate: e.currentTarget.value === '' ? null : Number(e.currentTarget.value), bufferSize: null })}>
-              <option value="">Device default</option>
+              <option value="">{words.deviceDefault}</option>
               {#each rates as r (r)}<option value={String(r)}>{(r / 1000).toFixed(1).replace(/\.0$/, '')} kHz</option>{/each}
             </select>
           </label>
         {/if}
 
         {#if input !== null && input.channels > 2}
-          <label class="field"><span class="t-small">Inputs</span>
+          <label class="field"><span class="t-small">{words.inputs}</span>
             <select value={String(config?.inputChannels?.[0] ?? 0)}
                     onchange={(e) => set({ inputChannels: pairOf(Number(e.currentTarget.value), input.channels) })}>
               {#each pairs(input.channels) as first (first)}<option value={String(first)}>{pairLabel(first, input.channels)}</option>{/each}
@@ -212,7 +213,7 @@
           </label>
         {/if}
         {#if output !== null && output.channels > 2}
-          <label class="field"><span class="t-small">Outputs</span>
+          <label class="field"><span class="t-small">{words.outputs}</span>
             <select value={String(config?.outputChannels?.[0] ?? 0)}
                     onchange={(e) => set({ outputChannels: pairOf(Number(e.currentTarget.value), output.channels) })}>
               {#each pairs(output.channels) as first (first)}<option value={String(first)}>{pairLabel(first, output.channels)}</option>{/each}
@@ -222,45 +223,39 @@
 
         <!-- The headphone level: the interface's volume, not the tone. The
              Output fader on the rig is part of a shared tone; this is not. -->
-        <label class="field"><span class="t-small">Headphones — {Math.round(monitor * 100)}%</span>
-          <input type="range" min="0" max="1" step="0.01" value={monitor} aria-label="Headphone level"
+        <label class="field"><span class="t-small">{words.headphones(Math.round(monitor * 100))}</span>
+          <input type="range" min="0" max="1" step="0.01" value={monitor} aria-label={words.headphoneLevel}
                  oninput={(e) => set({ monitor: Number(e.currentTarget.value) })} />
         </label>
 
         {#if opened !== null}
-          <p class="t-small note">
-            Playing at {(opened.sampleRate / 1000).toFixed(1).replace(/\.0$/, '')} kHz{opened.bufferSize === null ? '' : ` with ${opened.bufferSize}-frame buffers`}:
-            {opened.inputLatencyMs.toFixed(1)} ms in, {opened.outputLatencyMs.toFixed(1)} ms out.
-          </p>
+          <p class="t-small note">{words.playingAt((opened.sampleRate / 1000).toFixed(1).replace(/\.0$/, ''), opened.bufferSize, opened.inputLatencyMs.toFixed(1), opened.outputLatencyMs.toFixed(1))}</p>
         {/if}
       {/if}
     {:else if status === 'checking'}
-      <p class="t-small note">Looking for Tonecraft Engine on this computer…</p>
+      <p class="t-small note">{words.looking}</p>
     {:else}
       <div class="guide">
-        <p class="t-small">
-          {platform === 'windows' ? 'ASIO needs Tonecraft Engine' : 'This needs Tonecraft Engine'}: a small free program that
-          plays through {platform === 'other' ? 'your system’s audio driver' : DRIVER[platform]} directly{platform === 'windows' ? ', at the buffer set in your interface’s control panel' : ', with the smallest buffer it allows'}. It sits as an icon by the clock; everything is set from here, and the tone is the same.
-        </p>
+        <p class="t-small">{words.guide(platform === 'windows' ? words.needsWindows : words.needs, words.drivers[platform], platform === 'windows')}</p>
         <ol class="t-small">
           {#if platform === 'other'}
-            <li><a class="download" href={releasesUrl} target="_blank" rel="noopener">Download Tonecraft Engine</a></li>
+            <li><a class="download" href={releasesUrl} target="_blank" rel="noopener">{words.download}</a></li>
           {:else}
-            <li><a class="download" href={downloadUrl(platform)} rel="noopener">Download Tonecraft Engine for {SYSTEM[platform]}</a></li>
+            <li><a class="download" href={downloadUrl(platform)} rel="noopener">{words.downloadFor(SYSTEM[platform])}</a></li>
           {/if}
           {#if platform === 'windows'}
-            <li>Unzip it and open <code>tonecraft-engine.exe</code>. If Windows SmartScreen stops it, choose More info, then Run anyway.</li>
+            <li>{words.stepWindowsBefore} <code>tonecraft-engine.exe</code>{words.stepWindowsAfter}</li>
           {:else if platform === 'macos'}
-            <li>Unzip it, then Control-click <code>tonecraft-engine</code> and choose Open: macOS asks once, because the program is not notarised. Allow the microphone when asked — that is how it hears the interface.</li>
+            <li>{words.stepMacBefore} <code>tonecraft-engine</code>{words.stepMacAfter}</li>
           {:else}
-            <li>Extract it and run <code>./tonecraft-engine</code>.</li>
+            <li>{words.stepLinuxBefore} <code>./tonecraft-engine</code>{words.stepLinuxAfter}</li>
           {/if}
-          <li>Keep this sheet open: it connects by itself. If the browser asks to reach devices on your local network, allow it — that is this page talking to the program on this computer, nothing else.</li>
+          <li>{words.stepConnect}</li>
         </ol>
         <p class="t-small note">
-          <a href={releasesUrl} target="_blank" rel="noopener">Other systems and versions</a>
+          <a href={releasesUrl} target="_blank" rel="noopener">{words.otherVersions}</a>
           <span aria-hidden="true"> · </span>
-          <button class="inline" type="button" onclick={() => onbackend('browser')}>Keep playing in the browser</button>
+          <button class="inline" type="button" onclick={() => onbackend('browser')}>{words.stayInBrowser}</button>
         </p>
       </div>
     {/if}

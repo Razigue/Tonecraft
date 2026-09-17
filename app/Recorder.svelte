@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lang, engineMessage } from './locale.svelte.ts';
   import { onMount, onDestroy } from 'svelte';
   import type { Engine } from '../engine/engine.ts';
   import { CUSTOM_CAB } from '../engine/ir.ts';
@@ -13,7 +14,8 @@
 
   type Mode = 'di' | 'processed';
   const STATE_KEY = 'recorder';
-  const MODES: readonly (readonly [Mode, string])[] = [['di', 'DI'], ['processed', 'Processed']];
+  const words = $derived(lang.ui.recorder);
+  const MODES: readonly Mode[] = ['di', 'processed'];
   /**
    * Guitar tracks a session can hold. Nothing in the chain grows with it: a
    * take records one input, and the other tracks are heard as one pre-rendered
@@ -34,7 +36,7 @@
   const newTrack = (): Track => ({ id: nextTrackId++, take: null, fromFile: false, level: 1 });
   /** The first track keeps the id the single take always had, so sessions from before tracks still load. */
   const mediaId = (index: number) => (index === 0 ? 'last-recording' : `last-recording-${index + 1}`);
-  const trackName = (index: number) => (index === 0 ? 'Guitar' : `Guitar ${index + 1}`);
+  const trackName = (index: number) => (index === 0 ? words.guitar : words.guitarN(index + 1));
 
   let tracks = $state.raw<Track[]>([newTrack()]);
   /** The track Record records into. */
@@ -109,10 +111,10 @@
     : only !== undefined ? !!tracks[only]?.take
     : content === 'mix' ? hasTake && !!backing : hasTake;
   const contents = $derived<(readonly [ExportContent, string, number | undefined])[]>([
-    ['mix', 'Guitar + backing', undefined],
-    ['guitar', tracks.length > 1 ? 'Guitars only' : 'Guitar only', undefined],
-    ...(tracks.length > 1 ? tracks.map((_, i) => ['guitar', `${trackName(i)} only`, i] as const) : []),
-    ['backing', 'Backing only', undefined],
+    ['mix', words.mix, undefined],
+    ['guitar', tracks.length > 1 ? words.guitarsOnly : words.guitarOnly, undefined],
+    ...(tracks.length > 1 ? tracks.map((_, i) => ['guitar', words.trackOnly(trackName(i)), i] as const) : []),
+    ['backing', words.backingOnly, undefined],
   ]);
 
   /* One waveform column per 480th of the timeline, so every lane shares a scale
@@ -265,7 +267,7 @@
       live = true;
       listening = true;
       frame = requestAnimationFrame(followLive);
-    } catch (err) { if (!disposed) error = err instanceof Error ? err.message : 'Playback failed.'; }
+    } catch (err) { if (!disposed) error = err instanceof Error ? engineMessage(err.message) : words.playbackFailed; }
     finally { working = null; }
   }
   function followLive() {
@@ -309,7 +311,7 @@
         audio.onended = () => { listening = false; cancelAnimationFrame(frame); playheadAt = -1; };
       }
       await audio.play();
-    } catch (e) { if (!disposed && !(e instanceof DOMException && e.name === 'AbortError')) error = e instanceof Error ? e.message : 'Playback failed.'; }
+    } catch (e) { if (!disposed && !(e instanceof DOMException && e.name === 'AbortError')) error = e instanceof Error ? engineMessage(e.message) : words.playbackFailed; }
     finally { working = null; }
   }
 
@@ -407,7 +409,7 @@
   async function useDi(file: File | undefined, index: number) {
     if (!file || recording) return;
     error = '';
-    if (!isAudio(file)) { error = 'Choose an audio file for the guitar.'; return; }
+    if (!isAudio(file)) { error = words.chooseGuitarAudio; return; }
     try {
       // At the other tracks' rate, so they share one timeline.
       const others = tracks.find((t, i) => i !== index && t.take)?.take;
@@ -422,7 +424,7 @@
       if (takes.length === 1) syncMs = null;
       persist();
       await saveTrackMedia(index);
-    } catch { if (!disposed) error = 'That file could not be decoded.'; }
+    } catch { if (!disposed) error = words.undecodable; }
   }
 
   async function useBacking(file: File | undefined) {
@@ -430,7 +432,7 @@
     if (!file || recording) return;
     error = '';
     if (!isAudio(file)) {
-      error = 'Choose an audio file for the backing track.';
+      error = words.chooseBackingAudio;
       return;
     }
     try {
@@ -444,7 +446,7 @@
       backingId++;
       if (engine) { await engine.loadBacking(file); engine.setBackingLevel(backingLevel); }
       await saveMedia(file, 'backing', 'last-backing');
-    } catch { if (!disposed) error = 'That file could not be decoded.'; }
+    } catch { if (!disposed) error = words.undecodable; }
   }
   function removeBacking() {
     stopPreview();
@@ -505,14 +507,14 @@
       if (seconds >= 300 || !recordingEngine.running) { await stop(); return; }
       poll = setTimeout(() => void pollRecording(), 250);
     } catch (e) {
-      recording = false; error = e instanceof Error ? e.message : 'The recording engine stopped.';
+      recording = false; error = e instanceof Error ? engineMessage(e.message) : words.engineStopped;
     }
   }
   async function start() {
     if (!engine || busy || recording || working) return;
     const others = tracks.some((t, i) => i !== armed && t.take);
     if (others && rate !== engine.sampleRate) {
-      error = `The other tracks are at ${rate} Hz and the interface runs at ${engine.sampleRate} Hz. Set it back to ${rate} Hz to record over them.`;
+      error = words.rateMismatch(rate, engine.sampleRate);
       return;
     }
     busy = true; error = ''; changed = true;
@@ -534,7 +536,7 @@
       void pollRecording();
     } catch (err) {
       // Cancelling the preparation is not a failure worth a message.
-      if (!(abortedByPlayer(err))) error = err instanceof Error ? err.message : 'Could not start recording.';
+      if (!(abortedByPlayer(err))) error = err instanceof Error ? engineMessage(err.message) : words.cannotStart;
       if (others && !disposed) await restoreBacking(e).catch(() => {});
     }
     finally { busy = false; }
@@ -553,7 +555,7 @@
       if (takes.length === 1) syncMs = null;
       persist();
       await saveTrackMedia(index);
-    } catch (e) { error = e instanceof Error ? e.message : 'Could not save the recording.'; }
+    } catch (e) { error = e instanceof Error ? engineMessage(e.message) : words.cannotSave; }
     finally { recording = false; busy = false; }
   }
   async function download(content: ExportContent, only?: number) {
@@ -567,7 +569,7 @@
       const link = document.createElement('a');
       link.href = result.url; link.download = `tonecraft-${what}-${new Date().toISOString().replace(/[:.]/g, '-')}.wav`;
       document.body.appendChild(link); link.click(); link.remove();
-    } catch (e) { if (!disposed) error = e instanceof Error ? e.message : 'Export failed.'; }
+    } catch (e) { if (!disposed) error = e instanceof Error ? engineMessage(e.message) : words.exportFailed; }
     finally { working = null; }
   }
   function closeMenu(e: PointerEvent) {
@@ -619,28 +621,28 @@
 
 <svelte:window onpointerdown={closeMenu} />
 
-<section class="recorder" aria-label="Recording and WAV export">
+<section class="recorder" aria-label={words.region}>
   <div class="record-head">
-    <div class="record-title"><span class="eyebrow">RECORDER</span><span class="duration" class:live={recording}>{#if recording}<i></i>{/if}{timestamp(seconds)}</span></div>
-    <div class="mode" role="radiogroup" aria-label="Guitar in the export">
-      {#each MODES as [id, label] (id)}
-        <button type="button" role="radio" aria-checked={mode === id} class:on={mode === id} onclick={() => chooseMode(id)}><span class="dot"></span>{label}</button>
+    <div class="record-title"><span class="eyebrow">{words.title}</span><span class="duration" class:live={recording}>{#if recording}<i></i>{/if}{timestamp(seconds)}</span></div>
+    <div class="mode" role="radiogroup" aria-label={words.modeGroup}>
+      {#each MODES as id (id)}
+        <button type="button" role="radio" aria-checked={mode === id} class:on={mode === id} onclick={() => chooseMode(id)}><span class="dot"></span>{words.modes[id]}</button>
       {/each}
     </div>
     <div class="actions">
-      <button class="listen" aria-label={listening ? 'Pause take' : 'Listen to take'} disabled={(!hasTake && !backing) || recording || busy || working !== null} onclick={() => void listen()}>{working === 'listen' ? `${Math.round(progress * 100)}%` : listening ? '❚❚' : '▶'}</button>
-      <button class="primary" class:recording disabled={busy || working !== null || (!engine && !recording)} onclick={() => recording ? void stop() : void start()}>{working === 'prepare' ? `Preparing ${Math.round(progress * 100)}%` : busy ? (recording ? 'Saving…' : 'Starting…') : recording ? '■ Stop recording' : armedTake ? '● New take' : '● Record'}</button>
+      <button class="listen" aria-label={listening ? words.pauseTake : words.listen} disabled={(!hasTake && !backing) || recording || busy || working !== null} onclick={() => void listen()}>{working === 'listen' ? `${Math.round(progress * 100)}%` : listening ? '❚❚' : '▶'}</button>
+      <button class="primary" class:recording disabled={busy || working !== null || (!engine && !recording)} onclick={() => recording ? void stop() : void start()}>{working === 'prepare' ? words.preparing(Math.round(progress * 100)) : busy ? (recording ? words.saving : words.starting) : recording ? words.stopRecording : armedTake ? words.newTake : words.record}</button>
       <div class="export-menu">
-        <button class="export" aria-haspopup="menu" aria-expanded={menu} disabled={(!hasTake && !backing) || recording || busy || working !== null} onclick={() => { menu = !menu; }}>{working === 'export' ? `Exporting ${Math.round(progress * 100)}%` : 'Export WAV ▾'}</button>
+        <button class="export" aria-haspopup="menu" aria-expanded={menu} disabled={(!hasTake && !backing) || recording || busy || working !== null} onclick={() => { menu = !menu; }}>{working === 'export' ? words.exporting(Math.round(progress * 100)) : words.exportWav}</button>
         {#if menu}
-          <div class="menu" role="menu" aria-label="What to export">
+          <div class="menu" role="menu" aria-label={words.whatToExport}>
             {#each contents as [id, label, only] (label)}
-              <button type="button" role="menuitem" disabled={!available(id, only)} onclick={() => void download(id, only)}>{label}{#if id !== 'backing'}<small>{mode === 'di' ? 'DI' : 'processed'}</small>{/if}</button>
+              <button type="button" role="menuitem" disabled={!available(id, only)} onclick={() => void download(id, only)}>{label}{#if id !== 'backing'}<small>{words.modeSmall[mode]}</small>{/if}</button>
             {/each}
           </div>
         {/if}
       </div>
-      {#if working}<button onclick={() => abort?.abort()}>Cancel</button>{/if}
+      {#if working}<button onclick={() => abort?.abort()}>{words.cancel}</button>{/if}
     </div>
   </div>
 
@@ -650,38 +652,38 @@
         <div class="lane-head" class:armed={tracks.length > 1 && armed === i}>
           <div class="lane-title">
             {#if tracks.length > 1}
-              <button type="button" class="arm" role="radio" aria-checked={armed === i} aria-label={`Record into ${trackName(i)}`} disabled={recording || busy} onclick={() => arm(i)}><span></span>{trackName(i).toUpperCase()}</button>
+              <button type="button" class="arm" role="radio" aria-checked={armed === i} aria-label={words.recordInto(trackName(i))} disabled={recording || busy} onclick={() => arm(i)}><span></span>{trackName(i).toUpperCase()}</button>
             {:else}
-              <span>GUITAR</span>
+              <span>{words.guitar.toUpperCase()}</span>
             {/if}
           </div>
-          <input type="range" min="0" max="1" step="0.01" value={track.level} aria-label={`${trackName(i)} level`} oninput={e => setGuitarLevel(i, Number(e.currentTarget.value))} />
+          <input type="range" min="0" max="1" step="0.01" value={track.level} aria-label={words.trackLevel(trackName(i))} oninput={e => setGuitarLevel(i, Number(e.currentTarget.value))} />
         </div>
       {/each}
-      <label class="lane-head"><span>BACKING</span><input type="range" min="0" max="1" step="0.01" value={backingLevel} aria-label="Backing track level" oninput={e => setBackingLevel(Number(e.currentTarget.value))} /></label>
+      <label class="lane-head"><span>{words.backingLane.toUpperCase()}</span><input type="range" min="0" max="1" step="0.01" value={backingLevel} aria-label={words.backingLevel} oninput={e => setBackingLevel(Number(e.currentTarget.value))} /></label>
     </div>
-    <div class="lanes" role="group" aria-label="Recording timeline"
+    <div class="lanes" role="group" aria-label={words.timeline}
       onpointerdown={selectStart} onpointermove={selectMove} onpointerup={selectEnd} onpointercancel={selectEnd}>
       {#each tracks as track, i (track.id)}
         <div class="lane guitar-lane" class:over={diOver === i} class:armed={tracks.length > 1 && armed === i} role="region" aria-label={trackName(i)}
           ondragover={e => { e.preventDefault(); diOver = i; }} ondragleave={() => { diOver = -1; }}
           ondrop={e => { e.preventDefault(); diOver = -1; void useDi(e.dataTransfer?.files[0], i); }}>
           {#if guitarPaths[i]}
-            <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label={i === 0 ? 'Recorded guitar' : `Recorded guitar ${i + 1}`}><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="var(--line)"/><polyline points={guitarPaths[i]} fill="none" stroke="var(--violet-100)" stroke-width="1" /></svg>
+            <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label={i === 0 ? words.recordedGuitar : words.recordedGuitarN(i + 1)}><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="var(--line)"/><polyline points={guitarPaths[i]} fill="none" stroke="var(--violet-100)" stroke-width="1" /></svg>
           {:else}
-            <button type="button" class="drop-hint" disabled={recording} onclick={() => { arm(i); diInputs[i]?.click(); }}><span>{#if hasTake}Press ● Record to play over the other tracks, or drop a DI, or <u>choose a file</u>{:else}Press ● Record to record your guitar, or drop a DI (a dry guitar recording, no amp), or <u>choose a file</u>{/if}</span></button>
+            <button type="button" class="drop-hint" disabled={recording} onclick={() => { arm(i); diInputs[i]?.click(); }}><span>{hasTake ? words.dropOver : words.dropFirst} <u>{words.chooseFile}</u></span></button>
           {/if}
-          <input class="hidden-file" bind:this={diInputs[i]} type="file" accept="audio/*" aria-label={`${trackName(i)} DI file`} onchange={e => { void useDi(e.currentTarget.files?.[0], i); e.currentTarget.value = ''; }} />
+          <input class="hidden-file" bind:this={diInputs[i]} type="file" accept="audio/*" aria-label={words.diFile(trackName(i))} onchange={e => { void useDi(e.currentTarget.files?.[0], i); e.currentTarget.value = ''; }} />
         </div>
       {/each}
-      <div class="lane backing-lane" class:over={dragOver} role="region" aria-label="Backing track"
+      <div class="lane backing-lane" class:over={dragOver} role="region" aria-label={words.backingTrack}
         ondragover={e => { e.preventDefault(); dragOver = true; }} ondragleave={() => { dragOver = false; }}
         ondrop={e => { e.preventDefault(); dragOver = false; void useBacking(e.dataTransfer?.files[0]); }}>
         {#if backingPath}
-          <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label="Backing track waveform"><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="var(--line)"/><polyline points={backingPath} fill="none" stroke="var(--violet-400)" stroke-width="1" /></svg>
+          <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label={words.backingWaveform}><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="var(--line)"/><polyline points={backingPath} fill="none" stroke="var(--violet-400)" stroke-width="1" /></svg>
         {:else}
-          <label class="drop-hint"><span>Drop a song to play along to, or <u>choose a file</u></span>
-            <input type="file" accept="audio/*" aria-label="Backing track file" onchange={e => { void useBacking(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} /></label>
+          <label class="drop-hint"><span>{words.dropSong} <u>{words.chooseFile}</u></span>
+            <input type="file" accept="audio/*" aria-label={words.backingFile} onchange={e => { void useBacking(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} /></label>
         {/if}
       </div>
       {#if selection}<span class="selection" style:left={percent(selection[0])} style:width={`calc(${percent(selection[1])} - ${percent(selection[0])})`}></span>{/if}
@@ -691,28 +693,28 @@
 
   <div class="record-tools">
     {#if tracks.length < MAX_TRACKS}
-      <button class="small add-track" disabled={recording || busy} onclick={addTrack}>+ Add track</button>
+      <button class="small add-track" disabled={recording || busy} onclick={addTrack}>{words.addTrack}</button>
     {/if}
     {#if tracks.length > 1 || armedTake}
       <button class="small delete-track" class:confirm={confirmDelete} disabled={recording || busy || working !== null} onclick={() => void askDelete()}>
-        {confirmDelete ? 'Press again to delete' : tracks.length > 1 ? `Delete ${trackName(armed)}` : 'Delete take'}</button>
+        {confirmDelete ? words.pressAgain : tracks.length > 1 ? words.deleteTrack(trackName(armed)) : words.deleteTake}</button>
     {/if}
     {#if backingFile}
       <span class="backing-name" title={backingFile.name}>{backingFile.name}</span>
-      <button class="small" disabled={!engine || recording} onclick={preview}>{previewing ? '■ Stop' : '▶ Preview'}</button>
-      <button class="small" disabled={recording} onclick={() => replaceInput?.click()}>Replace</button>
-      <input class="hidden-file" bind:this={replaceInput} type="file" accept="audio/*" aria-label="Replace backing track" onchange={e => { void useBacking(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} />
-      <button class="small" aria-label="Remove backing track" disabled={recording} onclick={removeBacking}>✕</button>
+      <button class="small" disabled={!engine || recording} onclick={preview}>{previewing ? words.stopPreview : words.preview}</button>
+      <button class="small" disabled={recording} onclick={() => replaceInput?.click()}>{words.replace}</button>
+      <input class="hidden-file" bind:this={replaceInput} type="file" accept="audio/*" aria-label={words.replaceBacking} onchange={e => { void useBacking(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} />
+      <button class="small" aria-label={words.removeBacking} disabled={recording} onclick={removeBacking}>✕</button>
     {/if}
     {#if syncShown && measured}
       {@const shownMs = syncMs ?? measuredMs}
-      <label class="level sync">Sync<input type="range" min="0" max="300" step="1" value={shownMs} aria-label="Guitar sync"
+      <label class="level sync">{words.sync}<input type="range" min="0" max="300" step="1" value={shownMs} aria-label={words.guitarSync}
         oninput={e => setSync(Number(e.currentTarget.value))} /><output>{shownMs} ms</output></label>
-      {#if syncMs !== null}<button class="small" onclick={() => setSync(null)}>Measured {measuredMs} ms</button>{/if}
+      {#if syncMs !== null}<button class="small" onclick={() => setSync(null)}>{words.measured(measuredMs)}</button>{/if}
     {/if}
     {#if selection}
-      <span class="selection-info">Selection {timestamp(selection[0])}–{timestamp(selection[1])}</span>
-      <button class="small" onclick={clearSelection}>Clear selection</button>
+      <span class="selection-info">{words.selection(timestamp(selection[0]), timestamp(selection[1]))}</span>
+      <button class="small" onclick={clearSelection}>{words.clearSelection}</button>
     {/if}
   </div>
   {#if error}<p role="alert">{error}</p>{/if}

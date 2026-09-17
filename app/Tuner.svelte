@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PitchReading } from '../engine/tuner.ts';
+  import { lang } from './locale.svelte.ts';
 
   interface Props {
     reading: PitchReading | null;
@@ -8,26 +9,27 @@
   }
 
   let { reading, onclose, element = $bindable(null) }: Props = $props();
+  const words = $derived(lang.ui.tuner);
 
   const cents = $derived(reading === null ? 0 : Math.max(-50, Math.min(50, reading.cents)));
   const position = $derived(50 + cents);
   const inTune = $derived(reading !== null && Math.abs(reading.cents) <= 5);
   const direction = $derived(reading === null
     ? ''
-    : inTune ? 'In tune' : reading.cents < 0 ? 'Tune up' : 'Tune down');
+    : inTune ? words.inTune : reading.cents < 0 ? words.tuneUp : words.tuneDown);
   const valueText = $derived(reading === null
-    ? 'Waiting for a note'
-    : `${reading.note}${reading.octave}, ${Math.round(reading.cents)} cents, ${direction}`);
+    ? words.waiting
+    : words.reading(`${reading.note}${reading.octave}`, Math.round(reading.cents), direction));
 </script>
 
 <dialog
   class="tc-dialog tuner"
   bind:this={element}
-  aria-label="Tuner"
+  aria-label={words.dialog}
   oncancel={(event) => { event.preventDefault(); element?.close(); }}
   onclose={onclose}
 >
-  <button class="tc-close" type="button" aria-label="Close tuner" onclick={() => element?.close()}>
+  <button class="tc-close" type="button" aria-label={words.close} onclick={() => element?.close()}>
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
       <path d="M3 3l10 10M13 3L3 13" />
     </svg>
@@ -41,7 +43,7 @@
     class="tuner-scale"
     class:in-tune={inTune}
     role="meter"
-    aria-label="Tuning accuracy"
+    aria-label={words.accuracy}
     aria-valuemin={-50}
     aria-valuemax={50}
     aria-valuenow={Math.round(cents)}
@@ -57,11 +59,11 @@
         <span class="position" style={`left:${position}%`}></span>
       {/if}
     </div>
-    <div class="scale-labels"><span>LOW</span><strong>{direction.toUpperCase()}</strong><span>HIGH</span></div>
+    <div class="scale-labels"><span>{words.low.toUpperCase()}</span><strong>{direction.toUpperCase()}</strong><span>{words.high.toUpperCase()}</span></div>
   </div>
 
   <p class="cents" aria-hidden="true">
-    {reading === null ? '—' : `${reading.cents > 0 ? '+' : ''}${Math.round(reading.cents)} cents`}
+    {reading === null ? '—' : words.cents(`${reading.cents > 0 ? '+' : ''}${Math.round(reading.cents)}`)}
   </p>
 </dialog>
 

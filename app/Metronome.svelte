@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lang } from './locale.svelte.ts';
   interface Props {
     value: string;
     active: boolean;
@@ -18,37 +19,38 @@
     value, active, volume, tapCount, sync, onvalue, onvolume, ontap, onsync, onclose,
     element = $bindable(null),
   }: Props = $props();
+  const words = $derived(lang.ui.metronome);
 </script>
 
 <dialog
   class="tc-dialog metronome"
   data-playing={active}
   bind:this={element}
-  aria-label="Metronome"
+  aria-label={words.dialog}
   oncancel={(event) => { event.preventDefault(); element?.close(); }}
   onclose={onclose}
 >
-  <button class="tc-close" type="button" aria-label="Close metronome" onclick={() => element?.close()}>
+  <button class="tc-close" type="button" aria-label={words.close} onclick={() => element?.close()}>
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" /></svg>
   </button>
 
   <label class="tempo">
-    <span>BPM</span>
+    <span>{words.bpm}</span>
     <input
       type="number"
       min="30"
       max="450"
       step="1"
       inputmode="numeric"
-      aria-label="Tempo in BPM"
+      aria-label={words.tempo}
       {value}
       oninput={(event) => onvalue(event.currentTarget.value)}
     />
   </label>
 
   <div class="tap-zone">
-    <button class="tap" type="button" onclick={ontap}>TAP</button>
-    <div class="tap-count" aria-label={`${tapCount} of 4 taps`}>
+    <button class="tap" type="button" onclick={ontap}>{words.tap.toUpperCase()}</button>
+    <div class="tap-count" aria-label={words.taps(tapCount)}>
       {#each [0, 1, 2, 3] as beat}
         <span class:filled={beat < tapCount} class:fourth={beat === 3}></span>
       {/each}
@@ -59,12 +61,12 @@
     class="sync"
     type="button"
     aria-pressed={sync}
-    title="Tab bars start on the first beat, at this tempo"
+    title={words.syncTitle}
     onclick={onsync}
-  ><span class="sync-dot" aria-hidden="true"></span>SYNC TAB</button>
+  ><span class="sync-dot" aria-hidden="true"></span>{words.sync.toUpperCase()}</button>
 
   <label class="volume">
-    <span>VOLUME</span>
+    <span>{words.volume.toUpperCase()}</span>
     <input
       type="range"
       min="0"
@@ -72,7 +74,7 @@
       step="0.01"
       value={volume}
       style={`--volume:${volume * 100}%`}
-      aria-label="Metronome volume"
+      aria-label={words.volumeLabel}
       oninput={(event) => onvolume(Number(event.currentTarget.value))}
     />
     <output>{Math.round(volume * 100)}%</output>
