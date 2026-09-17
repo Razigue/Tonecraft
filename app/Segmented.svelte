@@ -3,7 +3,7 @@
    * A segmented selector (UX-DR6).
    *
    * No rounded pills and no filled background — the selected segment gets a 2px
-   * underline in `--ink`. DESIGN.md is blunt about why: filled backgrounds
+   * underline in `--accent`. DESIGN.md is blunt about why: filled backgrounds
    * fight the calm, and the calm is what the whole design is for.
    */
   interface Option {
@@ -50,11 +50,11 @@
     background: none;
     border: 0;
     border-bottom: 2px solid transparent;
-    color: var(--graphite);
+    color: var(--text-2);
     cursor: pointer;
   }
 
   button:hover { color: var(--ink); }
-  button.selected { color: var(--ink); border-bottom-color: var(--ink); }
+  button.selected { color: var(--text); border-bottom-color: var(--accent); }
   button:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 </style>

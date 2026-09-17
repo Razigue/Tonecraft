@@ -629,7 +629,7 @@
     </div>
     <div class="actions">
       <button class="listen" aria-label={listening ? 'Pause take' : 'Listen to take'} disabled={(!hasTake && !backing) || recording || busy || working !== null} onclick={() => void listen()}>{working === 'listen' ? `${Math.round(progress * 100)}%` : listening ? '❚❚' : '▶'}</button>
-      <button class:recording disabled={busy || working !== null || (!engine && !recording)} onclick={() => recording ? void stop() : void start()}>{working === 'prepare' ? `Preparing ${Math.round(progress * 100)}%` : busy ? (recording ? 'Saving…' : 'Starting…') : recording ? '■ Stop recording' : armedTake ? '● New take' : '● Record'}</button>
+      <button class="primary" class:recording disabled={busy || working !== null || (!engine && !recording)} onclick={() => recording ? void stop() : void start()}>{working === 'prepare' ? `Preparing ${Math.round(progress * 100)}%` : busy ? (recording ? 'Saving…' : 'Starting…') : recording ? '■ Stop recording' : armedTake ? '● New take' : '● Record'}</button>
       <div class="export-menu">
         <button class="export" aria-haspopup="menu" aria-expanded={menu} disabled={(!hasTake && !backing) || recording || busy || working !== null} onclick={() => { menu = !menu; }}>{working === 'export' ? `Exporting ${Math.round(progress * 100)}%` : 'Export WAV ▾'}</button>
         {#if menu}
@@ -667,7 +667,7 @@
           ondragover={e => { e.preventDefault(); diOver = i; }} ondragleave={() => { diOver = -1; }}
           ondrop={e => { e.preventDefault(); diOver = -1; void useDi(e.dataTransfer?.files[0], i); }}>
           {#if guitarPaths[i]}
-            <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label={i === 0 ? 'Recorded guitar' : `Recorded guitar ${i + 1}`}><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="#4e4e4e"/><polyline points={guitarPaths[i]} fill="none" stroke="#c7c0b5" stroke-width="1" /></svg>
+            <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label={i === 0 ? 'Recorded guitar' : `Recorded guitar ${i + 1}`}><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="var(--line)"/><polyline points={guitarPaths[i]} fill="none" stroke="var(--violet-100)" stroke-width="1" /></svg>
           {:else}
             <button type="button" class="drop-hint" disabled={recording} onclick={() => { arm(i); diInputs[i]?.click(); }}><span>{#if hasTake}Press ● Record to play over the other tracks, or drop a DI, or <u>choose a file</u>{:else}Press ● Record to record your guitar, or drop a DI (a dry guitar recording, no amp), or <u>choose a file</u>{/if}</span></button>
           {/if}
@@ -678,7 +678,7 @@
         ondragover={e => { e.preventDefault(); dragOver = true; }} ondragleave={() => { dragOver = false; }}
         ondrop={e => { e.preventDefault(); dragOver = false; void useBacking(e.dataTransfer?.files[0]); }}>
         {#if backingPath}
-          <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label="Backing track waveform"><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="#4e4e4e"/><polyline points={backingPath} fill="none" stroke="#b9a3bf" stroke-width="1" /></svg>
+          <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label="Backing track waveform"><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="var(--line)"/><polyline points={backingPath} fill="none" stroke="var(--violet-400)" stroke-width="1" /></svg>
         {:else}
           <label class="drop-hint"><span>Drop a song to play along to, or <u>choose a file</u></span>
             <input type="file" accept="audio/*" aria-label="Backing track file" onchange={e => { void useBacking(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} /></label>
@@ -719,19 +719,90 @@
 </section>
 
 <style>
-  .recorder{margin-top:24px;padding:20px 24px;border:1px solid #3c3c3c;border-radius:8px;background:#202020}
-  .record-head{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.record-title{display:flex;flex-direction:column;gap:8px;min-width:88px}.eyebrow{font:9px var(--mono);letter-spacing:1.6px;color:#aaa}.duration{display:flex;align-items:center;gap:7px;font:18px var(--mono);font-variant-numeric:tabular-nums}.live{color:#ec987f}i{width:7px;height:7px;background:#ec987f;border-radius:50%}
-  .mode{display:flex;gap:2px;padding:3px;border:1px solid #454545;border-radius:999px}.mode button{display:flex;align-items:center;gap:7px;min-height:28px;padding:4px 12px;border:0;border-radius:999px;background:none;font:10px var(--mono);letter-spacing:1px;color:#9c9c9c}.mode button:hover{background:#2c2c2c}.mode .dot{width:6px;height:6px;border-radius:50%;background:#5c5c5c}.mode .on,.mode .on:hover{background:#333;color:#ededed}.mode .on .dot{background:#d8c2dd}
-  .actions{display:flex;align-items:center;gap:10px;margin-left:auto}
-  button,.small{font:12px var(--body);color:#ddd;background:#303030;border:1px solid #505050;border-radius:4px;min-height:38px;padding:8px 14px;cursor:pointer;white-space:nowrap}button:hover{background:#414141}button:disabled{opacity:.45;cursor:default}.listen{min-width:46px;font-variant-numeric:tabular-nums}.recording{color:#ffc6b7;border-color:#ae7666}.export{background:#dedbd5;color:#222;border-color:#dedbd5}.export:hover{background:#f3f0ea}
-  .export-menu{position:relative}.menu{position:absolute;right:0;top:calc(100% + 6px);z-index:5;display:grid;min-width:210px;padding:6px;background:#262626;border:1px solid #4a4a4a;border-radius:6px;box-shadow:0 10px 24px #0008}.menu button{display:flex;justify-content:space-between;gap:16px;border:0;background:none;text-align:left;min-height:34px}.menu button:hover:not(:disabled){background:#353535}.menu small{font:10px var(--mono);color:#9c9c9c}
-  .timeline{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;margin-top:16px}.lane-names{display:grid;grid-auto-rows:48px;gap:6px;font:9px var(--mono);letter-spacing:1.4px;color:#8f8f8f}.lane-head{display:flex;flex-direction:column;justify-content:center;gap:6px}.lane-head input{width:100%;height:16px;margin:0;accent-color:#c2a9c8;cursor:pointer}
-  .lanes{position:relative;display:grid;grid-auto-rows:48px;gap:6px;touch-action:none;cursor:crosshair}.lane{position:relative;overflow:hidden;background:#181818;border:1px solid #373737;border-radius:3px}.lane svg{display:block;width:100%;height:100%}
-  .lane-title{display:flex;align-items:center;justify-content:space-between;gap:4px}.arm,.arm:hover{display:flex;align-items:center;gap:6px;min-height:0;padding:0;border:0;background:none;font:9px var(--mono);letter-spacing:1.4px;color:#8f8f8f}.arm span{width:6px;height:6px;border-radius:50%;border:1px solid #6a6a6a}.armed .arm{color:#ededed}.armed .arm span{background:var(--ember);border-color:var(--ember)}.delete-track.confirm{color:var(--ember);border-color:var(--ember)}.guitar-lane.armed{border-color:#5a5a5a}
-  .backing-lane.over,.guitar-lane.over{border-color:#d8c2dd}.drop-hint,.drop-hint:hover{position:absolute;inset:0;display:grid;place-items:center;min-height:0;padding:0 12px;text-align:center;line-height:1.4;border:0;border-radius:0;background:none;font-size:11px;color:#9c9c9c;cursor:pointer}.drop-hint>span{min-width:0;max-width:100%;white-space:normal}.drop-hint u{color:#dedbd5}.drop-hint input,.hidden-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
-  .selection{position:absolute;top:0;bottom:0;background:#d8c2dd22;border-left:1px solid #d8c2dd;border-right:1px solid #d8c2dd;pointer-events:none}
-  .playhead-track{position:absolute;inset:0;pointer-events:none}.playhead{position:absolute;inset:0;will-change:transform}.playhead::before{content:'';position:absolute;left:0;top:0;bottom:0;width:1px;background:#e8dfd0}
-  .record-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px;min-height:0}.record-tools:empty{display:none}.small{min-height:30px;padding:5px 10px;font-size:11px}.record-tools{position:relative}.backing-name{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px var(--mono);color:#cfcfcf}.level{display:flex;align-items:center;gap:8px;font-size:10px;color:#aaa}.level input{width:110px;accent-color:#c2a9c8}.sync output{min-width:48px;font:11px var(--mono);color:#cfcfcf;font-variant-numeric:tabular-nums}.selection-info{font:11px var(--mono);color:#d8c2dd;margin-left:auto}
-  p{font-size:12px;color:var(--ember);margin:12px 0 0}
-  @media(max-width:760px){.recorder{padding:18px 14px}.record-head{gap:12px}.actions{margin-left:0;flex-wrap:wrap}.timeline{grid-template-columns:minmax(0,1fr)}.lane-names{grid-template-rows:auto;grid-template-columns:1fr 1fr;gap:12px}.selection-info{margin-left:0}}
+  /* Part of the rack's plate: no card of its own, the seam above is the rack's. */
+  .recorder { padding: 20px 24px; }
+  .record-head { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .record-title { display: flex; flex-direction: column; gap: 8px; min-width: 88px; }
+  .eyebrow { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-2); }
+  .duration { display: flex; align-items: center; gap: 7px; font: 18px var(--mono); font-variant-numeric: tabular-nums; }
+  .live { color: var(--ember); }
+  i { width: 7px; height: 7px; border-radius: 50%; background: var(--ember); }
+
+  .mode { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius); }
+  .mode button { display: flex; align-items: center; gap: 7px; min-height: 28px; padding: 4px 12px; border: 0; border-radius: 2px; background: none; font: 11px var(--mono); color: var(--text-2); }
+  .mode button:hover { background: var(--surface-2); }
+  .mode .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--violet-800); }
+  .mode .on, .mode .on:hover { background: var(--violet-900); color: var(--text); }
+  .mode .on .dot { background: var(--accent); }
+
+  .actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+  /* Three weights: primary (record), secondary (export, listen), small (track tools). */
+  button, .small {
+    min-height: 38px;
+    padding: 0 16px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    color: var(--text);
+    font: 13px var(--body);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--violet-500); background: #29252f; }
+  button:disabled { opacity: .45; cursor: default; }
+  .primary { border-color: var(--violet-500); background: var(--action); color: var(--action-text); font-weight: 500; }
+  .primary:hover:not(:disabled) { background: var(--action-hover); }
+  .primary.recording { border-color: var(--ember-line); background: #3a201b; color: #ffd7cc; }
+  .listen { min-width: 46px; font-variant-numeric: tabular-nums; }
+
+  .export-menu { position: relative; }
+  .menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; display: grid; min-width: 220px; padding: 6px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-1); box-shadow: var(--shadow); }
+  .menu button { display: flex; justify-content: space-between; gap: 16px; min-height: 34px; border: 0; background: none; text-align: left; }
+  .menu button:hover:not(:disabled) { background: var(--surface-2); }
+  .menu small { font: 10px var(--mono); color: var(--text-2); }
+
+  .timeline { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; margin-top: 18px; }
+  .lane-names { display: grid; grid-auto-rows: 48px; gap: 6px; font: 400 9px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; color: var(--text-3); }
+  .lane-head { display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+  .lane-head input { width: 100%; height: 16px; margin: 0; cursor: pointer; }
+  .lanes { position: relative; display: grid; grid-auto-rows: 48px; gap: 6px; touch-action: none; cursor: crosshair; }
+  .lane { position: relative; overflow: hidden; background: var(--surface-0); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: inset 0 1px 3px #0008; }
+  .lane svg { display: block; width: 100%; height: 100%; }
+  .lane-title { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+  .arm, .arm:hover:not(:disabled) { display: flex; align-items: center; gap: 6px; min-height: 0; padding: 0; border: 0; background: none; font: inherit; letter-spacing: inherit; color: var(--text-3); }
+  .arm span { width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--violet-600); }
+  .armed .arm { color: var(--text); }
+  .armed .arm span { background: var(--ember); border-color: var(--ember); }
+  .guitar-lane.armed { border-color: var(--line-strong); }
+  .backing-lane.over, .guitar-lane.over { border-color: var(--accent); }
+  .drop-hint, .drop-hint:hover:not(:disabled) { position: absolute; inset: 0; display: grid; place-items: center; min-height: 0; padding: 0 12px; border: 0; border-radius: 0; background: none; text-align: center; line-height: 1.4; font-size: 12px; color: var(--text-3); cursor: pointer; }
+  .drop-hint > span { min-width: 0; max-width: 100%; white-space: normal; }
+  .drop-hint u { color: var(--text-2); text-decoration-color: var(--violet-500); text-underline-offset: 3px; }
+  .drop-hint input, .hidden-file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .selection { position: absolute; top: 0; bottom: 0; background: #d8c2dd22; border-left: 1px solid var(--accent); border-right: 1px solid var(--accent); pointer-events: none; }
+  .playhead-track { position: absolute; inset: 0; pointer-events: none; }
+  .playhead { position: absolute; inset: 0; will-change: transform; }
+  .playhead::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 1px; background: var(--violet-50); }
+
+  .record-tools { position: relative; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .record-tools:empty { display: none; }
+  .small { min-height: 30px; padding: 0 10px; font-size: 12px; }
+  /* Adding is routine; deleting is quiet until it asks to be confirmed. */
+  .delete-track { border-color: transparent; background: none; color: var(--text-2); }
+  .delete-track:hover:not(:disabled) { border-color: var(--ember-line); background: none; color: var(--ember); }
+  .delete-track.confirm { color: var(--ember); border-color: var(--ember); }
+  .backing-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px var(--mono); color: var(--text-2); }
+  .level { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-2); }
+  .level input { width: 110px; }
+  .sync output { min-width: 48px; font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--text-2); }
+  .selection-info { margin-left: auto; font: 11px var(--mono); color: var(--accent); }
+  p { margin: 12px 0 0; font-size: 12px; color: var(--ember); }
+  @media (max-width: 760px) {
+    .recorder { padding: 18px 14px; }
+    .record-head { gap: 12px; }
+    .actions { margin-left: 0; flex-wrap: wrap; }
+    .timeline { grid-template-columns: minmax(0, 1fr); }
+    .lane-names { grid-template-rows: auto; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .selection-info { margin-left: 0; }
+  }
 </style>

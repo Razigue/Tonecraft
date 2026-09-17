@@ -126,21 +126,23 @@
 </div>
 
 <style>
-  .neck{flex:1;min-height:120px;display:flex;padding:14px 16px 10px;background:#faf8f3}
+  /* The neck sits on the lectern's paper, framed like it. */
+  .neck{flex:1;min-height:120px;display:flex;padding:14px 16px 10px;border-radius:var(--radius);background:radial-gradient(ellipse 80% 140% at 50% 0%,#fffdf8,#f3eee4 70%,#ebe4d6);box-shadow:var(--shadow),0 0 0 1px #000}
   svg{width:100%;height:100%;max-height:300px;margin:auto}
   .fret{stroke:#cec8bb;stroke-width:1}
   .nut{stroke:#6f6962;stroke-width:3}
   .capo{stroke:#a37320;stroke-width:3;opacity:.55}
   .string{stroke:#a9a296}
-  .inlay{fill:#e6e1d5}
+  .inlay{fill:#e3dccf}
   .open{font:11px var(--mono);fill:#8b8378;text-anchor:middle}
   .number{font:9px var(--mono);fill:#b1a99d;text-anchor:middle}
-  /* The scale is cool and drawn, the playing note warm and filled: two hues
-     and two shapes, so neither depends on telling colours apart (DESIGN.md §8). */
-  .mark{fill:#faf8f3;stroke:#2f6f6a;stroke-width:1.6}
-  .degree{font:7.5px var(--mono);fill:#2f6f6a;text-anchor:middle;pointer-events:none}
-  .root .mark{fill:#2f6f6a}
-  .root .degree{fill:#faf8f3;font-weight:600}
+  /* The scale is violet and drawn, the playing note amber and filled: two hues
+     and two shapes, so neither depends on telling colours apart (DESIGN.md §8).
+     The violet is the studio's, deepened to be read on paper. */
+  .mark{fill:#fbf8f2;stroke:#5e4a66;stroke-width:1.6}
+  .degree{font:7.5px var(--mono);fill:#5e4a66;text-anchor:middle;pointer-events:none}
+  .root .mark{fill:#5e4a66}
+  .root .degree{fill:#fbf8f2;font-weight:600}
   .halo{fill:#a3732040}
   .core{fill:#a37320}
   .halo,.core{transform-box:fill-box;transform-origin:center;animation:strike .13s ease-out}

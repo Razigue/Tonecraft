@@ -20,9 +20,11 @@
      * player can clip, and the one place a target level means something.
      */
     kind?: 'rms' | 'peak';
+    /** A short name under the meter: two thin bars side by side are otherwise anonymous. */
+    label?: string;
   }
 
-  const { level, kind = 'rms' }: Props = $props();
+  const { level, kind = 'rms', label }: Props = $props();
 
   /**
    * The input window, in dBFS. -18 to -6 is the usual target for a DI into an
@@ -98,14 +100,15 @@
 
 <div class="meter" class:sweet class:clipping role="meter" aria-label={kind === 'peak' ? 'Input level' : 'Level'}
      aria-valuemin={0} aria-valuemax={1} aria-valuenow={Number(level.toFixed(3))} aria-valuetext={valueText}>
-  <svg width="7" height={TOP + H} viewBox={`0 0 7 ${TOP + H}`} aria-hidden="true">
+  <svg width="9" height={TOP + H} viewBox={`0 0 9 ${TOP + H}`} aria-hidden="true">
     {#if kind === 'peak'}
       <rect class="clip" x="0" y="0" width={DOT} height={DOT} rx="2" />
-      <rect class="band" x="5.5" y={bandTop} width="1.5" height={bandHeight} />
+      <rect class="band" x="7" y={bandTop} width="2" height={bandHeight} />
     {/if}
-    <rect x="0" y={TOP} width="4" height={H} fill="var(--graphite)" opacity="0.18" />
-    <rect class="fill" x="0" y={TOP + H - height * H} width="4" height={height * H} />
+    <rect class="rail" x="0" y={TOP} width="5" height={H} rx="1" />
+    <rect class="fill" x="0" y={TOP + H - height * H} width="5" height={height * H} rx="1" />
   </svg>
+  {#if label}<span class="meter-label" aria-hidden="true">{label}</span>{/if}
 </div>
 
 <style>
@@ -113,8 +116,16 @@
     /* Aligned with a fader's travel so a row of them shares one baseline. */
     display: grid;
     place-items: center;
-    width: calc(var(--u) * 2);
-    padding-bottom: calc(var(--u) * 3);
+    gap: 6px;
+    width: calc(var(--u) * 2.5);
+  }
+  .rail { fill: var(--violet-800); }
+  .meter-label {
+    font: 400 9px/1 var(--display);
+    font-stretch: 125%;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-3);
   }
   .fill { fill: var(--celadon); }
   .clipping .fill { fill: var(--ember); }

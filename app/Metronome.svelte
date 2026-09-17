@@ -4,28 +4,31 @@
     active: boolean;
     volume: number;
     tapCount: number;
+    /** Whether the tab reader starts its bars on the click and plays at this tempo. */
+    sync: boolean;
     onvalue: (value: string) => void;
     onvolume: (value: number) => void;
     ontap: () => void;
+    onsync: () => void;
     onclose: () => void;
     element?: HTMLDialogElement | null;
   }
 
   let {
-    value, active, volume, tapCount, onvalue, onvolume, ontap, onclose,
+    value, active, volume, tapCount, sync, onvalue, onvolume, ontap, onsync, onclose,
     element = $bindable(null),
   }: Props = $props();
 </script>
 
 <dialog
-  class="metronome"
+  class="tc-dialog metronome"
   data-playing={active}
   bind:this={element}
   aria-label="Metronome"
   oncancel={(event) => { event.preventDefault(); element?.close(); }}
   onclose={onclose}
 >
-  <button class="close" type="button" aria-label="Close metronome" onclick={() => element?.close()}>
+  <button class="tc-close" type="button" aria-label="Close metronome" onclick={() => element?.close()}>
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" /></svg>
   </button>
 
@@ -52,6 +55,14 @@
     </div>
   </div>
 
+  <button
+    class="sync"
+    type="button"
+    aria-pressed={sync}
+    title="Tab bars start on the first beat, at this tempo"
+    onclick={onsync}
+  ><span class="sync-dot" aria-hidden="true"></span>SYNC TAB</button>
+
   <label class="volume">
     <span>VOLUME</span>
     <input
@@ -69,51 +80,26 @@
 </dialog>
 
 <style>
-  .metronome {
-    width: min(440px, calc(100vw - 40px));
-    margin: auto;
-    padding: 62px 42px 34px;
-    box-sizing: border-box;
-    border: 1px solid #403a43;
-    border-radius: 10px;
-    color: var(--ink);
-    background: #111013;
-    box-shadow: 0 24px 70px #000c;
-  }
-  .metronome[open] {
-    display: grid;
-    gap: 30px;
-    animation: metronome-in 200ms cubic-bezier(0.2, 0, 0, 1);
-  }
-  .metronome::backdrop { background: #000c; }
-  .close {
-    position: absolute;
-    top: 14px;
-    right: 14px;
-    display: grid;
-    place-items: center;
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    border: 0;
-    border-radius: 4px;
-    background: transparent;
-    color: #c8c2ca;
-    cursor: pointer;
-  }
-  .close svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
-  .close:hover { background: #1d1a20; color: #fff; }
-  .close:focus-visible, .tap:focus-visible, input:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; }
+  .metronome { width: min(440px, calc(100vw - 40px)); }
+  .metronome[open] { display: grid; gap: 30px; }
+  .tap:focus-visible, input:focus-visible, .sync:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; }
   .tempo { display: grid; justify-items: center; gap: 8px; }
-  .tempo > span, .volume > span { font: 9px var(--mono); letter-spacing: 1.8px; color: #817985; }
+  .tempo > span, .volume > span {
+    font: 400 10px/1 var(--display);
+    font-stretch: 125%;
+    letter-spacing: 0.24em;
+    color: var(--text-3);
+  }
+  /* The same face, weight and colour as the tuner's note: one large readout. */
   .tempo input {
     width: 4ch;
     padding: 0 0 7px;
     border: 0;
-    border-bottom: 1px solid #625767;
+    border-bottom: 1px solid var(--violet-700);
     background: transparent;
-    color: #dfcae3;
-    font: 300 58px/1 var(--display);
+    color: var(--accent);
+    font: 300 64px/1 var(--display);
+    font-variant-numeric: tabular-nums;
     text-align: center;
     appearance: textfield;
   }
@@ -122,40 +108,55 @@
   .tap {
     width: 128px;
     min-height: 50px;
-    border: 1px solid #6a5c6e;
-    border-radius: 4px;
-    background: #18151a;
-    color: #d8c5dc;
-    font: 12px var(--mono);
-    letter-spacing: 3px;
+    border: 1px solid var(--accent-line);
+    border-radius: var(--radius);
+    background: var(--violet-900);
+    color: var(--violet-100);
+    font: 400 12px/1 var(--display);
+    font-stretch: 125%;
+    letter-spacing: 0.3em;
     cursor: pointer;
   }
-  .tap:hover { background: #201c23; border-color: #9a82a0; }
-  .tap:active { background: #29222c; }
+  .tap:hover { background: var(--violet-800); border-color: var(--violet-400); }
+  .tap:active { background: var(--violet-700); }
   .tap-count { display: grid; grid-template-columns: repeat(4, 6px); gap: 9px; }
-  .tap-count span { width: 6px; height: 6px; border: 1px solid #554d58; border-radius: 50%; box-sizing: border-box; }
-  .tap-count span.filled { background: #a58baa; border-color: #a58baa; }
-  .tap-count span.fourth { border-color: #8f7894; }
-  .tap-count span.fourth.filled { background: #d9bfdd; }
+  .tap-count span { width: 6px; height: 6px; border: 1px solid var(--violet-700); border-radius: 50%; box-sizing: border-box; }
+  .tap-count span.filled { background: var(--violet-400); border-color: var(--violet-400); }
+  .tap-count span.fourth { border-color: var(--violet-500); }
+  .tap-count span.fourth.filled { background: var(--accent); }
+  .sync {
+    justify-self: center;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+    padding: 0 16px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text-2);
+    font: 400 10px/1 var(--display);
+    font-stretch: 125%;
+    letter-spacing: 0.2em;
+    cursor: pointer;
+  }
+  .sync:hover { border-color: var(--line-strong); color: var(--text); }
+  .sync[aria-pressed='true'] { border-color: var(--accent-line); color: var(--violet-100); }
+  .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--violet-800); }
+  .sync[aria-pressed='true'] .sync-dot { background: var(--accent); }
   .volume { display: grid; grid-template-columns: auto 1fr 4ch; align-items: center; gap: 14px; }
   .volume input {
     width: 100%;
     height: 20px;
     margin: 0;
     appearance: none;
-    background: linear-gradient(to right, #a28aa8 var(--volume), #373139 var(--volume));
+    background: linear-gradient(to right, var(--violet-400) var(--volume), var(--violet-800) var(--volume));
     background-size: 100% 1px;
     background-position: center;
     background-repeat: no-repeat;
     cursor: pointer;
   }
-  .volume input::-webkit-slider-thumb { width: 12px; height: 12px; appearance: none; border: 1px solid #d7c2db; border-radius: 50%; background: #171419; }
-  .volume input::-moz-range-thumb { width: 12px; height: 12px; border: 1px solid #d7c2db; border-radius: 50%; background: #171419; }
-  .volume output { font: 11px var(--mono); color: #928797; text-align: right; }
-  @keyframes metronome-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-  @media (max-width: 520px) {
-    .metronome { width: calc(100vw - 28px); padding: 58px 24px 30px; }
-    .close { top: 10px; right: 10px; }
-  }
-  @media (prefers-reduced-motion: reduce) { .metronome[open] { animation: none; } }
+  .volume input::-webkit-slider-thumb { width: 12px; height: 12px; appearance: none; border: 1px solid var(--violet-200); border-radius: 50%; background: var(--surface-1); }
+  .volume input::-moz-range-thumb { width: 12px; height: 12px; border: 1px solid var(--violet-200); border-radius: 50%; background: var(--surface-1); }
+  .volume output { font: 11px var(--mono); color: var(--text-2); text-align: right; }
 </style>

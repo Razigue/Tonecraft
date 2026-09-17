@@ -6,14 +6,22 @@
   import { KEYS, SCALES, SCALE_GROUPS, scaleById, scaleOnNeck, scaleNoteNames, keyOfSignature } from '../engine/scales.ts';
   import { STORES, dbGet, dbPut } from '../store/db.ts';
   import { restoreFadedVolume } from '../engine/tab-fades.ts';
+  import { syncedSpeed } from '../engine/metronome.ts';
   import {
     DURATIONS, SIGNATURES, STRING_COUNTS, TUNINGS, addTrack, barTicks, clearString, deleteBeat, emptyTab, layout as layBeats, makeRest, nudgeDuration,
     pickFret, readTab, removeTrack, setDuration, setSignature, setStrings, setTempo, setTuning, stepBeat, stepString, toAlphaTex, toggleDotted, typeDigit,
     type Cursor, type EditTab, type PendingDigit,
   } from '../engine/tab-editor.ts';
 
-  let { ontempo, onwrite }: {
+  let { ontempo, onwrite, syncBpm = null, onsyncstart }: {
     ontempo?: (bpm: number) => void;
+    /** The metronome's tempo while the tab is synced to it; null when it is not. */
+    syncBpm?: number | null;
+    /**
+     * Starts the click if it is not running, and says in how many ms its next
+     * measure begins — null when there is no click to follow after all.
+     */
+    onsyncstart?: () => Promise<number | null>;
     /** A note written in the editor, from the keys or the neck. */
     onwrite?: () => void;
   } = $props();
@@ -369,7 +377,7 @@
       mutedTracks = new Set(); soloed = new Set(); trackVolumes = new Map(); stringCursor = null; looping = false; selection = false; position = 0; duration = 0; lit = [];
       const fresh = await reader(alpha);
       fresh.renderScore(parsed, [track]);
-      fresh.playbackSpeed = speed / 100;
+      applySpeed(fresh);
       ready = fresh.isReadyForPlayback;
       if (remember) {
         // Only a file the player just opened: the one restored at start-up
@@ -435,7 +443,40 @@
       api.updateSettings(); api.render({ reuseViewport: true });
     });
   }
-  function togglePlay() { if (ready && !busy) api?.playPause(); }
+  /**
+   * Synced to the metronome, the score plays at the click's tempo: the speed
+   * is the ratio between the two, and the Speed menu steps aside.
+   */
+  function applySpeed(reader: AlphaTabApi) {
+    reader.playbackSpeed = syncBpm !== null && score ? syncedSpeed(syncBpm, score.tempo) : speed / 100;
+  }
+  $effect(() => {
+    void syncBpm; void speed; void score; void ready;
+    if (api) applySpeed(api);
+  });
+
+  /**
+   * Synced, play waits for the click: the tab goes back to the start of its
+   * bar and begins on the metronome's next first beat. The two have separate
+   * audio clocks, so the start is placed by a timer on the main thread — a few
+   * ms of jitter, not a drift, since both then run at the same tempo. Pressed
+   * again while it waits, the start is called off.
+   */
+  let cueing = $state(false);
+  let cue = 0;
+  function cancelCue() { clearTimeout(cue); cueing = false; }
+  async function togglePlay() {
+    if (!ready || busy || !api) return;
+    if (cueing) { cancelCue(); return; }
+    if (playing || syncBpm === null || !onsyncstart || !score) { api.playPause(); return; }
+    const reader = api;
+    reader.tickPosition = score.masterBars[barAt(positionTick())]?.start ?? 0;
+    cueing = true;
+    const ms = await onsyncstart();
+    if (!cueing || api !== reader) return;
+    if (ms === null) { cueing = false; reader.play(); return; }
+    cue = window.setTimeout(() => { cueing = false; if (api === reader) reader.play(); }, ms);
+  }
 
   /**
    * The arrows step through the song: a bar at a time while it plays, a beat
@@ -553,7 +594,7 @@
     if (e.key === 'Escape' && focused) { void setFocused(false); e.stopPropagation(); }
     if (editKey(e)) return;
     if (e.code === 'Space' && e.target instanceof Element && !e.target.closest('input,select,button')) {
-      e.preventDefault(); e.stopPropagation(); togglePlay();
+      e.preventDefault(); e.stopPropagation(); void togglePlay();
     }
     // Not from a slider or a select, whose arrows are their own.
     if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !e.altKey && !e.ctrlKey && !e.metaKey
@@ -612,7 +653,7 @@
       editing = true; filename = ''; track = 0;
       mutedTracks = new Set(); soloed = new Set(); trackVolumes = new Map(); looping = false; selection = false; position = 0; duration = 0; lit = [];
       const fresh = await reader(alpha);
-      fresh.playbackSpeed = speed / 100;
+      applySpeed(fresh);
       rendering = false; redraw = false;
       await renderDraft();
       // The button pressed was disabled while the editor loaded, and the focus
@@ -798,7 +839,7 @@
     });
     void loadMedia('last-score').then(file => { if (file && !disposed && !busy && !score) void open(file, false); });
   });
-  onDestroy(() => { disposed = true; signature.disconnect(); api?.destroy(); });
+  onDestroy(() => { disposed = true; cancelCue(); signature.disconnect(); api?.destroy(); });
 </script>
 
 <section class="reader" class:focused role="application" aria-label="Tab reader" tabindex="-1"
@@ -806,9 +847,9 @@
   <div class="reader-heading">
     <div><span class="eyebrow">PRACTICE</span><h2>Tab reader</h2></div>
     <div class="heading-actions">
-      {#if score}<button aria-pressed={focused} onclick={() => setFocused(!focused)}> {focused ? 'Exit focus' : 'Focus view'} </button>{/if}
-      <button class="write-tab" aria-pressed={editing} disabled={busy} onclick={() => (editing ? stopEditing() : startEditing())}>{editing ? 'Close editor' : 'Write a tab'}</button>
-      <button class="primary" disabled={busy} onclick={() => picker.click()}>{busy ? 'Opening…' : score ? 'Open another tab' : 'Import tab'}</button>
+      {#if score}<button class="secondary" aria-pressed={focused} onclick={() => setFocused(!focused)}> {focused ? 'Exit focus' : 'Focus view'} </button>{/if}
+      <button class="secondary write-tab" aria-pressed={editing} disabled={busy} onclick={() => (editing ? stopEditing() : startEditing())}>{editing ? 'Close editor' : 'Write a tab'}</button>
+      <button class="primary" class:settled={!!score} disabled={busy} onclick={() => picker.click()}>{busy ? 'Opening…' : score ? 'Open another tab' : 'Import tab'}</button>
     </div>
     <input bind:this={picker} type="file" accept={ACCEPT} aria-label="Import tablature" onchange={e => { const f = e.currentTarget.files?.[0]; if (f) void open(f); e.currentTarget.value = ''; }} />
   </div>
@@ -821,13 +862,14 @@
     {#if score}
       <div class="transport">
         <div class="playback">
-          <button class="play" aria-label={playing ? 'Pause tablature' : 'Play tablature'} disabled={!ready || busy} onclick={togglePlay}>{playing ? 'Ⅱ' : '▶'}</button>
-          <button aria-label="Stop tablature" onclick={() => api?.stop()}>■</button>
+          <button class="play primary" class:cueing aria-label={cueing ? 'Cancel synced start' : playing ? 'Pause tablature' : 'Play tablature'} disabled={!ready || busy} onclick={() => void togglePlay()}>{playing || cueing ? 'Ⅱ' : '▶'}</button>
+          <button aria-label="Stop tablature" onclick={() => { cancelCue(); api?.stop(); }}>■</button>
           <span class="clock">{time(position)} <span>/ {time(duration)}</span></span>
         </div>
         <input class="scrub" type="range" aria-label="Playback position" min="0" max={Math.max(1, duration)} step="100"
           value={position} disabled={duration === 0} oninput={e => seek(Number(e.currentTarget.value))} />
-        <label>Speed<select aria-label="Playback speed" bind:value={speed} onchange={() => { if (api) api.playbackSpeed = speed / 100; }}>{#each [25, 50, 60, 70, 80, 90, 100, 110, 125, 150] as n}<option value={n}>{n}%</option>{/each}</select></label>
+        {#if syncBpm !== null}<span class="synced" title="Synced to the metronome">Sync · {syncBpm} BPM</span>
+        {:else}<label>Speed<select aria-label="Playback speed" bind:value={speed}>{#each [25, 50, 60, 70, 80, 90, 100, 110, 125, 150] as n}<option value={n}>{n}%</option>{/each}</select></label>{/if}
         <button class:active={looping} aria-pressed={looping} onclick={() => { looping = !looping; if (api) api.isLooping = looping; }}>↻ {selection ? 'Loop selection' : 'Loop song'}</button>
         {#if selection}<button onclick={() => { if (api) api.playbackRange = null; }}>Clear selection</button>{/if}
         <label class="volume">Volume<input type="range" aria-label="Tab playback volume" min="0" max="100" bind:value={volume} oninput={() => { if (api) api.masterVolume = volume / 100; }} /></label>
@@ -866,7 +908,7 @@
     <div class="reader-body" class:empty={!score}>
       {#if score}
         <aside aria-label="Score tracks">
-          <span class="eyebrow">{score.tracks.length} TRACKS</span>
+          <span class="eyebrow">{score.tracks.length} {score.tracks.length === 1 ? 'TRACK' : 'TRACKS'}</span>
           <div class="tracks">{#each score.tracks as t, i}
             <div class="track-row">
               <button class:selected={track === i} class:muted={mutedTracks.has(i)} class:silenced={soloed.size > 0 && !soloed.has(i)} aria-pressed={track === i} onclick={() => chooseTrack(i)}><span class="track-number">{String(i + 1).padStart(2, '0')}</span><span class="track-name">{t.name || `Track ${i + 1}`}</span>{#if soloed.has(i)}<span class="flag solo" title="Solo">S</span>{/if}{#if mutedTracks.has(i)}<span class="flag mute" title="Muted">M</span>{/if}<span class="track-bars" title="{activity[i]?.bars ?? 0} of {score.masterBars.length} bars have notes">{activity[i]?.bars ?? 0}</span></button>
@@ -881,10 +923,10 @@
           </div>
           <p class="plays">
             {#if selected.first >= 0}<b>{selected.first + 1}–{selected.last + 1}</b> · {selected.bars}/{score.masterBars.length}
-              <button class="jump" onclick={goToTrack}>Go to its first bar</button>
+              <button class="jump quiet" onclick={goToTrack}>Go to its first bar</button>
             {:else}0/{score.masterBars.length}{/if}
           </p>
-          <p>{Math.round(score.tempo * speed / 100)} BPM <span>· {score.masterBars.length} bars</span></p>
+          <p>{syncBpm ?? Math.round(score.tempo * speed / 100)} BPM <span>· {score.masterBars.length} bars</span></p>
         </aside>
       {/if}
       <div class="stage">
@@ -921,15 +963,155 @@
 </section>
 
 <style>
-  .reader{margin:32px 0 24px;border:1px solid #3c3c3c;border-radius:8px;background:#1b1b1b;overflow:hidden;min-width:0}.reader:focus{outline:none}
-  .reader-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 24px}.eyebrow{font:9px var(--mono);letter-spacing:1.6px;color:#a4a4a4}h2{font:500 20px var(--body);margin:5px 0 0}.heading-actions{display:flex;gap:10px}
-  button,select{font:12px var(--body);color:#ddd;background:#303030;border:1px solid #4b4b4b;border-radius:4px;min-height:34px;padding:6px 12px;cursor:pointer}button:hover{background:#414141}button:disabled{opacity:.45;cursor:wait}.primary{background:#dedbd5;color:#222;border-color:#dedbd5}.primary:hover{background:#fff}.reader-heading>input{display:none}.error,.storage-note{padding:0 24px 15px;margin:0;font-size:13px}.error{color:var(--ember)}.storage-note{color:#bbb}
-  .drop-surface{border-top:1px solid #393939}.dragging{outline:2px dashed #dedbd5;outline-offset:-5px}.transport{display:flex;align-items:center;gap:12px;padding:12px 18px;flex-wrap:wrap;background:#242424;border-bottom:1px solid #404040}.playback{display:flex;align-items:center;gap:6px}.play{width:38px}.clock{font:11px var(--mono);margin:0 8px;white-space:nowrap}.clock span{color:#999}.transport label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa}.transport select{padding:5px}.volume input{width:65px;accent-color:#ddd}.scrub{flex:1 1 160px;min-width:110px;accent-color:#ddd;min-height:34px}.scrub:disabled{opacity:.4}.view-select{margin-left:auto}.active,.active:hover{background:#dedbd5;color:#222}
-  .reader-body{display:grid;grid-template-columns:185px minmax(0,1fr)}.stage{display:flex;flex-direction:column;min-width:0;min-height:0}.reader-body.empty{display:block}aside{padding:22px 12px;background:#202020;min-width:0;border-right:1px solid #414141}.tracks{display:grid;gap:5px;margin-top:15px;max-height:360px;overflow:auto}.track-row{display:grid;min-width:0}.track-volume{width:calc(100% - 16px);height:18px;margin:0 8px 4px;accent-color:#bdb7ae;cursor:pointer}.tracks button{display:flex;align-items:baseline;gap:10px;text-align:left;border-color:transparent;background:none;padding:10px 8px;overflow-wrap:anywhere;line-height:1.5}.tracks .selected{background:#363636;border-color:#555}.track-number{flex-shrink:0;font:10px var(--mono);color:#9e9e9e}.track-name{min-width:0}.track-bars{flex-shrink:0;margin-left:auto;font:10px var(--mono);color:#8b8b8b}.tracks .selected .track-bars{color:#c8c8c8}.flag{flex-shrink:0;margin-left:auto;align-self:center;font:9px/1 var(--mono);padding:3px 5px;border-radius:3px}.flag+.flag,.flag~.track-bars{margin-left:0}.flag.mute{background:#8a4436;color:#f6ddd6}.flag.solo{background:#dedbd5;color:#222}.tracks .muted .track-name,.tracks .silenced .track-name{opacity:.45}.tracks .muted .track-name{text-decoration:line-through}.track-tools{display:flex;gap:6px;margin:16px 8px}.track-tools button{flex:1}aside p{font:11px var(--mono);line-height:1.7;padding:0 8px;color:#ccc}aside p span{color:#999}.plays{font:11px/1.7 var(--body)!important;color:#b6b6b6;margin:16px 0 0}.plays b{color:#e4e4e4;font-weight:500}.jump{display:block;margin-top:9px;padding:5px 9px;font-size:11px;min-height:30px}
-  .score-viewport{overflow-x:auto;overflow-y:hidden;min-width:0;position:relative;scrollbar-color:#777 #dedbd5}.has-score{display:flex;align-items:stretch}.score-tail{flex:0 0 auto}.has-score{background:#faf8f3;color:#222}.score-paper{flex:0 0 auto;min-width:100%;min-height:120px;background:#faf8f3;color:#171717}.hidden{display:none}.string-cursor{position:absolute;left:-10px;top:-8px;width:20px;height:16px;box-sizing:border-box;border:1.5px solid #a37320;border-radius:3px;background:#a373201f;pointer-events:none;z-index:2;will-change:transform}.empty-state{padding:48px 24px;text-align:center;background:radial-gradient(ellipse at top,#303030,#1c1c1c 75%)}.formats{display:block;margin-top:22px;font:10px var(--mono);letter-spacing:1px;color:#c5c1ba}.tab-mark{width:124px;position:relative;margin:auto;padding:4px 0}.tab-mark i{display:block;height:1px;background:#696762;margin:7px 0}.tab-mark span{position:absolute;inset:0;display:grid;place-items:center;font:600 17px var(--mono);letter-spacing:3px;color:#dedbd5;text-shadow:0 0 6px #222;background:linear-gradient(90deg,transparent,#282828 32%,#282828 68%,transparent)}
-  .reader-footer{display:flex;justify-content:space-between;gap:16px;padding:12px 18px;border-top:1px solid #404040;font:10px var(--mono);color:#aaa}.reader-footer>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.focused{position:fixed;inset:16px;z-index:50;margin:0;display:flex;flex-direction:column;box-shadow:0 0 0 30px #080808e8}.focused .drop-surface{flex:1;min-height:0;display:flex;flex-direction:column}.focused .reader-body{flex:1;min-height:0}.focused .stage{justify-content:center}.focused aside{overflow:auto}
-  .scale-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 18px;background:#242424;border-top:1px solid #404040}.scale-bar label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa}.scale-bar select{padding:5px}.scale-notes{font:11px var(--mono);color:#dedbd5;letter-spacing:.5px}.legend{margin-left:auto;display:flex;align-items:center;gap:6px;font:10px var(--mono);color:#999}.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:8px}.legend .root{background:#2f6f6a}.legend .tone{border:1.5px solid #5fa39c;box-sizing:border-box}.legend .play{background:#c08a32}
-  .editor-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 18px;background:#242424;border-bottom:1px solid #404040}.editor-bar label{display:flex;align-items:center;gap:6px;font-size:10px;color:#aaa}.editor-bar select{padding:5px}.tempo{width:62px;box-sizing:border-box;min-height:34px;padding:0 8px;font:12px var(--mono);color:#ddd;background:#303030;border:1px solid #4b4b4b;border-radius:4px}.durations{display:flex;flex-wrap:wrap;gap:3px}.durations button{padding:6px 8px;font:11px var(--mono)}.durations [aria-pressed="true"]{background:#dedbd5;color:#222;border-color:#dedbd5}.export{margin-left:auto}
-  :global(.at-cursor-bar){background:#bda77230}:global(.at-cursor-beat){background:#866329;width:3px}:global(.at-selection div){background:#bda77244}:global(.at-highlight *){fill:#a37320!important;stroke:#a37320!important}
-  @media(max-width:760px){.scale-bar{padding:8px 12px;gap:8px}.legend{display:none}.reader-heading{padding:18px 14px}.heading-actions{gap:6px}.heading-actions button{padding:5px 8px}.reader-body{grid-template-columns:minmax(0,1fr)}aside{padding:12px;border-right:0;border-bottom:1px solid #444}aside>.eyebrow,aside p:not(.plays){display:none}.plays{margin-top:10px}.jump{display:inline-block;margin:0 0 0 8px}.tracks{display:flex;margin:0;overflow:auto;max-height:120px}.track-row{flex-shrink:0;max-width:180px}.track-tools{margin:10px 0 0;max-width:160px}.transport{padding:12px;gap:8px}.volume{display:none!important}.view-select{margin-left:0}.focused{inset:6px}.focused .reader-body{display:flex;flex-direction:column}.focused .stage{flex:1}.empty-state{padding:32px 18px}}
+  /* Part of the rack's plate; only the focused view floats, and it takes the plate with it. */
+  .reader { min-width: 0; }
+  .reader:focus { outline: none; }
+  .reader-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; }
+  .eyebrow { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-2); }
+  h2 { margin: 8px 0 0; font: 500 17px var(--body); color: var(--text); }
+  .heading-actions { display: flex; gap: 10px; }
+  .reader-heading > input { display: none; }
+
+  /* Buttons and selects: the studio's secondary, primary and quiet weights. */
+  button, select {
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    color: var(--text);
+    font: 12px var(--body);
+    cursor: pointer;
+  }
+  button:hover:not(:disabled), select:hover:not(:disabled) { border-color: var(--violet-500); }
+  button:hover:not(:disabled) { background: #29252f; }
+  button:disabled { opacity: .45; cursor: wait; }
+  select { appearance: none; padding-right: 28px; background: var(--surface-2) var(--chevron) no-repeat right 10px center; }
+  select:focus-visible, input:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
+  .primary { border-color: var(--violet-500); background: var(--action); color: var(--action-text); font-weight: 500; }
+  .primary:hover:not(:disabled) { background: var(--action-hover); }
+  .primary.settled { border-color: var(--line-strong); background: var(--surface-2); color: var(--text); font-weight: 400; }
+  .primary.settled:hover:not(:disabled) { background: #29252f; }
+  .quiet { border-color: transparent; background: none; color: var(--text-2); }
+  .quiet:hover:not(:disabled) { border-color: transparent; background: none; color: var(--text); }
+  [aria-pressed='true']:not(.play), .active { border-color: var(--accent-line); background: var(--violet-900); color: var(--violet-100); }
+  .error, .storage-note { margin: 0; padding: 0 24px 15px; font-size: 13px; }
+  .error { color: var(--ember); }
+  .storage-note { color: var(--text-2); }
+
+  .dragging { outline: 2px dashed var(--accent-line); outline-offset: -5px; }
+  .transport, .editor-bar, .scale-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 24px; border-top: 1px solid #050407; box-shadow: inset 0 1px 0 #ffffff0a; }
+  .transport label, .editor-bar label, .scale-bar label { display: flex; align-items: center; gap: 8px; font: 400 9px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); }
+  .playback { display: flex; align-items: center; gap: 6px; }
+  .play { width: 40px; padding: 0; }
+  .play.cueing { animation: cue 500ms ease-in-out infinite alternate; }
+  @keyframes cue { to { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) { .play.cueing { animation: none; opacity: .6; } }
+  .synced { font: 11px var(--mono); color: var(--accent); white-space: nowrap; }
+  .clock { margin: 0 8px; font: 12px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .clock span { color: var(--text-3); }
+  .volume input { width: 70px; }
+  .scrub { flex: 1 1 160px; min-width: 110px; min-height: 34px; }
+  .scrub:disabled { opacity: .4; }
+  .view-select { margin-left: auto; }
+  .tempo { width: 62px; box-sizing: border-box; min-height: 34px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-2); color: var(--text); font: 12px var(--mono); }
+  .durations { display: flex; flex-wrap: wrap; gap: 3px; }
+  .durations button { padding: 0 8px; font: 11px var(--mono); }
+  .export { margin-left: auto; }
+
+  .reader-body { display: grid; grid-template-columns: 190px minmax(0, 1fr); border-top: 1px solid #050407; box-shadow: inset 0 1px 0 #ffffff0a; }
+  .reader-body.empty { display: block; }
+  aside { display: flex; flex-direction: column; min-width: 0; padding: 20px 14px; border-right: 1px solid var(--line); }
+  .tracks { display: grid; gap: 4px; max-height: 360px; margin-top: 14px; overflow: auto; }
+  .track-row { display: grid; min-width: 0; }
+  .tracks button { display: flex; align-items: baseline; gap: 10px; padding: 9px 8px; border-color: transparent; background: none; text-align: left; line-height: 1.5; overflow-wrap: anywhere; font-size: 13px; }
+  .tracks button:hover:not(:disabled) { border-color: var(--line); background: var(--surface-2); }
+  .tracks .selected, .tracks .selected:hover:not(:disabled) { border-color: var(--accent-line); background: var(--violet-900); color: var(--text); }
+  .track-volume { width: calc(100% - 16px); height: 18px; margin: 0 8px 4px; cursor: pointer; }
+  .track-number { flex-shrink: 0; font: 10px var(--mono); color: var(--text-3); }
+  .track-name { min-width: 0; }
+  .track-bars { flex-shrink: 0; margin-left: auto; font: 10px var(--mono); color: var(--text-3); }
+  .tracks .selected .track-bars { color: var(--text-2); }
+  .flag { flex-shrink: 0; align-self: center; margin-left: auto; padding: 3px 5px; border-radius: 2px; font: 9px/1 var(--mono); }
+  .flag + .flag, .flag ~ .track-bars { margin-left: 0; }
+  .flag.mute { background: var(--ember-line); color: #f6ddd6; }
+  .flag.solo { background: var(--violet-600); color: var(--violet-50); }
+  .tracks .muted .track-name, .tracks .silenced .track-name { opacity: .45; }
+  .tracks .muted .track-name { text-decoration: line-through; }
+  .track-tools { display: flex; gap: 6px; margin: 12px 8px 0; }
+  .track-tools button { flex: 1; min-height: 30px; font-size: 11px; }
+  aside p { margin: 0; padding: 0 8px; font: 11px/1.7 var(--mono); color: var(--text-2); }
+  aside p span { color: var(--text-3); }
+  .plays { margin-top: 20px !important; padding-top: 14px !important; border-top: 1px solid var(--line); font: 12px/1.7 var(--body) !important; }
+  .plays b { color: var(--text); font-weight: 500; }
+  .jump { display: block; min-height: 28px; margin: 2px 0 6px -8px; padding: 0 8px; font-size: 12px; text-decoration: underline; text-decoration-color: var(--violet-500); text-underline-offset: 3px; }
+
+  /* The lectern: paper under a lamp, framed and set into the plate, fading in
+     when a score lands on it. The paper stays light because notation is read. */
+  .stage { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; padding: 16px; }
+  .score-viewport { position: relative; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-color: var(--violet-400) #e9e3d7; }
+  .has-score {
+    display: flex;
+    align-items: stretch;
+    border-radius: var(--radius);
+    background: radial-gradient(ellipse 80% 120% at 50% 0%, #fffdf8 0%, #f6f1e7 55%, #ebe4d6 100%);
+    color: #222;
+    box-shadow: var(--shadow), 0 0 0 1px #000, inset 0 0 0 1px #ffffff80;
+    animation: lectern-in 360ms ease-out;
+  }
+  @keyframes lectern-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .has-score { animation: none; } }
+  .score-tail { flex: 0 0 auto; }
+  .score-paper { flex: 0 0 auto; min-width: 100%; min-height: 120px; background: transparent; color: #171717; }
+  .hidden { display: none; }
+  .string-cursor { position: absolute; left: -10px; top: -8px; z-index: 2; width: 20px; height: 16px; box-sizing: border-box; border: 1.5px solid #a37320; border-radius: 3px; background: #a373201f; pointer-events: none; will-change: transform; }
+  .empty-state { padding: 44px 24px 48px; text-align: center; }
+  .formats { display: block; margin-top: 22px; font: 10px var(--mono); letter-spacing: 1px; color: var(--text-3); }
+  .tab-mark { position: relative; width: 124px; margin: auto; padding: 4px 0; }
+  .tab-mark i { display: block; height: 1px; margin: 7px 0; background: var(--violet-700); }
+  .tab-mark span { position: absolute; inset: 0; display: grid; place-items: center; font: 400 15px/1 var(--display); font-stretch: 125%; letter-spacing: 0.3em; color: var(--violet-200); background: linear-gradient(90deg, transparent, #141218 32%, #141218 68%, transparent); }
+
+  .scale-bar { margin: 0 -16px; padding: 10px 16px 0; }
+  .scale-notes { font: 11px var(--mono); color: var(--text); letter-spacing: .5px; }
+  .legend { display: flex; align-items: center; gap: 6px; margin-left: auto; font: 10px var(--mono); color: var(--text-2); }
+  .legend i { display: inline-block; width: 10px; height: 10px; margin-left: 8px; border-radius: 50%; box-sizing: border-box; }
+  .legend .root { background: var(--violet-400); }
+  .legend .tone { border: 1.5px solid var(--violet-400); }
+  .legend .play { background: #c08a32; }
+
+  .reader-footer { display: flex; justify-content: space-between; gap: 16px; padding: 12px 24px; border-top: 1px solid var(--line); font: 11px var(--mono); color: var(--text-2); }
+  .reader-footer > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .focused { position: fixed; inset: 16px; z-index: 50; display: flex; flex-direction: column; margin: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: 0 0 0 30px #080808e8; }
+  .focused .drop-surface { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .focused .reader-body { flex: 1; min-height: 0; }
+  .focused .stage { justify-content: center; }
+  .focused aside { overflow: auto; }
+
+  :global(.at-cursor-bar) { background: #bda77230; }
+  :global(.at-cursor-beat) { background: #866329; width: 3px; }
+  :global(.at-selection div) { background: #bda77244; }
+  :global(.at-highlight *) { fill: #a37320 !important; stroke: #a37320 !important; }
+  @media (max-width: 760px) {
+    .transport, .editor-bar { padding: 10px 12px; gap: 8px; }
+    .scale-bar { gap: 8px; }
+    .legend { display: none; }
+    .reader-heading { padding: 18px 14px; }
+    .heading-actions { gap: 6px; }
+    .heading-actions button { padding: 0 8px; }
+    .reader-body { grid-template-columns: minmax(0, 1fr); }
+    aside { padding: 12px; border-right: 0; border-bottom: 1px solid var(--line); }
+    aside > .eyebrow, aside p:not(.plays) { display: none; }
+    .plays { margin-top: 10px !important; }
+    .jump { display: inline-block; margin: 0 0 0 8px; }
+    .tracks { display: flex; max-height: 120px; margin: 0; overflow: auto; }
+    .track-row { flex-shrink: 0; max-width: 180px; }
+    .track-tools { max-width: 160px; margin: 10px 0 0; }
+    .stage { padding: 10px; }
+    .volume { display: none !important; }
+    .view-select { margin-left: 0; }
+    .focused { inset: 6px; }
+    .focused .reader-body { display: flex; flex-direction: column; }
+    .focused .stage { flex: 1; }
+    .empty-state { padding: 32px 18px; }
+  }
 </style>

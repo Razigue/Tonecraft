@@ -89,7 +89,58 @@
   <span class="value">{shown}</span>
 </label>
 <style>
-  .knob{display:flex;flex-direction:column;align-items:center;gap:11px;min-width:66px}.label{font-size:10px;text-transform:uppercase;letter-spacing:1.7px;color:var(--control-label,#adadad)}.dial{position:relative;width:62px;height:62px;border-radius:50%;background:conic-gradient(from 225deg,var(--knob-accent,#b7b7b7) 0deg var(--progress),#454545 var(--progress) 270deg,transparent 270deg);display:grid;place-items:center}.dial:before{content:'';position:absolute;inset:3px;border-radius:50%;background:#232323}.cap{position:absolute;inset:9px;border:1px solid #686868;border-radius:50%;background:var(--knob-material,linear-gradient(140deg,#5a5a5a,#262626 60%,#191919));box-shadow:0 3px 6px #0009,inset 0 1px 1px #ffffff30;transform:rotate(var(--angle))}.indicator{position:absolute;top:4px;left:calc(50% - 1px);height:10px;width:2px;background:var(--knob-accent,#cfcfcf);border-radius:2px}input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:ns-resize;touch-action:none}.dial:focus-within{outline:2px solid var(--iris);outline-offset:5px}.value{font:10px var(--mono);color:var(--control-label,#adadad);white-space:nowrap}.knob:hover .label{color:#eee}
+  /* One knob family for the whole studio: a dark well, a ring that fills in
+     the accent, a machined cap. The amp head only dims the ring and lights it
+     with its power (the sweep below); nothing else differs. */
+  .knob { display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 66px; }
+  .label {
+    font: 400 10px/1 var(--display);
+    font-stretch: 125%;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--control-label, var(--text-2));
+  }
+  .dial {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 62px;
+    height: 62px;
+    border-radius: 50%;
+    background: conic-gradient(from 225deg, var(--knob-accent, var(--violet-400)) 0deg var(--progress), var(--violet-800) var(--progress) 270deg, transparent 270deg);
+    box-shadow: 0 1px 0 #d5c0de1a, 0 -1px 2px #000b;
+  }
+  .dial::before {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 32%, #332c38, #110d16 75%);
+    box-shadow: inset 0 2px 4px #000;
+  }
+  .cap {
+    position: absolute;
+    inset: 9px;
+    border: 1px solid;
+    border-color: #9a899d #4b414f #27202e #796c80;
+    border-radius: 50%;
+    background: conic-gradient(from 35deg, #27232a, #89818d 55deg, #49424e 105deg, #211e24 175deg, #514a57 260deg, #a39aa6 310deg, #27232a);
+    box-shadow: 2px 5px 5px #000b, 0 2px 0 2px #141018, inset 0 0 0 2px #c5b0d022, inset 0 1px 2px #eee2f455;
+    transform: rotate(var(--angle));
+  }
+  .indicator {
+    position: absolute;
+    top: 4px;
+    left: calc(50% - 1px);
+    width: 2px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--knob-accent, var(--violet-200));
+  }
+  input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ns-resize; touch-action: none; }
+  .dial:focus-within { outline: 2px solid var(--iris); outline-offset: 5px; }
+  .value { font: 10px var(--mono); font-variant-numeric: tabular-nums; color: var(--control-label, var(--text-2)); white-space: nowrap; }
+  .knob:hover .label { color: var(--text); }
   /* Two rotating half-rings reveal a fixed light texture. The static mask
      clips the sweep at the saved value; no gradient or filter animates. */
   .power-dial .dial-light {
@@ -108,7 +159,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    border: 3px solid #d7bedf;
+    border: 3px solid var(--violet-200);
     border-radius: 50%;
     clip-path: inset(0 50% 0 0);
     transform: rotate(0deg);
@@ -117,13 +168,13 @@
   .power-dial.powered .dial-light { opacity: 1; transition: opacity 250ms ease-in; }
   .powered .first::before { transform: rotate(180deg); transition: transform 600ms linear 100ms; }
   .powered .second::before { transform: rotate(90deg); transition: transform 300ms linear 700ms; }
-  .power-dial .indicator { background: #655e6b; }
+  .power-dial .indicator { background: var(--violet-600); }
   .power-dial .indicator::after {
     content: '';
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: #d7bedf;
+    background: var(--violet-200);
     box-shadow: 0 0 4px #d6b6e388;
     opacity: 0;
     transition: opacity 400ms ease-out;

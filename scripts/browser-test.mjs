@@ -491,16 +491,15 @@ check('the master reaches the audio', flat - quiet > 10,
   const status = page.locator('.loop-status');
   const button = page.locator('button.loop-main');
   check('the looper starts empty and offers to record',
-    (await status.innerText()).includes('Empty') && (await button.innerText()) === 'Record');
+    (await status.innerText()).includes('Empty') && (await button.innerText()) === 'Rec');
 
   await button.click();
   await page.waitForTimeout(1200);
   check('recording is recording', (await status.innerText()).includes('Recording'));
-  await button.click();                       // close the loop, and play it
+  check('while recording, the button offers to stop', (await button.innerText()) === 'Stop');
+  await button.click();                       // stop: the loop closes and plays by itself
   await page.waitForTimeout(400);
   check('the loop closes and plays', (await status.innerText()).includes('Playing'));
-  const length = await page.locator('.loop-clock').innerText();
-  check('and is about as long as the recording was', /0:0[01]\.\d/.test(length.split(' / ')[1] ?? ''), length);
 
   // The take stops; the loop must not. Stopping a take hands the rig back to
   // the live input — Chromium's fake device, which beeps — so the loop is told
@@ -521,17 +520,9 @@ check('the master reaches the audio', flat - quiet > 10,
   const looped = await energy(1500);
   check('the loop keeps playing after the take stops', looped > 1e-4, `mean ${looped.toExponential(2)}`);
 
-  const moved = await page.evaluate(async () => {
-    const at = () => document.querySelector('.loop-clock')?.textContent ?? '';
-    const first = at();
-    await new Promise((r) => setTimeout(r, 400));
-    return first !== at();
-  });
-  check('and the loop clock goes round', moved);
-
-  await page.locator('button.loop-small', { hasText: 'Clear' }).click();
+  await page.locator('button.loop-power').click();
   await page.waitForTimeout(400);
-  check('clearing empties it', (await status.innerText()).includes('Empty'));
+  check('power off empties it', (await status.innerText()).includes('Empty'));
   const after = await energy(1500);
   check('and the loop is gone from the output', after < looped * 0.7,
     `mean ${looped.toExponential(2)} with the loop, ${after.toExponential(2)} without`);

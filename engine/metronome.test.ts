@@ -1,4 +1,4 @@
-import { bpmFromFourTaps, voiceForBeat } from './metronome.ts';
+import { beatsToDownbeat, bpmFromFourTaps, syncedSpeed, voiceForBeat } from './metronome.ts';
 
 const failures: string[] = [];
 const check = (name: string, ok: boolean): void => {
@@ -21,6 +21,11 @@ check('beats one through three share one voice',
 check('the fourth beat has a distinct voice',
   voiceForBeat(3).frequency !== voiceForBeat(2).frequency
     && voiceForBeat(3).type !== voiceForBeat(2).type);
+check('a measure starts on the beat after the fourth',
+  beatsToDownbeat(0) === 0 && beatsToDownbeat(1) === 3 && beatsToDownbeat(3) === 1 && beatsToDownbeat(4) === 0);
+check('a synced tab plays a 120 BPM score at half speed under a 60 BPM click',
+  syncedSpeed(60, 120) === 0.5 && syncedSpeed(180, 120) === 1.5);
+check('a score without a tempo plays at its own speed', syncedSpeed(90, 0) === 1);
 
 console.log('');
 if (failures.length > 0) {

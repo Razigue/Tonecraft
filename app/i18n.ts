@@ -97,7 +97,7 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
           title: 'General settings',
           body: [
             '[Input](input) sets the **input gain**: how strong your guitar’s signal is when it enters the chain. The meter beside it shows what comes in.',
-            '[Gate](gate) removes the hiss you hear between the notes you play. The higher it is set, the sooner it cuts; the ON/OFF switch below turns it on or off.',
+            '[Gate](gate) removes the hiss you hear between the notes you play. The higher it is set, the sooner it cuts; the light beside its name turns it on or off.',
             '[Tone preset](preset) loads a complete sound in one go: the [amp](amp), the [cabinet](cab) and all of their settings. The ‹ and › arrows move from one preset to the next.',
             '[Output](output) sets the final volume, the one you hear in your headphones.',
           ],
@@ -107,7 +107,7 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
           body: [
             '[Tone](tone) shapes the sound: bass, mids, treble and presence.',
             '[Pitch](pitch) transposes: the guitar sounds lower or higher than its real tuning, without touching the strings. Shift sets the interval in semitones, Mix blends in the transposed sound.',
-            '[Boost](boost) drives the amp harder for more saturation; its Tone sets the brightness.',
+            '[Boost](boost) drives the amp harder for more saturation; its Color sets the brightness.',
             '[Reverb](reverb) adds echo, as if you were playing in a large room. Mix sets how much.',
             'Click a [block’s name](blocks) to switch it on or off. [Power](power) turns the whole chain off, to hear the dry guitar.',
           ],
@@ -179,7 +179,7 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
           title: 'Réglages généraux',
           body: [
             '[Input](input) règle le **gain d’entrée**, c’est-à-dire l’intensité du signal de votre guitare à son arrivée dans la chaîne. Le vumètre à côté montre ce qui entre.',
-            '[Gate](gate) supprime le souffle qu’on entend entre les notes jouées. Plus il est haut, plus il coupe tôt ; l’interrupteur ON/OFF juste en dessous l’active ou le désactive.',
+            '[Gate](gate) supprime le souffle qu’on entend entre les notes jouées. Plus il est haut, plus il coupe tôt ; le voyant à côté de son nom l’active ou le désactive.',
             '[Tone preset](preset) charge un son complet en un seul geste : l’[ampli](amp), le [baffle](cab) et tous leurs réglages. Les flèches ‹ et › passent d’un preset à l’autre.',
             '[Output](output) règle le volume final, celui que vous entendez au casque.',
           ],
@@ -189,7 +189,7 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
           body: [
             '[Tone](tone) façonne le timbre : graves, médiums, aigus et présence.',
             '[Pitch](pitch) transpose : la guitare sonne plus grave ou plus aiguë que son accordage réel, sans toucher aux cordes. Shift règle l’écart en demi-tons, Mix dose le son transposé.',
-            '[Boost](boost) pousse l’ampli plus fort pour obtenir davantage de saturation ; son Tone règle la brillance.',
+            '[Boost](boost) pousse l’ampli plus fort pour obtenir davantage de saturation ; son Color règle la brillance.',
             '[Reverb](reverb) ajoute de l’écho, comme si vous jouiez dans une grande pièce. Mix règle la quantité d’écho.',
             'Cliquez sur le [nom d’un bloc](blocks) pour l’allumer ou l’éteindre. [Power](power) coupe toute la chaîne pour entendre la guitare brute.',
           ],

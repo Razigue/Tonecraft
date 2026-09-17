@@ -317,13 +317,13 @@
 
 <style>
   .tour-shade{position:fixed;inset:0;z-index:70;background:#030303d9;animation:tour-in .25s ease-out}
-  .tour-card{position:fixed;left:0;top:0;z-index:72;display:flex;flex-direction:column;width:min(430px,calc(100vw - 32px));max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow:hidden;box-sizing:border-box;padding:20px 24px 18px;touch-action:pan-y;border:1px solid #6d5a72;border-radius:10px;background:#1d1a1f;color:var(--ink);opacity:0;transition:transform .3s ease-out}
+  .tour-card{position:fixed;left:0;top:0;z-index:72;display:flex;flex-direction:column;width:min(430px,calc(100vw - 32px));max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow:hidden;box-sizing:border-box;padding:20px 24px 18px;touch-action:pan-y;border:1px solid var(--violet-700);border-radius:var(--radius);background:var(--surface-1);box-shadow:var(--shadow);color:var(--ink);opacity:0;transition:transform .3s ease-out}
   .tour-card.wide{width:min(470px,calc(100vw - 32px))}
   .tour-card.placed{opacity:1}
   .tour-head,.tour-task,.tour-actions{flex:none}
   .tour-body{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain}
   /* The sheet: the full width of the foot of the screen, its buttons always in reach. */
-  .tour-card.sheet{top:auto;bottom:0;width:100%;max-height:min(58vh,100vh - 96px);max-height:min(58dvh,100dvh - 96px);padding:0 16px calc(12px + env(safe-area-inset-bottom));border-width:1px 0 0;border-radius:14px 14px 0 0;transition:none}
+  .tour-card.sheet{top:auto;bottom:0;width:100%;max-height:min(58vh,100vh - 96px);max-height:min(58dvh,100dvh - 96px);padding:0 16px calc(12px + env(safe-area-inset-bottom));border-width:1px 0 0;border-radius:var(--radius) var(--radius) 0 0;transition:none}
   .sheet .tour-head{padding-top:4px}
   .sheet h2{font-size:17px;margin:4px 0 8px}
   .sheet.collapsed h2{margin-bottom:0}
@@ -331,28 +331,28 @@
   .sheet .tour-task{margin-top:8px}
   .sheet .tour-actions{margin-top:10px}
   .tour-grip{display:grid;place-items:center;width:100%;min-height:28px!important;padding:0!important;border:0!important;background:none!important}
-  .tour-grip span{width:40px;height:4px;border-radius:2px;background:#6d5a72}
+  .tour-grip span{width:40px;height:4px;border-radius:2px;background:var(--violet-600)}
   .sheet .tour-progress{margin-bottom:8px}
   .tour-progress{display:flex;gap:4px;margin-bottom:14px}
-  .tour-progress i{flex:1;height:2px;border-radius:1px;background:#3d3540}
-  .tour-progress i.done{background:#cdb6d4}
-  .tour-count{font:9px var(--mono);letter-spacing:1.6px;color:#a99cae}
+  .tour-progress i{flex:1;height:2px;border-radius:1px;background:var(--violet-800)}
+  .tour-progress i.done{background:var(--accent)}
+  .tour-count{font:400 10px/1 var(--display);font-stretch:125%;letter-spacing:.16em;color:var(--text-2)}
   h2{font:500 19px var(--body);margin:6px 0 12px}
-  p{font:13.5px/1.6 var(--body);color:#d6ced9;margin:0 0 10px}
-  strong{font-weight:600;color:#f3e9f6}
-  .tour-term{all:unset;font-weight:600;color:#f3e9f6;cursor:default}
-  .tour-term.named{cursor:help;border-bottom:1px dashed #b89cc2}
-  .tour-term.named:hover,.tour-term.named:focus-visible{color:#fff;border-bottom-style:solid;border-bottom-color:#e6c7f0}
-  .tour-term:focus-visible{outline:1px solid #e6c7f0;outline-offset:2px;border-radius:2px}
-  .tour-ring{position:fixed;left:0;top:0;z-index:74;box-sizing:border-box;border:2px solid #e6c7f0;border-radius:8px;pointer-events:none}
-  .tour-ring::after{content:'';position:absolute;inset:-2px;border:2px solid #e6c7f0;border-radius:inherit;animation:tour-pulse 1.2s ease-out infinite}
+  p{font:13.5px/1.6 var(--body);color:var(--text);margin:0 0 10px}
+  strong{font-weight:500;color:var(--violet-50)}
+  .tour-term{all:unset;font-weight:500;color:var(--violet-50);cursor:default}
+  .tour-term.named{cursor:help;border-bottom:1px dashed var(--violet-400)}
+  .tour-term.named:hover,.tour-term.named:focus-visible{color:#fff;border-bottom-style:solid;border-bottom-color:var(--violet-100)}
+  .tour-term:focus-visible{outline:1px solid var(--violet-100);outline-offset:2px;border-radius:2px}
+  .tour-ring{position:fixed;left:0;top:0;z-index:74;box-sizing:border-box;border:2px solid var(--violet-100);border-radius:8px;pointer-events:none}
+  .tour-ring::after{content:'';position:absolute;inset:-2px;border:2px solid var(--violet-100);border-radius:inherit;animation:tour-pulse 1.2s ease-out infinite}
   .tour-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:16px}
-  button:not(.tour-term){font:12px var(--body);color:#ddd;background:#303030;border:1px solid #4b4b4b;border-radius:4px;min-height:34px;padding:6px 14px;cursor:pointer}
-  button:not(.tour-term):hover{background:#414141}
-  .tour-skip{margin-right:auto;background:none!important;border-color:transparent!important;color:#a99cae!important;padding-left:0!important}
-  .tour-skip:hover{color:#e6dcea!important}
-  .tour-next{background:#dedbd5!important;color:#222!important;border-color:#dedbd5!important}
-  .tour-next:hover{background:#fff!important}
+  button:not(.tour-term){font:12px var(--body);color:var(--text);background:var(--surface-2);border:1px solid var(--line-strong);border-radius:var(--radius);min-height:34px;padding:6px 14px;cursor:pointer}
+  button:not(.tour-term):hover{border-color:var(--violet-500)}
+  .tour-skip{margin-right:auto;background:none!important;border-color:transparent!important;color:var(--text-2)!important;padding-left:0!important}
+  .tour-skip:hover{color:var(--text)!important}
+  .tour-next{background:var(--action)!important;color:var(--action-text)!important;border-color:var(--violet-500)!important;font-weight:500!important}
+  .tour-next:hover{background:var(--action-hover)!important}
   .tour-next:disabled{opacity:.4;cursor:default}
   @media (pointer: coarse){
     button:not(.tour-term):not(.tour-grip){min-height:44px;padding:8px 16px;font-size:14px}
@@ -360,16 +360,16 @@
     /* No keyboard to point at: the neck is how a note is written here. */
     .fig-keys{display:none}
   }
-  .tour-task{margin:14px 0 0;padding:10px 12px;border:1px solid #6d5a72;border-radius:6px;background:#27212a;color:#f3e9f6}
-  .tour-task.done{border-color:#5fa39c;background:#1c2626}
+  .tour-task{margin:14px 0 0;padding:10px 12px;border:1px solid var(--violet-700);border-radius:var(--radius);background:var(--violet-900);color:var(--violet-50)}
+  .tour-task.done{border-color:var(--violet-400);background:var(--violet-800)}
 
-  .tour-figure{margin:0 0 14px;padding:12px;border:1px solid #3a3340;border-radius:8px;background:#141216}
+  .tour-figure{margin:0 0 14px;padding:12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-0)}
   .fig-track{display:grid;grid-template-columns:1fr auto auto 70px;align-items:center;gap:6px;padding:6px 4px;font:12px var(--body);color:#ddd}
   .fig-track+.fig-track{border-top:1px solid #29242c}
   .fig-track.muted .fig-name{opacity:.45;text-decoration:line-through}
   .fig-name b{font:10px var(--mono);color:#9e9e9e;margin-right:6px;font-weight:400}
   .fig-btn{padding:3px 8px;border:1px solid #4b4b4b;border-radius:4px;font-size:11px;color:#bbb}
-  .fig-btn.on{background:#dedbd5;border-color:#dedbd5;color:#222}
+  .fig-btn.on{background:var(--violet-900);border-color:var(--accent-line);color:var(--violet-100)}
   .fig-level{height:4px;border-radius:2px;background:#3a3a3a;overflow:hidden}
   .fig-level i{display:block;height:100%;background:#bdb7ae;transform-origin:left}
   .fig-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}

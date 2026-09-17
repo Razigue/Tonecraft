@@ -32,6 +32,20 @@ export function bpmFromFourTaps(taps: readonly number[]): number | null {
   return bpm + epsilon >= MIN_BPM && bpm - epsilon <= MAX_BPM ? Math.round(bpm) : null;
 }
 
+/** Beats from the one about to sound to the next first beat of a measure: 0 when it is one. */
+export function beatsToDownbeat(nextBeat: number): number {
+  return (TAPS_PER_MEASURE - (((nextBeat % TAPS_PER_MEASURE) + TAPS_PER_MEASURE) % TAPS_PER_MEASURE)) % TAPS_PER_MEASURE;
+}
+
+/**
+ * The tab reader's playback speed that puts a score written at `scoreTempo`
+ * on the metronome's `bpm`. Relative to the score's opening tempo: a tempo
+ * change later in the score is scaled with it, not replaced.
+ */
+export function syncedSpeed(bpm: number, scoreTempo: number): number {
+  return scoreTempo > 0 && bpm > 0 ? bpm / scoreTempo : 1;
+}
+
 /** The fader's law: squared for an even feel, with headroom under the guitar. */
 const clickGain = (volume: number): number => volume * volume * 0.48;
 
@@ -131,6 +145,18 @@ export class Metronome {
     master.gain.setValueAtTime(clickGain(this.#volume), context.currentTime);
     this.#schedule();
     this.#timer = self.setInterval(() => this.#schedule(), 25);
+  }
+
+  /**
+   * Milliseconds until the next first beat of a measure, or null when this
+   * tab does not hold the clock: stopped, or clicking inside the chain, whose
+   * phase is never reported back. The caller then restarts the beat instead.
+   */
+  msToDownbeat(): number | null {
+    const context = this.#context;
+    if (!this.#running || this.#chain !== null || context === null || this.#bpm === 0) return null;
+    const at = this.#nextBeatAt + beatsToDownbeat(this.#beat) * (60 / this.#bpm);
+    return Math.max(0, (at - context.currentTime) * 1000);
   }
 
   setVolume(volume: number): void {

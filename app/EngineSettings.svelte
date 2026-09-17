@@ -270,15 +270,27 @@
 <style>
   .engine { display: flex; flex-direction: column; gap: calc(var(--u) * 2); }
   .note { margin: 0; color: var(--graphite); line-height: 1.6; }
-  .field { display: flex; flex-direction: column; gap: 2px; }
-  .field select { max-width: 100%; width: 100%; }
-  .field input[type='range'] { width: 100%; min-height: 40px; accent-color: var(--celadon); }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field select {
+    width: 100%;
+    min-height: 34px;
+    padding: 0 30px 0 10px;
+    appearance: none;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface-2) var(--chevron) no-repeat right 11px center;
+    color: var(--text);
+    font: 13px var(--body);
+  }
+  .field select:hover { border-color: var(--line-strong); }
+  .field select:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
+  .field input[type='range'] { width: 100%; min-height: 40px; }
   .guide { display: flex; flex-direction: column; gap: var(--u); }
   .guide p, .guide ol { margin: 0; line-height: 1.6; }
   .guide ol { padding-left: calc(var(--u) * 2.5); display: flex; flex-direction: column; gap: var(--u); }
   .download { color: var(--ink); font-weight: 500; }
   .update { display: flex; flex-direction: column; align-items: flex-start; gap: var(--u); margin: 0; line-height: 1.6; }
-  .update-link { padding: 8px 14px; border: 1px solid var(--ink); border-radius: var(--radius); text-decoration: none; }
+  .update-link { padding: 8px 14px; border: 1px solid var(--violet-500); border-radius: var(--radius); background: var(--action); color: var(--action-text); text-decoration: none; }
   a { color: var(--ink); }
   a:focus-visible, .inline:focus-visible, input:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
   code { font-family: var(--mono); font-size: 12px; }

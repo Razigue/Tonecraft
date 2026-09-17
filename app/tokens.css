@@ -1,19 +1,97 @@
 /* Tonecraft studio shell. Amplifier-specific materials stay inside the amp head. */
+
+/* Self-hosted, latin subset, swap. Anybody carries its width axis: DESIGN.md
+   sets the display face at width 125, which a static cut cannot do. */
+@font-face {
+  font-family: "Anybody";
+  src: url("/fonts/anybody-latin-wdth.woff2") format("woff2");
+  font-weight: 100 900;
+  font-stretch: 50% 150%;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter Tight";
+  src: url("/fonts/inter-tight-latin-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter Tight";
+  src: url("/fonts/inter-tight-latin-500.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/ibm-plex-mono-latin-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+/* GUILT's own face, and only GUILT's: a high-contrast serif for an inscription
+   in glass and stone. A system serif read as a wedding card. */
+@font-face {
+  font-family: "Cormorant Garamond";
+  src: url("/fonts/cormorant-garamond-latin-600.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Cormorant Garamond";
+  src: url("/fonts/cormorant-garamond-latin-500-italic.woff2") format("woff2");
+  font-weight: 500;
+  font-style: italic;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
 
-  /* Studio palette. */
-  --ink: #e4e4e4;      /* Primary text and controls. */
-  --chalk: #080808;    /* Black studio background. */
-  --bone: #2b2b2b;     /* raised surfaces: module cards, sheets. */
-  --graphite: #a0a0a0; /* secondary text, inactive labels, disabled. */
-  --celadon: #c4c4c4;  /* the only accent. Active state, signal, the cord. */
-  --iris: #cfcfcf;     /* focus rings and keyboard navigation only. */
-  --ember: #ec987f;    /* clipping and destructive confirmation only. */
+  /* Three surfaces, darkest first. Everything sits on one of them: the page,
+     the faceplate every module is cut from, and a control raised off it. */
+  --surface-0: #09080b;
+  --surface-1: #15131a;
+  --surface-2: #211e27;
+  --line: #2f2b35;        /* engraved seams and resting borders */
+  --line-strong: #4a4351; /* hover, and a border that must be seen */
 
-  /* One elevation, one radius. Almost square, not sharp. */
-  --radius: 2px;
-  --lift: 0 1px 2px rgba(22, 24, 27, 0.06);
+  /* Text, three steps. */
+  --text: #ebe5ee;
+  --text-2: #a69dab;
+  --text-3: #6f6775;
+
+  /* The accent is violet, and it is the only one. Light steps for what lights
+     up, dark steps for what it lights up against. */
+  --violet-50: #f4ebf7;
+  --violet-100: #e7d4ec;
+  --violet-200: #d8c2dd;
+  --violet-300: #c2a9c8;
+  --violet-400: #a38aa9;
+  --violet-500: #85708b;
+  --violet-600: #65536b;
+  --violet-700: #493c4f;
+  --violet-800: #2c2431;
+  --violet-900: #1c1720;
+
+  --accent: var(--violet-200);        /* active state, signal, selection */
+  --accent-line: var(--violet-500);   /* the border of something active */
+  --action: var(--violet-600);        /* the one primary action's fill */
+  --action-hover: #77637e;
+  --action-text: var(--violet-50);
+  --ember: #ec987f;                   /* recording, clipping, destruction only */
+  --ember-line: #8a4436;
+
+  /* Aliases the landing page and older rules still read. */
+  --ink: var(--text);
+  --chalk: var(--surface-0);
+  --bone: var(--surface-1);
+  --graphite: var(--text-2);
+  --celadon: var(--accent);
+  --iris: var(--violet-300); /* focus rings only */
+
+  /* One radius, one elevation. Circles stay circles. */
+  --radius: 4px;
+  --shadow: 0 14px 30px #0006;
+  --lift: var(--shadow);
 
   /* 8px base unit. */
   --u: 8px;
@@ -23,12 +101,17 @@
      reads as a 40px indent nobody chose. */
   --column: 1180px;
 
-  /* Three faces, three roles. Self-hosting is UX-DR2 and is not done yet, so
-     these fall back to system stacks — the shapes are wrong but the scale,
-     spacing and weights below are the ones DESIGN.md specifies. */
   --display: "Anybody", "Arial Narrow", "Helvetica Neue", system-ui, sans-serif;
   --body: "Inter Tight", "Helvetica Neue", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --inscription: "Cormorant Garamond", "Iowan Old Style", serif;
+
+  /* The faceplate: the material the amp's control plate is made of, carried
+     down the whole column so the looper, the recorder and the tab reader are
+     cut from the same plate rather than set on the page as cards. */
+  --faceplate:
+    repeating-linear-gradient(0deg, #dccbe903 0 1px, transparent 1px 3px),
+    linear-gradient(105deg, #1b1920, #141218 45%, #111016 75%, #17151c);
 }
 
 /* The scale. Seven steps, and text stays on it. */
@@ -60,3 +143,60 @@
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
+
+/* The dialog. The tuner set the model — one frame, one close, one entrance —
+   and the metronome, the audio settings and the welcome all take it. */
+:root {
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a69dab' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.tc-dialog {
+  position: fixed;
+  margin: auto;
+  box-sizing: border-box;
+  max-height: calc(100svh - 32px);
+  overflow: auto;
+  padding: 56px 40px 32px;
+  border: 1px solid var(--violet-800);
+  border-radius: var(--radius);
+  color: var(--text);
+  background: var(--surface-1);
+  box-shadow: var(--shadow), 0 0 0 1px #000;
+}
+.tc-dialog[open] { animation: tc-dialog-in 200ms cubic-bezier(0.2, 0, 0, 1); }
+.tc-dialog::backdrop { background: #000c; }
+.tc-dialog-title {
+  position: absolute;
+  top: 26px;
+  left: 40px;
+  margin: 0;
+  font: 400 11px/1 var(--display);
+  font-stretch: 125%;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.tc-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.tc-close svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.tc-close:hover { background: var(--surface-2); color: var(--text); }
+.tc-close:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; }
+@keyframes tc-dialog-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 600px) {
+  .tc-dialog { padding: 52px 20px 26px; }
+  .tc-dialog-title { left: 20px; }
+  .tc-close { top: 10px; right: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .tc-dialog[open] { animation: none; } }
