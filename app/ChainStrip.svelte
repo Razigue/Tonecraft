@@ -240,4 +240,26 @@
     .global-controls { padding-right: 14px; }
     .global-controls :global(.compact .value) { display: none; }
   }
+  /* A tablet: the row runs out of width before the studio runs out of height,
+     and a squeezed row is worse than a second one — the selectors collapse to
+     their chevrons and their names print over each other. So the band wraps:
+     the levels and the gate keep the first line, the selectors and the preset
+     take the width they need on the next. The seams go with it; a border left
+     hanging at the start of a wrapped line reads as a stray rule. */
+  @media (max-width: 1099px) {
+    .global-controls {
+      flex-wrap: wrap;
+      height: auto;
+      min-height: 80px;
+      padding-top: 10px;
+      padding-bottom: 10px;
+      row-gap: 12px;
+    }
+    .global-controls > * + * { padding-left: 0; border-left: 0; }
+    .rig-selectors { flex: 1 1 280px; }
+    .tone-selector { flex: 1 1 220px; min-width: 0; }
+    /* Wrapped, `margin-left: auto` would push the output onto a line of its
+       own; it sits at the end of whichever line it lands on. */
+    .output-control, .power-control { margin-left: 0; }
+  }
 </style>

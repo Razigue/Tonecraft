@@ -1000,6 +1000,9 @@ check('an engine older than the newest release is offered the update', updateOff
   }
   check('on a phone the tutorial is a sheet under each window, its buttons in reach, swiped or tapped through, a note written on the neck',
     seen.every((s) => s.ok), seen.filter((s) => !s.ok).map((s) => `${s.title}: ${s.detail}`).join(' · ') || `${seen.length} checks`);
+  // The last Done unmounts the tutorial, and what it put on the page is given
+  // back as it goes: read before it has gone, the page still carries it.
+  await tap.locator('.tour-card').waitFor({ state: 'detached', timeout: 10000 });
   check('and the page is given back as it was', await tap.evaluate(() => document.body.style.paddingBottom === '' && document.querySelectorAll('.tour-lit').length === 0));
   await phone.close();
 }

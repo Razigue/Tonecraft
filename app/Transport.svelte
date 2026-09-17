@@ -161,5 +161,12 @@
   }
   @media (max-width: 1600px) { .transport-row { gap: 28px; } }
   @media (max-width: 1366px) { .transport-row { gap: 24px; padding: 0 16px; } }
-  @media (max-width: 760px) { .demo-panel { flex: 1 1 100%; } }
+  /* A phone, or a window too short for the bands: the row is a stack, not a
+     line. The display takes one of its own — the fraction it keeps beside the
+     keys on a laptop is too narrow there to open a tab in, and its two buttons
+     end up printed over each other. */
+  @media (max-width: 760px), (max-height: 560px) {
+    .demo-panel { flex: 1 1 100%; }
+    .transport:not(.roomy) .transport-row > :global(.display) { flex: 1 1 100%; }
+  }
 </style>

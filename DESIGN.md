@@ -100,7 +100,11 @@ Sentence case everywhere except the display face, which is always uppercase.
 
 **The corners.** The tuner floats at the bottom left, the metronome at the bottom right with its start and tempo above it: small dark tiles with a hairline edge and a thin icon, a dot under a tile when it is on. A side room (`--side`) is kept for them in both modes, which is also why Play is wide without touching the window's edges. The bar alone spans that room, so the name and the settings never move with the mode. What still opens — the tab's track list, the levels — floats as a popover; notices sit over the top of the stage, under the chain.
 
-**Width.** The studio is a desktop instrument; playing is not supported on a phone (`CLAUDE.md` §7). Below the head's width it shrinks to the stage with the same side gutter.
+**Width.** The studio is a desktop instrument; playing is not supported on a phone (`CLAUDE.md` §7). What is on a phone still has to be whole. Three thresholds, and nothing else changes:
+
+- **Under 1100 px**, or under 900 px of height, the chain band drops its full knobs for its compact ones, and under 1100 px it wraps: the levels and the gate on one line, the two selectors and the preset on the next. Squeezed onto one line instead, the selectors collapse to their chevrons and their names print over each other.
+- **Under 760 px wide, or under 560 px high**, the studio stops being an instrument and becomes a page: the bands stack, the window scrolls, the corner tools come in out of the side room the page no longer keeps, and the last plate ends above them.
+- **The head is never one of these thresholds.** It is one object at one size, scaled whole (`zoom`) to whichever of width and height runs out first — a phone gets the same amplifier seen from further away. The figure it is scaled by is the room divided by the head's own width, and that width is `--column`, declared, never measured: inside a scaled box the room reads as `room / scale` in the head's own units, so a measured width hands the scale back its own value and the head stays at its desktop size. That is how a phone came to be handed a 1180 px head, cut off at both edges. The head inside its slot, and no band wider than the window, are asserted from 360x740 up by `npm run test:studio`.
 
 ---
 
@@ -133,6 +137,8 @@ On a pre-rendered preset page, the same illumination is driven by the RMS envelo
 **The neck.** Under the tab, on the same paper: the track's own string count, always twenty-four evenly spaced frets, the sounding notes lit in the playhead's amber. No wood, no fretwire, no shadow.
 
 **Dialogs.** Tuner, metronome, settings and welcome share `.tc-dialog`: one frame, one close, one entrance.
+
+**Tutorial.** The whole screen goes dark and the real window being explained is lifted out of the shade by its z-index — never a copy, and it still works while it is explained. Beside the window on a desktop, a sheet at the foot of the screen on a phone. The shade is the screen: it is a child of the page like everything else, so any rule the page lays on its children reaches it, and a width meant for the column once left half the screen lit and clickable. Each step gives the focus to the card, not to its Next button: the card is labelled by the step's title and described by its body, so the step is what gets announced, and a step whose Next waits on something to do no longer drops the focus to the document. The arrows step through, as the swipe does by touch; Escape leaves. Focus is not trapped — the lit window is the real one, and it is meant to be used.
 
 ---
 

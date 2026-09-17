@@ -57,7 +57,6 @@
   let collapsed = $state(false);
   let index = $state(0);
   let card = $state<HTMLDivElement | null>(null);
-  let next = $state<HTMLButtonElement | null>(null);
   let place = $state<{ x: number; y: number } | null>(null);
   let term = $state<string | null>(null);
   let rings = $state<{ x: number; y: number; w: number; h: number }[]>([]);
@@ -211,6 +210,18 @@
     go(dx < 0 ? index + 1 : index - 1);
   }
 
+  /**
+   * The card has the focus, so the keyboard gets the move the swipe already
+   * has: the arrows step, as they do in a slide deck. Only from the card
+   * itself — inside the body they belong to whatever is focused there.
+   */
+  function cardKey(e: KeyboardEvent): void {
+    if (e.target !== card || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); go(index + 1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); go(index - 1); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (last) finish(); else go(index + 1); }
+  }
+
   /** Using the window above a sheet folds the sheet out of its way. */
   function pageDown(e: PointerEvent): void {
     if (!sheet || collapsed || !(e.target instanceof Element) || e.target.closest('.tour-card')) return;
@@ -251,7 +262,16 @@
     void tick().then(() => {
       light(targets);
       position();
-      next?.focus({ preventScroll: true });
+      /**
+       * The card itself, not its Next button. Next was focused, which reads out
+       * "Next" and not the step just opened, and on a step with something to do
+       * Next is disabled: focusing it did nothing, the button focus was on had
+       * just been removed with the step before, and focus fell to the document.
+       * The card is the step — labelled by its title, described by its body —
+       * and its buttons are one Tab away. Focus is not trapped here on purpose:
+       * the windows the tour lights are the real ones and stay usable.
+       */
+      card?.focus({ preventScroll: true });
     });
   });
 
@@ -265,9 +285,11 @@
 {#each rings as r}
   <span class="tour-ring" aria-hidden="true" style:width={`${r.w}px`} style:height={`${r.h}px`} style:transform={`translate(${r.x}px, ${r.y}px)`}></span>
 {/each}
-<div class="tour-card" class:placed={place !== null} class:wide={step.figure !== undefined} class:sheet class:collapsed role="dialog" tabindex="-1" aria-labelledby="tour-title" bind:this={card}
+<div class="tour-card" class:placed={place !== null} class:wide={step.figure !== undefined} class:sheet class:collapsed role="dialog" tabindex="-1"
+  aria-labelledby="tour-title" aria-describedby={collapsed ? undefined : 'tour-body'} bind:this={card}
   style:transform={place && !sheet ? `translate(${place.x}px, ${place.y}px)` : undefined}
-  onpointerdown={swipeStart} onpointerup={swipeEnd} onpointercancel={() => (swipe = null)}>
+  onpointerdown={swipeStart} onpointerup={swipeEnd} onpointercancel={() => (swipe = null)}
+  onkeydown={cardKey}>
   <div class="tour-head">
     {#if sheet}<button type="button" class="tour-grip" aria-expanded={!collapsed} aria-label={collapsed ? labels.expand : labels.collapse} onclick={toggleSheet}><span></span></button>{/if}
     <div class="tour-progress" aria-hidden="true">{#each steps as _, i}<i class:done={i <= index}></i>{/each}</div>
@@ -276,7 +298,7 @@
   </div>
 
   {#if !collapsed}
-  <div class="tour-body">
+  <div class="tour-body" id="tour-body">
   {#if step.figure === 'tracks'}
     <div class="tour-figure fig-tracks" aria-hidden="true">
       <div class="fig-track"><span class="fig-name"><b>01</b> {lang.ui.tourFigure.lead}</span><span class="fig-btn on" data-term="solo">{lang.ui.tourFigure.solo}</span><span class="fig-btn">{lang.ui.tourFigure.mute}</span><span class="fig-level" data-term="volume"><i style="transform:scaleX(.85)"></i></span></div>
@@ -315,7 +337,7 @@
   <div class="tour-actions">
     {#if !last}<button class="tour-skip" type="button" onclick={finish}>{labels.skip}</button>{/if}
     {#if index > 0}<button type="button" onclick={() => go(index - 1)}>{labels.back}</button>{/if}
-    <button class="tour-next" type="button" bind:this={next} disabled={blocked} onclick={() => (last ? finish() : go(index + 1))}>{last ? labels.done : labels.next}</button>
+    <button class="tour-next" type="button" disabled={blocked} onclick={() => (last ? finish() : go(index + 1))}>{last ? labels.done : labels.next}</button>
   </div>
 </div>
 
@@ -327,6 +349,7 @@
   .tour-card{position:fixed;left:0;top:0;z-index:72;display:flex;flex-direction:column;width:min(430px,calc(100vw - 32px));max-height:calc(100vh - 140px);max-height:calc(100dvh - 140px);overflow:hidden;box-sizing:border-box;padding:20px 24px 18px;touch-action:pan-y;border:1px solid var(--violet-700);border-radius:var(--radius);background:var(--surface-1);box-shadow:var(--shadow);color:var(--ink);opacity:0;transition:transform .3s ease-out}
   .tour-card.wide{width:min(470px,calc(100vw - 32px))}
   .tour-card.placed{opacity:1}
+  .tour-card:focus-visible{outline:2px solid var(--iris);outline-offset:2px}
   .tour-head,.tour-task,.tour-actions{flex:none}
   .tour-body{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain}
   /* The sheet: the full width of the foot of the screen, its buttons always in reach. */

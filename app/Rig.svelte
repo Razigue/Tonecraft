@@ -49,11 +49,13 @@
   /**
    * A screen tall enough for the chain band's knobs at full size, beside the
    * head in Tone. In Play, and on anything shorter, the band stays compact so
-   * the stage keeps the height.
+   * the stage keeps the height. Width counts too: a tablet held upright is
+   * tall, and the band's full form needs the room to spread the two selectors
+   * and the preset across one line.
    */
   let tall = $state(false);
   $effect(() => {
-    const query = window.matchMedia('(min-height: 900px)');
+    const query = window.matchMedia('(min-height: 900px) and (min-width: 1100px)');
     tall = query.matches;
     const follow = (e: MediaQueryListEvent) => { tall = e.matches; };
     query.addEventListener('change', follow);
@@ -88,30 +90,70 @@
    * its shade.
    */
   let slotHeight = $state(0);
+  let slotWidth = $state(0);
   let pageWidth = $state(0);
   let ampFrame = $state<HTMLElement | null>(null);
   let ampZoom = $state(1);
-  /** A floor against an absurd figure on a window nobody plays on; above it the head always fits whole. */
-  const MIN_AMP_ZOOM = 0.3;
+  /**
+   * A floor low enough never to bite on a phone: the head is 1180 px of layout
+   * whatever the screen, and the narrowest one sold still has to show it whole.
+   */
+  const MIN_AMP_ZOOM = 0.16;
   /** Air between the head's feet and the transport, so they never touch. */
   const AMP_BREATH = 16;
+  /**
+   * The head's own height, the scale in force taken back out of the box it is
+   * drawn in. Watched rather than read once: the head settles over the first
+   * seconds as its shell image and its faces load, and a height read before
+   * that leaves the head overlapping the transport for the rest of the session.
+   * A scale applied to the frame does not fire the observer — `zoom` does not
+   * change the element's own box — so there is no loop here.
+   */
+  let ampHeight = $state(0);
+  $effect(() => {
+    const frame = ampFrame;
+    if (frame === null) return;
+    const measure = (): void => {
+      const height = frame.getBoundingClientRect().height / untrack(() => ampZoom);
+      // Half a pixel is the rounding of the scale, not a head that changed.
+      if (height > 0 && Math.abs(height - untrack(() => ampHeight)) > 0.5) ampHeight = height;
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  });
   $effect(() => {
     const room = slotHeight;
-    // The window's own room, not the slot's: at its full size the head is wider
-    // than a laptop's stage, and a slot measured around it would report the
-    // width the head just forced and never shrink it.
-    const across = pageWidth;
-    if (across === 0 || ampFrame === null) return;
+    // The slot's room, bounded by the window's: the head is laid out at its own
+    // size and can be wider than the slot, so the slot is read from a box that
+    // cannot be forced open by it (the grid column is `minmax(0, 1fr)`), and the
+    // page is the second opinion in case one ever is.
+    const across = slotWidth === 0 ? pageWidth : Math.min(slotWidth, pageWidth);
+    const frame = ampFrame;
+    if (across === 0 || frame === null) return;
     const current = untrack(() => ampZoom);
-    const box = ampFrame.getBoundingClientRect();
-    const natural = box.height / current;
-    const naturalWidth = box.width / current;
-    if (natural === 0 || naturalWidth === 0) return;
+    const natural = ampHeight;
+    /**
+     * Declared, never measured. The head is `--column` wide by construction
+     * (`.amp-stand` in AmpHead.svelte), and measuring it instead would be
+     * circular: inside a scaled box the room the head is given reads as
+     * `room / scale` of its own units, so the ratio comes back as the scale
+     * already in force and the head settles at whatever size it happened to
+     * have. That is the bug where a phone was handed the desktop's head.
+     */
+    const naturalWidth = parseFloat(getComputedStyle(frame).getPropertyValue('--column'));
+    if (natural === 0 || !(naturalWidth > 0)) return;
     // A page that scrolls gives the slot the head's own height, so fitting to
-    // it would shrink the head a step at a time: there, only the width runs out.
-    const byHeight = paged || room === 0 ? 1 : (room - AMP_BREATH) / natural;
+    // it would shrink the head a step at a time: there — a phone, and the
+    // tester's column, which are both pages — only the width runs out.
+    const byHeight = paged || tester || room === 0 ? 1 : (room - AMP_BREATH) / natural;
     const next = Math.max(MIN_AMP_ZOOM, Math.min(1, across / naturalWidth, byHeight));
-    if (Math.abs(next - current) > 0.005) ampZoom = next;
+    // Fitting wins over settling: a tolerance in scale is six pixels of head at
+    // its full width, which is six pixels of it cut off. Shrinking is taken at
+    // once and only growing has to clear the threshold, so the scale can never
+    // hunt around the fit.
+    if (next < current - 0.0002 || next > current + 0.005) ampZoom = next;
   });
   let settingsDialog = $state<HTMLDialogElement | null>(null);
   let detecting = $state(false);
@@ -1287,7 +1329,7 @@
     </div>
 
     {#if tester || view === 'tone'}
-      <div class="amp-slot" bind:clientHeight={slotHeight}>
+      <div class="amp-slot" bind:clientHeight={slotHeight} bind:clientWidth={slotWidth}>
         <!-- The room's light: violet from behind the head, brighter as it plays.
              One static gradient; only its opacity follows the signal. -->
         <div class="room-light" aria-hidden="true" style:opacity={ampIlluminated ? 0.55 + light * 0.45 : 0.25}></div>
@@ -1582,8 +1624,10 @@
   .metronome-toggle[aria-pressed='true']:hover:not(:disabled) { color: var(--violet-100); }
   /* Glowing, above whatever the tab has open. */
   .metronome-launch:has(.metronome-glow) { z-index: 60; }
-  /* A phone: no side room, the tiles sit in the corner side by side. */
-  @media (max-width: 760px) {
+  /* No side room — a phone, or a window too short for the bands, which gives
+     the gutter back the same way: the tiles sit in the corner side by side
+     rather than in a margin that is no longer there. */
+  @media (max-width: 760px), (max-height: 560px) {
     .tuner-launch { left: var(--gutter); }
     .metronome-launch { right: var(--gutter); }
     .metronome-toggle { right: calc(var(--gutter) + 70px); bottom: var(--gutter); height: 66px; }
@@ -1631,9 +1675,13 @@
   /* The slot is the stage's height whatever the head measures: the head is
      scaled to it, never the other way round. */
   .amp-slot { position: relative; display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
-  /* The box hugs the head, so scaling it scales the box the stage centres. */
-  .amp-frame { position: relative; display: flex; justify-content: center; width: max-content; max-width: 100%; }
-  .amp-frame > :global(.amp-stand) { position: relative; }
+  /* The box hugs the head, so scaling it scales the box the stage centres.
+     Nothing here may clamp the head: the stage reads the frame to learn the
+     head's own size, and a `max-width` or a shrinkable item inside would hand
+     it back the room it already has. The page clips across while the scale
+     settles. */
+  .amp-frame { position: relative; display: flex; justify-content: center; width: max-content; }
+  .amp-frame > :global(.amp-stand) { position: relative; flex: none; }
   .room-light {
     position: absolute;
     inset: -16px calc(-1 * var(--gutter));
@@ -1665,8 +1713,11 @@
   }
   /* One centred column, as the page was before the studio became an
      instrument: the bands do not stretch to the window, they are the head's
-     own width and stack under it. */
-  .page.tester > :global(*) { width: min(100%, var(--column)); }
+     own width and stack under it. The bands, and only them — what floats over
+     the page is a child of it too, and owns its own size: a column forced on a
+     dialog made it as wide as the head, and on the tutorial's shade it darkened
+     the column instead of the screen. */
+  .page.tester > :global(.global-controls) { width: min(100%, var(--column)); }
   .page.tester > :global(.bar) { width: 100%; }
   .page.tester .stage { display: flex; flex: none; flex-direction: column; gap: var(--gutter); width: min(100%, var(--column)); }
   /* While the tutorial runs, and only then: it brings each window to the top of
@@ -1851,10 +1902,16 @@
   @media (max-width: 760px), (max-height: 560px) {
     .page { --side: var(--gutter); display: flex; flex-direction: column; height: auto; min-height: 100dvh; overflow: visible; overflow-x: clip; }
     .page :global(.global-controls), .page :global(.transport-row) { flex-wrap: wrap; height: auto; padding-top: 10px; padding-bottom: 10px; }
-    .page :global(.transport-row > .display) { flex-basis: 100%; }
+    /* The corner tools float over the page here rather than standing in a
+       margin it no longer has: the last plate ends above them. */
+    .page { padding-bottom: calc(var(--gutter) + 66px); }
     [data-view='play'] > :global(.global-controls), [data-view='play'] > :global(.transport) { width: 100%; }
     [data-view='play'] > .stage { margin-inline: 0; }
     .stage { flex: none; }
+    /* The stage takes no share of a page that scrolls, so the slot has none to
+       divide: it is the head's own height here, or the head hangs out of a box
+       of nothing and lies over the band above it. */
+    .amp-slot { flex: none; padding: calc(var(--u) * 2) 0; }
     .tab-stage { min-height: 520px; }
   }
 </style>

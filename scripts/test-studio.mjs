@@ -585,8 +585,40 @@ try {
   await page.waitForTimeout(500); // allow the responsive score worker to finish its layout
   await page.screenshot({ path: path.join(artifacts, 'tab-reader-mobile.png') });
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No horizontal page overflow on mobile');
+
+  // A phone and a tablet, in both layouts. The head is one object scaled whole
+  // to the room it has, and the figure it is scaled by is computed from a box
+  // the scale itself sizes: read the wrong way round it comes back as the scale
+  // already in force, the head stays at its desktop width and a phone gets a
+  // third of an amplifier. Measured, not eyeballed: the head is inside its slot
+  // and no band is wider than the window.
+  // Tone, where the head is the stage: Play gives it to the tab and there is no
+  // head on screen to measure.
+  await page.getByRole('tab', { name: 'Tone' }).click();
+  await page.locator('.amp-frame').waitFor();
+  for (const [width, height] of [[360, 740], [390, 844], [768, 1024], [820, 1180], [1024, 768]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(700); // the scale settles with the head's own material
+    const fit = await page.evaluate(() => {
+      const box = el => el.getBoundingClientRect();
+      const head = document.querySelector('.amp-frame'), slot = document.querySelector('.amp-slot');
+      // The three plates. Not the stage: the head's lead hangs off its side on
+      // purpose, and the room around the head is where it hangs.
+      const bands = [...document.querySelectorAll('.bar, .global-controls, .transport')];
+      return {
+        head: head ? Math.round(box(head).width) : null,
+        slot: slot ? Math.round(box(slot).width) : null,
+        wide: bands.filter(b => b.scrollWidth > b.clientWidth + 1).map(b => b.className.split(' ')[0]),
+        page: document.documentElement.scrollWidth <= innerWidth,
+      };
+    });
+    assert(fit.head !== null && fit.head <= fit.slot, `the head fits its slot at ${width}x${height} (${fit.head} in ${fit.slot})`);
+    assert.deepEqual(fit.wide, [], `no band overflows its own width at ${width}x${height}`);
+    assert(fit.page, `no horizontal page overflow at ${width}x${height}`);
+  }
+  await page.screenshot({ path: path.join(artifacts, 'tester-tablet.png') });
   assert.deepEqual(errors, []);
-  console.log(`ok malformed import recovery, score/recording restoration, mobile layout\nArtifacts: ${artifacts}`);
+  console.log(`ok malformed import recovery, score/recording restoration, phone and tablet layout\nArtifacts: ${artifacts}`);
 } catch (e) {
   await page.screenshot({ path: path.join(artifacts, 'failure.png'), fullPage: true });
   console.error('Reader:', await page.locator('.reader').innerText());

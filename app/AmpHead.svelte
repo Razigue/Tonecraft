@@ -457,9 +457,6 @@
     filter: drop-shadow(2px 4px 4px #000a);
   }
   .jack-cable { position: absolute; left: -301px; top: 51px; overflow: visible; }
-  @media (max-width: 1100px) {
-    .guilt .amp-panel { justify-content: center; padding: 20px 12px 18px 76px; }
-  }
   .guilt .amp-signature { color: #dccfe0; text-shadow: 0 1px 0 #09070d,0 -1px 0 #ffffff22; }
   .guilt .group-label span { position: relative; display: inline-block; }
   .guilt .group-label span::after {
@@ -545,18 +542,5 @@
     .glass-bloom-power,.guilt .glass-window .veil,.guilt .group-label span::after,.rocker-lamp::after { transition: none !important; }
     .glass-glow { will-change: auto; }
     .guilt.illuminated .glass-glow { opacity: .22 !important; }
-  }
-  @media(max-width:760px) {
-    .amp-head.guilt { --guilt-rim: 18px; --guilt-front-radius: 5px; border-radius: 16px; margin-top: 40px; }
-    .amp-head.guilt::before { height: 12px; top: -5px; }
-    .guilt-shell { border-width: 48px; border-image-width: 48px; }
-    .glass-walls { border-width: 22px; border-image-width: 22px; }
-    .guilt-jack { display: none; }
-    .guilt-handle { top: -14px; width: 150px; left: calc(50% - 75px); }
-    .guilt .amp-panel { padding: 20px 6px; justify-content: space-around; }
-    .guilt .tone-group .knob-row { gap: 6px; }
-    .guilt .tone-group :global(.knob) { min-width: 0; flex: 1; }
-    .guilt .tone-group :global(.dial) { width: 54px; height: 54px; }
-    .guilt .tone-group :global(.label) { font-size: 8px; letter-spacing: .8px; }
   }
 </style>
