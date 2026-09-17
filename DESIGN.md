@@ -88,7 +88,7 @@ Sentence case everywhere except the display face, which is always uppercase.
 
 **Two modes, one stage.** The bar carries the studio's only navigation: two tabs, *Tone* and *Play*, always visible, the chosen one underlined on the bar's edge (arrow keys move between them). A mode owns the whole stage; nothing is stacked or folded, because panels sliding in and out of a column made the player hunt for the way back.
 
-**Tone.** The head, `--column` wide (1180 px), centred. Its glass is what gives way on a short screen; everything else on it is a control.
+**Tone.** The head, `--column` wide (1180 px), centred. It has one size and one shape: it never reflows and its glass never shrinks. What a smaller window changes is how big it is drawn — the studio scales it whole to the room it has, the way stepping back from an amp makes it smaller rather than flatter — so its proportions are the same on every screen.
 
 **Play.** The tab, as wide as the side room allows, with no maximum width. The head is not on screen, so its power switch appears in the chain band, before the output.
 
@@ -96,7 +96,7 @@ Sentence case everywhere except the display face, which is always uppercase.
 
 **The tab gives way from the bottom.** Under the score, the scale bar and the neck share what is left; below a neck's worth of room they go, and the score keeps its size.
 
-**The transport is the studio's DAW.** Its tracks — the guitar takes and the backing song, with their levels, export and the track tools — are always on screen, under its row, never in a menu. In Tone the transport is the head's width, so its row takes two lines: the keys and the display, then the groups. The stage gives up the height all this takes: the head's glass follows the transport's measured height (`--dock`) down to 140 px, which keeps the inscription whole, and below that the whole head is drawn smaller (`zoom`, never under 0.72; a transform would open a stacking context the tutorial cannot lift through). Past three tracks the lanes scroll inside the transport. Under 820 px of window height the row and the lanes tighten.
+**The transport is the studio's DAW.** Its tracks — the guitar takes and the backing song, with their levels, export and the track tools — are always on screen, under its row, never in a menu. In Tone the transport is the head's width, so its row takes two lines: the keys and the display, then the groups. The stage gives up the height all this takes, and the head is scaled to what is left (`zoom`, fitted to whichever of width and height runs out first; a transform would open a stacking context the tutorial cannot lift through). Past three tracks the lanes scroll inside the transport. Under 820 px of window height the row and the lanes tighten.
 
 **The corners.** The tuner floats at the bottom left, the metronome at the bottom right with its start and tempo above it: small dark tiles with a hairline edge and a thin icon, a dot under a tile when it is on. A side room (`--side`) is kept for them in both modes, which is also why Play is wide without touching the window's edges. The bar alone spans that room, so the name and the settings never move with the mode. What still opens — the tab's track list, the levels — floats as a popover; notices sit over the top of the stage, under the chain.
 

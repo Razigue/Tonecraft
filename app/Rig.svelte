@@ -80,29 +80,37 @@
   /** The transport's height, tracks included, which the head's glass gives way to. */
   let dockHeight = $state(76);
   /**
-   * The head's scale. Its glass gives way first, down to what keeps the
-   * inscription whole; below that the whole head is drawn smaller rather than
-   * running under the transport. `zoom`, not a transform: it changes the box
-   * the stage lays out, and it opens no stacking context, so the tutorial can
-   * still lift a block of the head above its shade.
+   * The head's scale. It has one size and one shape (AmpHead.svelte); what
+   * changes with the window is how big it is drawn, never its proportions, so
+   * it is scaled to whichever of the two dimensions runs out first. `zoom`,
+   * not a transform: it changes the box the stage lays out, and it opens no
+   * stacking context, so the tutorial can still lift a block of the head above
+   * its shade.
    */
   let slotHeight = $state(0);
+  let pageWidth = $state(0);
   let ampFrame = $state<HTMLElement | null>(null);
   let ampZoom = $state(1);
-  /** Smaller than this and the knob labels stop being readable. */
-  const MIN_AMP_ZOOM = 0.72;
+  /** A floor against an absurd figure on a window nobody plays on; above it the head always fits whole. */
+  const MIN_AMP_ZOOM = 0.3;
   /** Air between the head's feet and the transport, so they never touch. */
   const AMP_BREATH = 16;
   $effect(() => {
     const room = slotHeight;
-    // A scrolling page gives the slot the head's own height: fitting the head
-    // to it would shrink it step by step.
-    if (paged) { ampZoom = 1; return; }
-    if (room === 0 || ampFrame === null) return;
+    // The window's own room, not the slot's: at its full size the head is wider
+    // than a laptop's stage, and a slot measured around it would report the
+    // width the head just forced and never shrink it.
+    const across = pageWidth;
+    if (across === 0 || ampFrame === null) return;
     const current = untrack(() => ampZoom);
-    const natural = ampFrame.getBoundingClientRect().height / current;
-    if (natural === 0) return;
-    const next = Math.max(MIN_AMP_ZOOM, Math.min(1, (room - AMP_BREATH) / natural));
+    const box = ampFrame.getBoundingClientRect();
+    const natural = box.height / current;
+    const naturalWidth = box.width / current;
+    if (natural === 0 || naturalWidth === 0) return;
+    // A page that scrolls gives the slot the head's own height, so fitting to
+    // it would shrink the head a step at a time: there, only the width runs out.
+    const byHeight = paged || room === 0 ? 1 : (room - AMP_BREATH) / natural;
+    const next = Math.max(MIN_AMP_ZOOM, Math.min(1, across / naturalWidth, byHeight));
     if (Math.abs(next - current) > 0.005) ampZoom = next;
   });
   let settingsDialog = $state<HTMLDialogElement | null>(null);
@@ -1252,7 +1260,7 @@
      nothing scrolling. A tester arrived with no guitar to try any of it with, so
      they get a page to read: the same bar, the same chain, the same head, the
      demo and the reader under it, scrolling as a page does (CLAUDE.md §4). -->
-<div class="page" class:tester class:touring data-view={tester ? 'tone' : view} style:--dock={`${dockHeight}px`}>
+<div class="page" class:tester class:touring data-view={tester ? 'tone' : view} style:--dock={`${dockHeight}px`} bind:clientWidth={pageWidth}>
   <StudioBar view={tester ? 'tone' : view} onview={chooseView} {latencyMs} {latencyDetail} {touring} showTour={tester} showModes={!tester} settingsDisabled={engineState === 'starting'}
     ontour={() => (touring = true)} onsettings={openSettings} />
 
@@ -1283,7 +1291,7 @@
         <!-- The room's light: violet from behind the head, brighter as it plays.
              One static gradient; only its opacity follows the signal. -->
         <div class="room-light" aria-hidden="true" style:opacity={ampIlluminated ? 0.55 + light * 0.45 : 0.25}></div>
-        <div class="amp-frame" bind:this={ampFrame} style:zoom={ampZoom === 1 || tester ? null : ampZoom}>
+        <div class="amp-frame" bind:this={ampFrame} style:zoom={ampZoom === 1 ? null : ampZoom}>
           <AmpHead {isGuilt} {ampIlluminated} {poweredOff} {light} {veil} {values} {resetValues}
             powerBusy={engineState === 'starting'} powerDisabled={engineState === 'starting' || detecting}
             onparam={setParam} onpower={() => void power()} />
@@ -1494,6 +1502,8 @@
     height: 100dvh;
     padding: 0 var(--side) var(--gutter);
     box-sizing: border-box;
+    /* The head is laid out at its own size and scaled down to fit; until that
+       lands it must never widen the page under it. */
     overflow: hidden;
     /* Labels are engravings, not prose: a knob dragged past its edge or
        double-clicked back to its preset value would otherwise paint a
@@ -1621,7 +1631,8 @@
   /* The slot is the stage's height whatever the head measures: the head is
      scaled to it, never the other way round. */
   .amp-slot { position: relative; display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
-  .amp-frame { position: relative; display: flex; justify-content: center; width: 100%; }
+  /* The box hugs the head, so scaling it scales the box the stage centres. */
+  .amp-frame { position: relative; display: flex; justify-content: center; width: max-content; max-width: 100%; }
   .amp-frame > :global(.amp-stand) { position: relative; }
   .room-light {
     position: absolute;
@@ -1646,6 +1657,9 @@
     height: auto;
     min-height: 100dvh;
     overflow: visible;
+    /* Vertically it is a page; across, the head laid out at its own size must
+       never widen it while it is being scaled down to fit. */
+    overflow-x: clip;
     /* The corner launchers stand in the room under the last plate. */
     padding-bottom: calc(var(--gutter) + 66px);
   }
@@ -1835,7 +1849,7 @@
      page scrolls, as a page. The play path is not offered on mobile anyway;
      this keeps what can be read there readable. */
   @media (max-width: 760px), (max-height: 560px) {
-    .page { --side: var(--gutter); display: flex; flex-direction: column; height: auto; min-height: 100dvh; overflow: visible; }
+    .page { --side: var(--gutter); display: flex; flex-direction: column; height: auto; min-height: 100dvh; overflow: visible; overflow-x: clip; }
     .page :global(.global-controls), .page :global(.transport-row) { flex-wrap: wrap; height: auto; padding-top: 10px; padding-bottom: 10px; }
     .page :global(.transport-row > .display) { flex-basis: 100%; }
     [data-view='play'] > :global(.global-controls), [data-view='play'] > :global(.transport) { width: 100%; }

@@ -110,14 +110,17 @@
 </div>
 
 <style>
-  /* A fixed width: the head is an object, not a column that follows the window. */
-  .amp-stand { width: min(100%, var(--column)); }
+  /* The head is an object with one size and one shape. It never reflows and
+     never changes proportion: the studio scales it whole to the room it has
+     (`ampZoom` in Rig.svelte), the way moving away from an amp makes it
+     smaller rather than shorter. */
+  .amp-stand { width: var(--column); }
 
   .amp-head { position: relative; margin-top: 0; padding: 17px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-1); box-shadow: var(--shadow); --knob-accent: var(--violet-400); }
   /* The glass is what gives way when the screen is short: everything else on
      the head is a control. 580 px is the bands and gutters (276) and the rest
      of the head; a tall screen gives the chain band its full knobs (+56). */
-  .glass-window { position: relative; height: clamp(140px, calc(100dvh - 504px - var(--dock, 76px)), 300px); overflow: hidden; background: #101010; border: 2px solid #0e0e10; box-shadow: 0 0 0 1px #55505b; }
+  .glass-window { position: relative; height: 300px; overflow: hidden; background: #101010; border: 2px solid #0e0e10; box-shadow: 0 0 0 1px #55505b; }
   .glass-window img { width: 100%; height: 100%; object-fit: cover; filter: brightness(1.67); }
   .glass-window .veil { position: absolute; inset: 0; background: #000; pointer-events: none; will-change: opacity; }
   .glass-window::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 35px 12px #08080bd9; background: linear-gradient(0deg, #09080bb0, transparent 65%); }
@@ -163,23 +166,6 @@
   .amp-foot span { width: 65px; height: 9px; background: #0f0f0f; border-radius: 0 0 3px 3px; }
   @media (prefers-reduced-motion: reduce) { .glass-window .veil { opacity: .61 !important; } }
 
-  /* A short glass keeps its inscription whole: centred, and smaller. */
-  @media (max-height: 820px) {
-    .amp-brand { top: 50%; bottom: auto; gap: 12px; transform: translateY(-50%); }
-    .amp-brand h1 { font-size: 34px; }
-    .amp-brand p { margin-top: -5px; }
-  }
-  @media (min-height: 900px) { .glass-window { height: clamp(140px, calc(100dvh - 564px - var(--dock, 76px)), 320px); } }
-
-  /* Narrower than the head's column: the plate wraps, the tone group on its own row. */
-  @media (max-width: 1100px) {
-    .amp-panel { flex-wrap: wrap; gap: 18px 10px; padding: 20px 12px; }
-    .amp-signature { display: none; }
-    .control-group { padding-left: 12px; }
-    .knob-row { gap: 5px; }
-    .tone-group { flex-basis: 100%; border-left: 0; padding-left: 0; }
-    .tone-group .knob-row { justify-content: center; gap: 14px; }
-  }
 
   /* GUILT is a cabinet seen head-on and a little from above. Its rim is a
      lit height map baked by scripts/bake-guilt-textures.py: a rounded outer
