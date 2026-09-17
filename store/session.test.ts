@@ -9,6 +9,20 @@ const check = (name: string, ok: boolean): void => {
 
 const live = PARAMS.find((p) => p.deprecated !== true)!;
 
+const oldGuilt = {
+  preset: 'Lead', resetPreset: 'Lead', captureFile: 'helga-b-jsx-ultra-od808.nam',
+  cab: 'v30mod', cabTouched: false, values: { out_master: -12.4 },
+};
+const updatedGuilt = sanitizeSession(oldGuilt);
+check('the previous factory Guilt session opens on ENGL E530 and Celestion',
+  updatedGuilt.captureFile === 'engl-e530.nam' && updatedGuilt.cab === 'celestion-g12-vintage'
+    && updatedGuilt.values?.out_master === -12.4);
+for (const custom of [{ preset: null }, { preset: 'saved:my-lead' }, { cab: 'custom' }, { cabTouched: true }]) {
+  const restored = sanitizeSession({ ...oldGuilt, ...custom });
+  check(`Guilt migration preserves custom choices ${JSON.stringify(custom)}`,
+    restored.captureFile === oldGuilt.captureFile && restored.cab === ('cab' in custom ? custom.cab : oldGuilt.cab));
+}
+
 check('garbage restores nothing',
   Object.keys(sanitizeSession('nope')).length === 0 && Object.keys(sanitizeSession(null)).length === 0);
 

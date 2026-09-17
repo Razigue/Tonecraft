@@ -90,7 +90,7 @@
     <button class="enable" aria-label={t.rig.gateEnabled} title={values.gate_bypass === 1 ? t.rig.gateOff : t.rig.gateOn} aria-pressed={values.gate_bypass !== 1} onclick={() => onparam('gate_bypass', values.gate_bypass === 1 ? 0 : 1)}><span></span></button>
   </div>
   <div class="rig-selectors">
-    <label class="selector"><span>{t.rig.amplifier}</span><select aria-label={t.rig.capture} value={captureFile} onchange={e => oncapture(e.currentTarget.value)}>{#each captures as c}<option value={c.file}>{c.file === PRESETS[0]?.capture ? 'GUILT · Lead' : c.name}</option>{/each}</select></label>
+    <label class="selector"><span>{t.rig.amplifier}</span><select aria-label={t.rig.capture} value={captureFile} onchange={e => oncapture(e.currentTarget.value)}>{#each captures as c}<option value={c.file}>{c.file === PRESETS[0]?.capture ? 'GUILT · ENGL E530' : c.name}</option>{/each}</select></label>
     <label class="selector"><span>{t.rig.cabinet}</span><select aria-label={t.rig.cabinet} value={cab} onchange={e => { const id = e.currentTarget.value; e.currentTarget.value = cab; if (id === LOAD_CAB) cabFileInput?.click(); else oncab(id); }}>{#each CABS as c}<option value={c.id}>{t.rig.cabs[c.id] ?? c.name}</option>{/each}{#if customCab !== null}<option value={CUSTOM_CAB}>IR · {customCab.name.replace(/\.[^.]+$/, '')}</option>{/if}<option value={LOAD_CAB}>{t.rig.loadIr}</option></select></label>
     <input bind:this={cabFileInput} aria-label={t.rig.cabinetIrFile} type="file" accept=".wav,.aif,.aiff,.flac,audio/*" hidden onchange={e => { const f = e.currentTarget.files?.[0]; e.currentTarget.value = ''; if (f) oncabfile(f); }} />
   </div>

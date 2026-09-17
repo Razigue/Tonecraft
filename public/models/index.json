@@ -13,6 +13,22 @@
   ],
   "models": [
     {
+      "file": "engl-e530.nam",
+      "source": "ENGL E530.nam",
+      "name": "ENGL E530",
+      "pack": "metal",
+      "cab": "celestion-g12-vintage",
+      "note": "ENGL E530 by fabdef: no boost, contour off; listed as an amp + cab capture.",
+      "arch": "SlimmableContainer",
+      "weights": 14017,
+      "url": "https://api.tone3000.com/storage/v1/object/public/models/4a3efc3b5e79bf95_a2.nam",
+      "sourcePage": "https://www.tone3000.com/tones/engl-e530-43",
+      "license": "T3K",
+      "author": "fabdef",
+      "rmsDb": -11.58,
+      "trimDb": -6.4
+    },
+    {
       "file": "helga-b-5150-blockletter-boosted.nam",
       "source": "Helga B 5150 BlockLetter - Boosted.nam",
       "name": "5150 Block Letter — boosted",
@@ -21,7 +37,7 @@
       "note": "The modern metal standard. Sharp attack, tight bottom.",
       "arch": "WaveNet",
       "weights": 13802,
-      "rmsDb": -26.49,
+      "rmsDb": -26.47,
       "trimDb": 8.5
     },
     {
@@ -33,8 +49,8 @@
       "note": "The same amp with nothing in front: more open, and it answers the boost.",
       "arch": "WaveNet",
       "weights": 13802,
-      "rmsDb": -26.18,
-      "trimDb": 8.2
+      "rmsDb": -26.26,
+      "trimDb": 8.3
     },
     {
       "file": "helga-b-6505-red-ch-mxr-drive.nam",
@@ -45,8 +61,8 @@
       "note": "More midrange, and very legible in a busy mix.",
       "arch": "WaveNet",
       "weights": 13802,
-      "rmsDb": -21.26,
-      "trimDb": 3.3
+      "rmsDb": -21.24,
+      "trimDb": 3.2
     },
     {
       "file": "helga-b-jsx-ultra-od808.nam",
@@ -57,7 +73,7 @@
       "note": "High, singing gain. Made for solos.",
       "arch": "WaveNet",
       "weights": 13802,
-      "rmsDb": -22.41,
+      "rmsDb": -22.4,
       "trimDb": 4.4
     },
     {

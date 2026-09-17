@@ -99,6 +99,14 @@ export function sanitizeSession(raw: unknown): Partial<Session> {
   if ('preset' in raw) out.preset = strOrNull(raw['preset']);
   if ('resetPreset' in raw) out.resetPreset = strOrNull(raw['resetPreset']);
 
+  // Carry the untouched factory Guilt sound over to its new amp and IR.
+  // Custom tones and explicitly chosen cabinets keep their saved sound.
+  if (out.preset === 'Lead' && out.captureFile === 'helga-b-jsx-ultra-od808.nam'
+      && out.cab === 'v30mod' && out.cabTouched !== true) {
+    out.captureFile = 'engl-e530.nam';
+    out.cab = 'celestion-g12-vintage';
+  }
+
   if (typeof raw['deviceId'] === 'string') out.deviceId = raw['deviceId'];
   if (typeof raw['outputId'] === 'string') out.outputId = raw['outputId'];
   if ('channel' in raw) out.channel = oneOf(raw['channel'], ['left', 'right', 'sum', 'follow'], 'follow');

@@ -3,7 +3,7 @@
    -----------------------------------------------------------------------------
    The application runs entirely offline, with no CDN and nothing fetched at
    runtime that is not ours. This script downloads the amp captures from
-   pelennor2170/NAM_models (GNU GPL v3), VIC AUDIO and TONE3000 (T3K),
+   pelennor2170/NAM_models (GNU GPL v3), fabdef, VIC AUDIO and TONE3000 (T3K),
    into `public/models/`, which is what the site ships.
 
    The engine is not vendored any more: scripts/build-nam.mjs compiles it from
@@ -33,8 +33,8 @@ const MODEL_REPO = 'pelennor2170/NAM_models';
 
    `pack` : the family shown in the interface.
    `cab`  : the cabinet offered by default with this capture.
-   The Helga captures contain the amplifier alone. Nightmare and Super Reverb
-   are full rigs; their extra IRs reproduce the requested player setups.
+   The Helga captures contain the amplifier alone. ENGL E530, Nightmare and
+   Super Reverb are full rigs; their extra IRs reproduce the requested setups.
 --------------------------------------------------------------------------- */
 const PACKS = [
   { id: 'metal', name: 'Metal', order: 1 },
@@ -43,6 +43,14 @@ const PACKS = [
 ];
 
 const MODEL_CATALOG = [
+  {
+    src: 'ENGL E530.nam',
+    url: 'https://api.tone3000.com/storage/v1/object/public/models/4a3efc3b5e79bf95_a2.nam',
+    sourcePage: 'https://www.tone3000.com/tones/engl-e530-43',
+    license: 'T3K', author: 'fabdef',
+    name: 'ENGL E530', pack: 'metal', cab: 'celestion-g12-vintage',
+    note: 'ENGL E530 by fabdef: no boost, contour off; listed as an amp + cab capture.',
+  },
   {
     src: 'Helga B 5150 BlockLetter - Boosted.nam',
     name: '5150 Block Letter — boosted', pack: 'metal', cab: 'v30mod',
@@ -87,7 +95,7 @@ const ensure = (d) => fs.mkdirSync(d, { recursive: true });
 
 /* ------------------------------ the captures ----------------------------- */
 async function vendorModels() {
-  log('\nNAM captures (Helga: GNU GPL v3; VIC AUDIO and TONE3000: T3K — see attribution files)');
+  log('\nNAM captures (Helga: GNU GPL v3; fabdef, VIC AUDIO and TONE3000: T3K — see attribution files)');
   ensure(MODELS);
   const raw = 'https://raw.githubusercontent.com/' + MODEL_REPO + '/main/';
   const index = [];

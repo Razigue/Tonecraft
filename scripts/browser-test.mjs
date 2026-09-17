@@ -179,6 +179,10 @@ if (!started) {
 
   const playing = await page.getByRole('combobox', { name: 'Capture', exact: true }).inputValue();
   check('the selector identifies the capture it is playing', playing.length > 0, playing);
+  check('Guilt starts with ENGL E530 and the recorded Celestion G12 Vintage IR',
+    playing === 'engl-e530.nam'
+    && await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue() === 'celestion-g12-vintage'
+    && await page.evaluate(() => performance.getEntriesByType('resource').some((r) => r.name.endsWith('/irs/celestion-g12-vintage.wav'))));
 
   // Ground truth, straight from the worklet: the model is loaded and the
   // processor is running it. Without this, "there is sound" proves nothing —
@@ -361,6 +365,9 @@ check('double-click restores the current preset value',
   Math.abs(resetBass - presetBass) < 0.0001,
   `${resetBass.toFixed(4)} instead of ${presetBass.toFixed(4)}`);
 await tonePreset.selectOption('Lead');
+check('returning to Lead restores the Guilt amp and cabinet',
+  await page.getByRole('combobox', { name: 'Capture', exact: true }).inputValue() === 'engl-e530.nam'
+  && await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue() === 'celestion-g12-vintage');
 await page.waitForTimeout(1500);
 
 // Changing capture and cabinet, the two real tone choices. Found by their

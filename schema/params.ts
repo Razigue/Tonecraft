@@ -137,8 +137,8 @@ export const STAGES: readonly Stage[] = [
  * every `amp_*` control that used to drive our own amplifier is now deprecated
  * rather than repurposed (AD-8: an id never changes meaning).
  *
- * Defaults are the v1 preset, "Lead": a JSX Ultra through an OD808, high and
- * singing, with the reverb up where a held note has somewhere to go.
+ * Defaults are the Guilt preset, "Lead": ENGL E530 with Celestion G12 Vintage,
+ * boosted and with the reverb up where a held note has somewhere to go.
  */
 export const PARAMS: readonly Param[] = [
   // --- Input -------------------------------------------------------------

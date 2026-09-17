@@ -28,8 +28,8 @@ export const PRESETS: readonly Preset[] = [
   {
     name: 'Lead',
     pack: 'metal',
-    capture: 'helga-b-jsx-ultra-od808.nam',
-    cab: 'v30mod',
+    capture: 'engl-e530.nam',
+    cab: 'celestion-g12-vintage',
     values: {
       // Kept in step with the schema defaults by npm run check.
       in_trim: 11.4, gate_threshold: -58, drive_bypass: 0, drive_gain: 25.0, drive_tone: 6011,
