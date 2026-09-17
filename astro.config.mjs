@@ -39,6 +39,35 @@ function alphaTabEffectRows() {
   };
 }
 
+/**
+ * alphaTab 1.8.4's AudioWorklet output starts its buffer source only once the
+ * worklet module has loaded, a promise later. A note played from the tab
+ * editor that ends before then is paused first: stop() on a source never
+ * started throws, and the late callback then starts and connects a source the
+ * pause had already dropped. Typing notes quickly did exactly that. The pause
+ * tolerates an unstarted source, and the callback gives up if a pause came
+ * first. Same rule as above: the build fails if an upgrade changed the code.
+ */
+function alphaTabWorkletPause() {
+  const STOP = 'this.source.stop(0);';
+  const LOADED = 'BrowserUiFacade.createAlphaSynthAudioWorklet(ctx, this._settings).then(() => {';
+  return {
+    name: 'tonecraft:alphatab-worklet-pause',
+    enforce: /** @type {const} */ ('pre'),
+    /** @param {string} code @param {string} id */
+    transform(code, id) {
+      if (!id.includes('@coderline/alphatab') || !code.includes('class AlphaSynthAudioWorkletOutput')) return null;
+      if (code.split(STOP).length !== 2 || code.split(LOADED).length !== 2) throw new Error('alphaTab changed its Web Audio output: re-check the worklet pause fix in astro.config.mjs.');
+      return {
+        code: code
+          .replace(STOP, 'try { this.source.stop(0); } catch { /* never started: the worklet was still loading */ }')
+          .replace(LOADED, 'const started = this.source;\n\t\t' + LOADED + '\n\t\t\tif (this.source !== started) return;'),
+        map: null,
+      };
+    },
+  };
+}
+
 export default defineConfig({
   site: SITE,
   base: BASE,
@@ -64,7 +93,7 @@ export default defineConfig({
   ],
 
   vite: {
-    plugins: [alphaTabEffectRows(), tailwind(), alphaTab()],
-    worker: { format: 'es', plugins: () => [alphaTabEffectRows()] },
+    plugins: [alphaTabEffectRows(), alphaTabWorkletPause(), tailwind(), alphaTab()],
+    worker: { format: 'es', plugins: () => [alphaTabEffectRows(), alphaTabWorkletPause()] },
   },
 });
