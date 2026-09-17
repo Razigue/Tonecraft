@@ -3,7 +3,7 @@
    -----------------------------------------------------------------------------
    The application runs entirely offline, with no CDN and nothing fetched at
    runtime that is not ours. This script downloads the amp captures from
-   pelennor2170/NAM_models (GNU GPL v3) with their licence and attribution,
+   pelennor2170/NAM_models (GNU GPL v3) and VIC AUDIO (T3K),
    into `public/models/`, which is what the site ships.
 
    The engine is not vendored any more: scripts/build-nam.mjs compiles it from
@@ -33,8 +33,8 @@ const MODEL_REPO = 'pelennor2170/NAM_models';
 
    `pack` : the family shown in the interface.
    `cab`  : the cabinet offered by default with this capture.
-   Every one of these is a capture of the amplifier WITHOUT a cabinet; the
-   cabinet is convolved downstream (see engine/ir.ts).
+   The Helga captures contain the amplifier alone. VIC AUDIO's Nightmare is
+   a full rig; its extra Celestion IR reproduces the requested player setup.
 --------------------------------------------------------------------------- */
 const PACKS = [
   { id: 'metal', name: 'Metal', order: 1 },
@@ -62,6 +62,14 @@ const MODEL_CATALOG = [
     name: 'JSX Ultra — OD808', pack: 'metal', cab: 'v30mod',
     note: 'High, singing gain. Made for solos.',
   },
+  {
+    src: 'VA Nightmare (MD and Mesa Oversized).nam',
+    url: 'https://api.tone3000.com/storage/v1/object/public/models/2kp9uu8orkv_a2.nam',
+    sourcePage: 'https://www.tone3000.com/tones/driftwood-purple-nightmare-full-rig-61258',
+    license: 'T3K', author: 'VIC AUDIO',
+    name: 'VA Nightmare (MD and Mesa Oversized)', pack: 'metal', cab: 'celestion-g12-vintage',
+    note: 'Driftwood Purple Nightmare full rig: Merciless Drive, Mesa Oversized, SM57 + M160.',
+  },
 ];
 
 const log = (...a) => console.log(...a);
@@ -69,13 +77,13 @@ const ensure = (d) => fs.mkdirSync(d, { recursive: true });
 
 /* ------------------------------ the captures ----------------------------- */
 async function vendorModels() {
-  log('\nNAM captures (' + MODEL_REPO + ', GNU GPL v3)');
+  log('\nNAM captures (Helga: GNU GPL v3; VIC AUDIO: T3K — see attribution files)');
   ensure(MODELS);
   const raw = 'https://raw.githubusercontent.com/' + MODEL_REPO + '/main/';
   const index = [];
 
   for (const entry of MODEL_CATALOG) {
-    const r = await fetch(raw + encodeURIComponent(entry.src));
+    const r = await fetch(entry.url ?? raw + encodeURIComponent(entry.src));
     if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + entry.src);
     const text = await r.text();
     const json = JSON.parse(text);                       // validates the file
@@ -85,7 +93,8 @@ async function vendorModels() {
     index.push({
       file: slug, source: entry.src, name: entry.name, pack: entry.pack,
       cab: entry.cab, note: entry.note,
-      arch: json.architecture, weights: json.weights.length,
+      arch: json.architecture, weights: weightCount(json),
+      ...(entry.url ? { url: entry.url, sourcePage: entry.sourcePage, license: entry.license, author: entry.author } : {}),
     });
     log('  ' + slug.padEnd(46) + (text.length / 1024).toFixed(0) + ' kB');
   }
@@ -99,6 +108,25 @@ async function vendorModels() {
   log('  COPYING (GPL v3) + UPSTREAM-README.md + index.json');
 }
 
+function weightCount(model) {
+  return (model.weights?.length ?? 0) +
+    (model.config?.submodels ?? []).reduce((n, sub) => n + weightCount(sub.model), 0);
+}
+
+async function vendorIR() {
+  const raw = 'https://raw.githubusercontent.com/tone-3000/neural-amp-modeler-wasm/refs/heads/main/';
+  const dir = path.join(ROOT, 'public', 'irs');
+  ensure(dir);
+  for (const [source, file] of [
+    ['ui/public/irs/celestion.wav', 'celestion-g12-vintage.wav'],
+    ['LICENSE', 'TONE3000-LICENSE.txt'],
+  ]) {
+    const r = await fetch(raw + source);
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + source);
+    fs.writeFileSync(path.join(dir, file), new Uint8Array(await r.arrayBuffer()));
+  }
+}
+
 await vendorModels();
-log('\nDone. Run `npm run calibrate` next: the captures carry no loudness\n' +
-    'metadata, and without a measured trim they are 8.8 dB apart.\n');
+await vendorIR();
+log('\nDone. Run `npm run calibrate` next to align each capture through its cabinet.\n');

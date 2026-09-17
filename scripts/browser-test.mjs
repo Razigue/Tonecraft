@@ -344,6 +344,11 @@ check('dragging a knob downward lowers its value', afterDown < afterDrag,
 const tonePreset = page.getByRole('combobox', { name: 'Tone preset', exact: true });
 await tonePreset.selectOption('Modern metal');
 await page.waitForTimeout(1500);
+check('Modern metal selects the exact Nightmare capture and Celestion IR',
+  await page.getByRole('combobox', { name: 'Capture', exact: true }).inputValue() === 'va-nightmare-md-and-mesa-oversized.nam'
+  && await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue() === 'celestion-g12-vintage');
+check('the recorded Celestion IR is fetched when the preset changes',
+  await page.evaluate(() => performance.getEntriesByType('resource').some((r) => r.name.endsWith('/irs/celestion-g12-vintage.wav'))));
 const bass = page.locator('input[type=range][aria-label="Bass"]');
 const presetBass = Number(await bass.inputValue());
 await bass.press('ArrowUp');

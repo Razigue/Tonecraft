@@ -82,10 +82,11 @@ no drift. `canChooseOutput()` is false on Firefox, which has no `setSinkId` on
 AudioContext. Under Tonecraft Engine the driver decides, and with ASIO input
 and output are the same device by construction.
 
-`ir.ts` synthesises both impulse responses as plain samples at the chain's
-rate — no `.wav`, and a minimum-phase cabinet, the most compact transient a
-given magnitude admits. One synthesis for both hosts: the native engine
-receives the samples.
+`ir.ts` synthesises the stock cabinets and reverb as plain samples at the
+chain's rate. Recorded cabinets, including the Celestion G12 Vintage WAV,
+are decoded by `builtInCabIRAt` in `engine.ts`, then trimmed and normalized
+like user-loaded IRs. Both hosts and processed exports receive these same
+samples; saved takes can also be exported before starting the audio engine.
 
 The metronome keeps its own AudioContext in the browser, because it ticks with
 the engine off. Under Tonecraft Engine it hands its voices to the chain's click

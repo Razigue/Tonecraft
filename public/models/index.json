@@ -54,6 +54,22 @@
       "weights": 13802,
       "rmsDb": -22.41,
       "trimDb": 4.4
+    },
+    {
+      "file": "va-nightmare-md-and-mesa-oversized.nam",
+      "source": "VA Nightmare (MD and Mesa Oversized).nam",
+      "name": "VA Nightmare (MD and Mesa Oversized)",
+      "pack": "metal",
+      "cab": "celestion-g12-vintage",
+      "note": "Driftwood Purple Nightmare full rig: Merciless Drive, Mesa Oversized, SM57 + M160.",
+      "arch": "SlimmableContainer",
+      "weights": 14017,
+      "url": "https://api.tone3000.com/storage/v1/object/public/models/2kp9uu8orkv_a2.nam",
+      "sourcePage": "https://www.tone3000.com/tones/driftwood-purple-nightmare-full-rig-61258",
+      "license": "T3K",
+      "author": "VIC AUDIO",
+      "rmsDb": -14.18,
+      "trimDb": -3.8
     }
   ]
 }

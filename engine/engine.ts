@@ -28,7 +28,7 @@
 
 import { PARAMS } from '../schema/params.ts';
 import { IR_SLOTS, CHANNEL_CODES, CLICK_WAVES, LOOP_STATES, meterIndex, type LoopState } from '../schema/chain.ts';
-import { cabIR, reverbIR, shapeCabIR, CUSTOM_CAB, DEFAULT_CAB } from './ir.ts';
+import { cabIR, reverbIR, shapeCabIR, CABS, CUSTOM_CAB, DEFAULT_CAB } from './ir.ts';
 import { loadCatalog, EMPTY_CATALOG, type Catalog, type Capture } from './catalog.ts';
 import { classifyDevice } from './input.ts';
 import {
@@ -145,6 +145,18 @@ async function decodeAt(bytes: ArrayBuffer, sampleRate: number): Promise<AudioBu
   // decodeAudioData detaches what it is given; the original is kept for the
   // next rate.
   return ctx.decodeAudioData(bytes.slice(0));
+}
+
+/** A built-in cabinet, also available for exporting saved takes before starting audio. */
+export async function builtInCabIRAt(rate: number, id: string): Promise<Float32Array<ArrayBuffer>> {
+  const file = CABS.find((c) => c.id === id)?.file;
+  if (!file) return cabIR(rate, id);
+  const response = await fetch(`${BASE}${file}`);
+  if (!response.ok) throw new Error(`The cabinet IR could not be loaded: ${id}`);
+  const decoded = await decodeAt(await response.arrayBuffer(), rate);
+  const ir = shapeCabIR(decoded.getChannelData(0), rate);
+  if (ir === null) throw new Error(`The cabinet IR could not be decoded: ${id}`);
+  return ir;
 }
 
 /** Whether a file is a cabinet IR the chain can use, without an engine to load it into. */
@@ -563,7 +575,7 @@ export class Engine {
   setCab(id: string): void {
     this.#cab = id;
     const host = this.#host;
-    if (host !== null) void this.#sendCab(host);
+    if (host !== null) void this.#sendCab(host).catch((error: unknown) => this.#onFailure(String(error)));
   }
 
   /**
@@ -589,7 +601,7 @@ export class Engine {
       const ir = await this.#decodeCab(this.#cabBytes, rate);
       if (ir !== null) return ir;
     }
-    return cabIR(rate, id === CUSTOM_CAB ? DEFAULT_CAB : id);
+    return builtInCabIRAt(rate, id === CUSTOM_CAB ? DEFAULT_CAB : id);
   }
 
   async #decodeCab(bytes: ArrayBuffer, rate: number): Promise<Float32Array<ArrayBuffer> | null> {

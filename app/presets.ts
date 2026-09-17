@@ -29,7 +29,7 @@ export const PRESETS: readonly Preset[] = [
     cab: 'v30mod',
     values: {
       // Kept in step with the schema defaults by npm run check.
-      in_trim: 11.4, gate_threshold: -58, drive_gain: 25.0, drive_tone: 6011,
+      in_trim: 11.4, gate_threshold: -58, drive_bypass: 0, drive_gain: 25.0, drive_tone: 6011,
       tone_bass: -1.7, tone_mid: 3.4, tone_treble: 1.7, tone_presence: 1.0,
       pitch_shift: 0, reverb_bypass: 0, reverb_mix: 0.30, out_master: -12.4,
     },
@@ -37,11 +37,12 @@ export const PRESETS: readonly Preset[] = [
   {
     name: 'Modern metal',
     pack: 'metal',
-    capture: 'helga-b-5150-blockletter-noboost.nam',
-    cab: 'v30dark',
+    capture: 'va-nightmare-md-and-mesa-oversized.nam',
+    cab: 'celestion-g12-vintage',
     values: {
-      in_trim: 10.5, gate_threshold: -65, drive_gain: 16.9, drive_tone: 5200,
-      tone_bass: 1.4, tone_mid: -3.4, tone_treble: 1.4, tone_presence: 0.4,
+      // Merciless Drive and the Mesa cabinet are already in this full-rig capture.
+      in_trim: 0, gate_threshold: -65, drive_bypass: 1, drive_gain: 0, drive_tone: 5200,
+      tone_bass: 0, tone_mid: 0, tone_treble: 0, tone_presence: 0,
       pitch_shift: 0, reverb_bypass: 1, reverb_mix: 0.12, out_master: -12.4,
     },
   },

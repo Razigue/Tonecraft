@@ -1,8 +1,7 @@
 <script lang="ts">
   import { lang, engineMessage } from './locale.svelte.ts';
   import { onMount, onDestroy } from 'svelte';
-  import type { Engine } from '../engine/engine.ts';
-  import { CUSTOM_CAB } from '../engine/ir.ts';
+  import { builtInCabIRAt, type Engine } from '../engine/engine.ts';
   import {
     encodeWav, decodeRecording, decodeBacking, exportRecording, laneFrames, laneShift,
     type ExportContent, type Recording, type RecordingTone, type Timeline,
@@ -180,7 +179,7 @@
   /** The tone as it is at the click, with a loaded cabinet IR read at the takes' rate. */
   async function snapshotTone(sampleRate: number): Promise<RecordingTone> {
     return { values: { ...tone.values }, capture: tone.capture ? { ...tone.capture } : null, cab: tone.cab,
-      ...(tone.cab === CUSTOM_CAB && engine ? { cabIR: await engine.cabIRAt(sampleRate, CUSTOM_CAB) } : {}) };
+      cabIR: await (engine ? engine.cabIRAt(sampleRate, tone.cab) : builtInCabIRAt(sampleRate, tone.cab)) };
   }
   const trackTakes = (except = -1): Recording[] => tracks.map((t, i) => (t.take && i !== except ? { ...t.take, latencyFrames: alignOf(t.take) } : { samples: EMPTY, sampleRate: rate }));
   async function render(content: ExportContent, only?: number): Promise<{ blob: Blob; url: string } | null> {

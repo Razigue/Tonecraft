@@ -29,7 +29,8 @@ import { instantiateChain } from '../public/dsp/chain-core.js';
 import { PARAMS } from '../schema/params.ts';
 import { IR_SLOTS, STAGE_RMS_OFFSET } from '../schema/chain.ts';
 import { STAGES } from '../schema/params.ts';
-import { cabIR, DEFAULT_CAB } from '../engine/ir.ts';
+import { cabIR, CABS, shapeCabIR } from '../engine/ir.ts';
+import { readWav, toMono } from '../render/wav.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SR = 48_000;
@@ -39,7 +40,15 @@ const TARGET_RMS_DB = -18;
 const wasm = fs.readFileSync(path.join(ROOT, 'public/dsp/chain.wasm'));
 const wire = (id: string): number => PARAMS.findIndex((p) => p.id === id);
 const CAB_RMS = STAGE_RMS_OFFSET + STAGES.find((s) => s.id === 'cab')!.meterSlot;
-const cab = cabIR(SR, DEFAULT_CAB);
+function cabinet(id: string): Float32Array<ArrayBuffer> {
+  const file = CABS.find((c) => c.id === id)?.file;
+  if (!file) return cabIR(SR, id);
+  const wav = readWav(path.join(ROOT, 'public', file));
+  if (wav.rate !== SR) throw new Error(`Calibration needs a ${SR} Hz IR: ${file}`);
+  const ir = shapeCabIR(toMono(wav), SR);
+  if (!ir) throw new Error(`Invalid cabinet IR: ${file}`);
+  return ir;
+}
 
 /* Pink noise (a simplified Voss-McCartney): its spectrum is close to a musical
    signal, which makes it far more representative than a sine for measuring a
@@ -70,7 +79,7 @@ function pinkNoise(n: number, rmsDb: number): Float32Array {
 const testSig = pinkNoise(SR * 4, -20);
 
 /** Level after the cabinet in dB RMS, one second skipped for settling; null if the model fails. */
-async function measure(json: string): Promise<number | null> {
+async function measure(json: string, cab: Float32Array<ArrayBuffer>): Promise<number | null> {
   const core = await instantiateChain(wasm);
   core.init(SR, 128);
   for (const [id, v] of Object.entries({
@@ -91,16 +100,16 @@ async function measure(json: string): Promise<number | null> {
   return 10 * Math.log10(energy / frames + 1e-30);
 }
 
-interface Entry { file: string; name?: string; rmsDb?: number; trimDb?: number }
+interface Entry { file: string; cab: string; name?: string; rmsDb?: number; trimDb?: number }
 
 const indexPath = path.join(ROOT, 'public/models/index.json');
 const catalog = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as { models: Entry[] };
 
-console.log('\nCalibration (pink noise at -20 dBFS RMS -> model -> V30 Modern cabinet)');
+console.log('\nCalibration (pink noise at -20 dBFS RMS -> model -> its default cabinet)');
 console.log(`Target: ${TARGET_RMS_DB} dBFS RMS\n`);
 
 for (const entry of catalog.models) {
-  const rms = await measure(fs.readFileSync(path.join(ROOT, 'public/models', entry.file), 'utf8'));
+  const rms = await measure(fs.readFileSync(path.join(ROOT, 'public/models', entry.file), 'utf8'), cabinet(entry.cab));
   if (rms === null) { console.log(`  FAILED  ${entry.file}`); continue; }
   entry.rmsDb = Math.round(rms * 100) / 100;
   entry.trimDb = Math.round((TARGET_RMS_DB - rms) * 10) / 10;

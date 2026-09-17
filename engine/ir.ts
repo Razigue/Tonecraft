@@ -1,13 +1,13 @@
 /**
- * Impulse responses, synthesised in the browser: cabinets and the reverb.
+ * Impulse responses: synthesised cabinets/reverb and recorded cabinet files.
  *
- * There is no .wav to download and no IR pack to ship. A cabinet is a target
+ * A synthesised cabinet is a target
  * frequency response, turned into a **minimum-phase** impulse by the real
  * cepstrum method — which is exactly what is wanted here: minimum phase is the
  * most compact transient response a given magnitude admits, so the low end
  * stays tight instead of smearing.
  *
- * The cabinet is not a nicety. The captures we ship are of the amplifier alone:
+ * The cabinet is not a nicety. The Helga captures are of the amplifier alone:
  * measured, they are still +5 dB at 7 kHz, where a capture that included a
  * cabinet would be 25 dB down. Feed one straight to a speaker and you do not
  * get an amp sound, you get a jigsaw.
@@ -55,7 +55,9 @@ export interface Cab {
   /** One sentence, shown next to the selector. */
   readonly hint: string;
   /** [frequency Hz, level dB], interpolated log/log. */
-  readonly curve: readonly (readonly [number, number])[];
+  readonly curve?: readonly (readonly [number, number])[];
+  /** Recorded IR under public/, decoded at the host's rate by Engine.cabIRAt. */
+  readonly file?: string;
 }
 
 /**
@@ -103,11 +105,17 @@ export const CABS: readonly Cab[] = [
       [3600, -2], [4000, -6], [4600, -12], [5200, -18], [6000, -24],
       [7000, -29], [8000, -33], [10000, -40], [12000, -47], [16000, -58], [22000, -70]],
   },
+  {
+    id: 'celestion-g12-vintage',
+    name: 'Celestion G12 Vintage',
+    hint: 'The recorded Celestion G12 Vintage IR from the TONE3000 player.',
+    file: 'irs/celestion-g12-vintage.wav',
+  },
 ] as const;
 
 export const DEFAULT_CAB = 'v30mod';
 
-const cabById = (id: string): Cab => CABS.find((c) => c.id === id) ?? CABS[0]!;
+const cabById = (id: string): Cab => CABS.find((c) => c.id === id) ?? CABS.find((c) => c.id === DEFAULT_CAB)!;
 
 function dbAt(curve: readonly (readonly [number, number])[], f: number): number {
   const first = curve[0]!;
@@ -171,6 +179,7 @@ function gainAt(h: Float32Array, len: number, f: number, sr: number): number {
  */
 export function cabIR(sampleRate: number, id: string): Float32Array<ArrayBuffer> {
   const cab = cabById(id);
+  if (!cab.curve) throw new Error(`Recorded cabinet ${id} must be decoded before rendering.`);
   const sr = sampleRate;
   const N = 8192;
   const LEN = 1024;                          // ~21 ms at 48 kHz, plenty
