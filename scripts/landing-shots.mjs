@@ -44,7 +44,11 @@ fs.writeFileSync(riff, [
 ].join('\n'));
 
 const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
-const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2, locale: 'en-US' });
+// 1200 tall, not 1000: the head's glass gives way to the transport below a
+// certain window height (AmpHead.svelte), and at 1000 the amp on the home page
+// was a squashed version of itself. At 1200 it stands at its full size, which
+// is what the page is showing.
+const page = await browser.newPage({ viewport: { width: 1600, height: 1200 }, deviceScaleFactor: 2, locale: 'en-US' });
 page.on('pageerror', (e) => console.log('pageerror:', e.message));
 
 const shot = async (name, locator) => {
