@@ -1,6 +1,6 @@
 /**
  * French and English (FR-41), in the one island on the one route: the language
- * is chosen on the page, not by URL. What is here is what a visitor reads
+ * is detected, not asked for, and changed only from the settings sheet. What is here is what a visitor reads
  * before they have touched anything — the welcome and the tutorial. The rig's
  * own labels are the names printed on its panel and read the same in both.
  *
@@ -51,8 +51,13 @@ export interface TourText {
 
 export interface Messages {
   readonly language: string;
+  /** The settings sheet: the language for everyone, the audio for a musician. */
+  readonly settings: string;
   readonly welcome: {
     readonly title: string;
+    readonly lede: string;
+    readonly musicianAction: string;
+    readonly testerAction: string;
     readonly musician: string;
     readonly musicianBody: string;
     readonly tester: string;
@@ -76,7 +81,11 @@ export interface Messages {
 export const MESSAGES: Readonly<Record<Locale, Messages>> = {
   en: {
     language: 'Language',
+    settings: 'Settings',
     welcome: {
+      lede: 'Two ways in. The rig is the same.',
+      musicianAction: 'Plug in',
+      testerAction: 'Listen',
       title: 'Welcome to Tonecraft',
       musician: 'Musician',
       musicianBody: 'Plug in your guitar and choose your audio input.',
@@ -158,7 +167,11 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
   },
   fr: {
     language: 'Langue',
+    settings: 'Réglages',
     welcome: {
+      lede: 'Deux entrées. Le même ampli.',
+      musicianAction: 'Brancher',
+      testerAction: 'Écouter',
       title: 'Bienvenue sur Tonecraft',
       musician: 'Musicien',
       musicianBody: 'Branchez votre guitare et sélectionnez votre entrée audio.',

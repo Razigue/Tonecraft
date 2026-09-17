@@ -86,14 +86,17 @@ try {
   await shot('tabs', page.locator('.reader'));
 
   await page.getByRole('button', { name: 'Open tuner' }).click();
+  // The fake device's tone needs a moment to be read: a tuner showing a note, not a dash.
+  await page.locator('dialog.tuner .note-wrap.heard').waitFor({ timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(800);
   await shot('tuner', page.locator('dialog.tuner'));
   await page.getByRole('button', { name: 'Close tuner' }).click();
   await page.getByRole('button', { name: 'Open metronome' }).click();
   await shot('metronome', page.locator('dialog.metronome'));
   await page.getByRole('button', { name: 'Close metronome' }).click();
 
-  await page.getByRole('button', { name: 'Audio settings' }).click();
-  const settings = page.getByRole('dialog', { name: 'Audio settings' });
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const settings = page.getByRole('dialog', { name: 'Settings' });
   await shot('engine', settings);
 } finally {
   await browser.close();

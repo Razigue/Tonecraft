@@ -113,17 +113,21 @@ await page.goto(`http://127.0.0.1:${PORT}/app/`, { waitUntil: 'networkidle' });
 check('the page renders the rig', await page.locator('.amp-head').isVisible());
 check('the welcome offers musician and tester paths',
   await page.getByRole('button', { name: 'Musician' }).isVisible() && await page.getByRole('button', { name: 'Tester' }).isVisible());
-// French and English, chosen on the page: the browser's language first —
-// English here — and the other one a click away, the page saying which it is.
+// French and English, detected from the browser's languages: nothing on the
+// rig or the welcome offers to switch; the settings sheet does.
 const welcome = page.locator('dialog.welcome');
 check('the welcome speaks the browser’s language, English here',
   await welcome.getByRole('heading', { name: 'Welcome to Tonecraft' }).isVisible() && (await page.evaluate(() => document.documentElement.lang)) === 'en');
-await welcome.getByRole('button', { name: 'FR', exact: true }).click();
-check('and French when asked, the page saying so',
-  await welcome.getByRole('button', { name: 'Musicien' }).isVisible() && (await page.evaluate(() => document.documentElement.lang)) === 'fr');
-await page.reload({ waitUntil: 'networkidle' });
-check('and the choice is kept', await page.locator('dialog.welcome').getByRole('heading', { name: 'Bienvenue sur Tonecraft' }).isVisible());
-await page.locator('dialog.welcome').getByRole('button', { name: 'EN', exact: true }).click();
+check('and offers no language switch of its own',
+  (await welcome.getByRole('button', { name: /^(EN|FR)$/ }).count()) === 0 && (await page.locator('.bar').getByRole('button', { name: /^(EN|FR)$/ }).count()) === 0);
+{
+  const french = await browser.newPage({ locale: 'fr-FR' });
+  await french.goto(`http://127.0.0.1:${PORT}/app/`, { waitUntil: 'networkidle' });
+  check('a French browser is welcomed in French, the page saying so',
+    await french.locator('dialog.welcome').getByRole('heading', { name: 'Bienvenue sur Tonecraft' }).isVisible()
+      && (await french.evaluate(() => document.documentElement.lang)) === 'fr');
+  await french.close();
+}
 check('the capture catalogue is read before starting',
   (await page.locator('select').first().locator('option').count()) > 0);
 
@@ -131,7 +135,7 @@ check('the capture catalogue is read before starting',
 // and not as a 30 second stack trace, so whatever the page said about it is
 // read back — the product's whole voice is that it names the cause.
 await page.getByRole('button', { name: 'Musician' }).click();
-check('musician opens audio settings immediately', await page.getByRole('dialog', { name: 'Audio settings' }).isVisible());
+check('musician opens audio settings immediately', await page.getByRole('dialog', { name: 'Settings' }).locator('.audio-settings').isVisible());
 await page.getByRole('button', { name: 'Done', exact: true }).click();
 let started = true;
 try {
@@ -728,7 +732,13 @@ check('and gives the page back as it was',
     && (await demoPage.evaluate(() => document.querySelector('.global-controls').style.zIndex === '' && document.querySelector('.metronome-launch').style.zIndex === '')));
 check('in English for an English browser', tourSeen[0]?.title === 'General settings' && tourSeen[4]?.title === 'Write your own tab' && tourSeen[6]?.title === 'Your turn',
   tourSeen.map((s) => s.title).join(' · '));
-await demoPage.getByRole('button', { name: 'FR', exact: true }).click();
+// A tester has the settings sheet too, with the language and nothing else.
+await demoPage.getByRole('button', { name: 'Settings', exact: true }).click();
+check('a tester’s settings hold the language and no audio',
+  (await demoPage.getByRole('dialog', { name: 'Settings' }).getByRole('radio', { name: 'Français' }).count()) === 1
+    && (await demoPage.locator('.audio-settings').count()) === 0);
+await demoPage.getByRole('radio', { name: 'Français', exact: true }).click();
+await demoPage.getByRole('button', { name: 'Done', exact: true }).click();
 await demoPage.getByRole('button', { name: 'Tutoriel', exact: true }).click();
 await demoPage.locator('.tour-card').waitFor();
 check('and in French once French is chosen',
@@ -744,7 +754,11 @@ const ringOnGate = await demoPage.evaluate(() => {
 });
 check('a term in bold, hovered, rings the control it names', ringOnGate);
 await demoPage.keyboard.press('Escape');
-await demoPage.locator('.bar').getByRole('button', { name: 'EN', exact: true }).click();
+await demoPage.getByRole('button', { name: 'Réglages', exact: true }).click();
+await demoPage.getByRole('radio', { name: 'English', exact: true }).click();
+await demoPage.getByRole('button', { name: 'Done', exact: true }).click();
+check('the language chosen in the settings applies and is kept',
+  (await demoPage.evaluate(() => [document.documentElement.lang, localStorage.getItem('tonecraft-locale')].join())) === 'en,en');
 check('it can be started again from the page, and left with Escape',
   (await demoPage.locator('.tour-card').count()) === 0 || !(await demoPage.locator('.tour-card').isVisible()));
 await demoPage.locator('.capture-info[data-capture="loaded"]').waitFor({ state: 'attached', timeout: 40_000 });
@@ -852,7 +866,7 @@ try {
 check('and it says where the sound went', said,
   said ? '' : await nativePage.locator('.notice').innerText());
 // The sheet was dismissed by Done; the selector is read where it lives.
-await nativePage.getByRole('button', { name: 'Audio settings' }).first().click();
+await nativePage.getByRole('button', { name: 'Settings' }).first().click();
 check('and the engine choice shows what is actually running',
   (await engines.nth(0).getAttribute('aria-checked')) === 'true');
 

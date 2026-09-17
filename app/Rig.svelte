@@ -23,7 +23,7 @@
   import TabReader from './TabReader.svelte';
   import Recorder from './Recorder.svelte';
   import Tour, { type TourFigure, type TourStep } from './Tour.svelte';
-  import { LOCALES, MESSAGES, detectLocale, saveLocale, type Locale } from './i18n.ts';
+  import { MESSAGES, detectLocale, saveLocale, type Locale } from './i18n.ts';
   import { NativeLink, detectPlatform, downloadUrl, releasesUrl } from '../engine/native-host.ts';
   import { engineUpdate } from '../engine/engine-update.ts';
   import './tokens.css';
@@ -80,9 +80,8 @@
   }
 
   function openSettings(): void {
-    if (mode === 'tester') return;
     settingsDialog?.showModal();
-    void detectInputs();
+    if (mode === 'musician') void detectInputs();
   }
 
   async function openTuner(): Promise<void> {
@@ -374,6 +373,7 @@
   const text = $derived(MESSAGES[locale]);
   const testerTour = $derived<readonly TourStep[]>(text.tour.steps.map((step, i) => ({ ...step, ...TOUR_LAYOUT[i]!, done: wroteNote })));
   $effect(() => { document.documentElement.lang = locale; });
+  const LANGUAGES = [{ value: 'en', label: 'English' }, { value: 'fr', label: 'Français' }] as const;
   function chooseLocale(next: Locale): void {
     locale = next;
     saveLocale(next);
@@ -1157,12 +1157,6 @@
 
 <svelte:window onkeydown={onWindowKey} />
 
-{#snippet languages()}
-  <div class="languages" role="group" aria-label={text.language}>
-    {#each LOCALES as l}<button type="button" aria-pressed={locale === l} onclick={() => chooseLocale(l)}>{l.toUpperCase()}</button>{/each}
-  </div>
-{/snippet}
-
 <div class="page">
   <header class="bar">
     <span class="t-wordmark">tonecraft</span>
@@ -1176,15 +1170,12 @@
              informing. -->
         <span class="latency" title={latencyDetail}>{latencyMs.toFixed(1)} ms</span>
       {/if}
-      {@render languages()}
       {#if mode === 'tester'}
       <button class="tour-button" type="button" onclick={() => (touring = true)} disabled={touring}>{text.tour.open}</button>
       {/if}
-      {#if mode === 'musician'}
-      <button class="settings-button" type="button" aria-label="Audio settings" title="Audio settings" onclick={openSettings} disabled={engineState === 'starting'}>
+      <button class="settings-button" type="button" aria-label={text.settings} title={text.settings} onclick={openSettings} disabled={engineState === 'starting'}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m9.5 3-.6 2.2-1.7 1L5 5.6 2.5 9.9l1.6 1.6v2L2.5 15 5 19.3l2.2-.6 1.7 1 .6 2.3h5l.6-2.3 1.7-1 2.2.6 2.5-4.3-1.6-1.5v-2l1.6-1.6L19 5.6l-2.2.6-1.7-1L14.5 3z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
       </button>
-      {/if}
     </div>
   </header>
 
@@ -1405,10 +1396,18 @@
     onclose={onMetronomeClosed}
   />
 
-  {#if mode === 'musician'}
-  <dialog class="tc-dialog audio-settings" bind:this={settingsDialog} aria-labelledby="audio-settings-title">
+  <!-- One settings sheet. The language is detected, so it is changed here and
+       nowhere on the rig; a tester has nothing else to set. -->
+  <dialog class="tc-dialog settings" bind:this={settingsDialog} aria-labelledby="settings-title">
     <button class="tc-close" type="button" aria-label="Close settings" onclick={() => settingsDialog?.close()}><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" /></svg></button>
-    <h2 class="tc-dialog-title" id="audio-settings-title">Audio settings</h2>
+    <h2 class="tc-dialog-title" id="settings-title">{text.settings}</h2>
+    <section class="settings-section" aria-labelledby="settings-language">
+      <h3 class="eyebrow" id="settings-language">{text.language}</h3>
+      <Segmented label={text.language} options={LANGUAGES} value={locale} onchange={v => chooseLocale(v as Locale)} />
+    </section>
+    {#if mode === 'musician'}
+    <section class="settings-section audio-settings" aria-labelledby="settings-audio">
+    <h3 class="eyebrow" id="settings-audio">Audio</h3>
     <EngineSettings {backend} opened={nativeOpened} onbackend={chooseBackend} />
     {#if backend === 'native'}
     {#if nativeOpened !== null && channelCount > 1}<div class="device-controls"><Segmented label="Input channel" options={CHANNELS} value={channel} onchange={chooseChannel}/><div class="levels">{#each meters.channelPeaks as peak}<span class="level"><span class="level-fill" style={`transform:scaleX(${level(peak)})`}></span></span>{/each}</div></div>{/if}
@@ -1419,45 +1418,46 @@
     </div>
     {/if}
     {#if settingsError}<p class="failure" role="alert">{settingsError}</p>{/if}
-    <button class="connect" disabled={detecting || engineState === 'starting'} onclick={() => { settingsDialog?.close(); if (engineState !== 'running') void power(); }}>Done</button>
+    </section>
+    {/if}
+    <button class="connect" disabled={detecting || engineState === 'starting'} onclick={() => { settingsDialog?.close(); if (mode === 'musician' && engineState !== 'running') void power(); }}>Done</button>
   </dialog>
-  {/if}
 
   <dialog class="tc-dialog welcome" bind:this={welcomeDialog} aria-labelledby="welcome-title" oncancel={() => (asking = false)}>
-        {@render languages()}
-        <svg class="welcome-rose" width="44" height="44" viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width=".8" aria-hidden="true"><circle cx="15" cy="15" r="13.5"/><path d="M15 3.8a5.6 5.6 0 0 1 0 11.2 5.6 5.6 0 0 1 0-11.2ZM15 15a5.6 5.6 0 0 1 0 11.2A5.6 5.6 0 0 1 15 15ZM3.8 15a5.6 5.6 0 0 1 11.2 0 5.6 5.6 0 0 1-11.2 0ZM15 15a5.6 5.6 0 0 1 11.2 0A5.6 5.6 0 0 1 15 15Z"/><circle cx="15" cy="15" r="2"/></svg>
-        <h2 id="welcome-title">{text.welcome.title}</h2>
-        <div class="choices">
-          <button
-            class="choice"
-            type="button"
-            onclick={chooseMusician}
-            disabled={engineState === 'starting'}
-          >
-            <span class="t-module">{text.welcome.musician}</span>
-            <span class="t-small">{text.welcome.musicianBody}</span>
-          </button>
-          <button
-            class="choice"
-            type="button"
-            onclick={chooseTester}
-            disabled={engineState === 'starting'}
-          >
-            <span class="t-module">{text.welcome.tester}</span>
-            <span class="t-small">{text.welcome.testerBody}</span>
-          </button>
-        </div>
+    <!-- The glass the amp is lit with: the first screen already wears it. -->
+    <div class="welcome-glass" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt="" width="2172" height="724" decoding="async" /></div>
+    <div class="welcome-body">
+      <!-- Focus lands on the title, not on the first card: a ring on a choice
+           nobody has made yet reads as a choice already made. -->
+      <!-- svelte-ignore a11y_autofocus -->
+      <h2 id="welcome-title" tabindex="-1" autofocus>{text.welcome.title}</h2>
+      <p class="welcome-lede">{text.welcome.lede}</p>
+      <div class="choices">
+        <button class="choice" type="button" onclick={chooseMusician} disabled={engineState === 'starting'}>
+          <svg class="choice-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2.5v5M14.5 2.5v5M7 7.5h10v3.5a5 5 0 0 1-10 0zM12 16v2.5a3 3 0 0 0 3 3h2" /></svg>
+          <span class="choice-title">{text.welcome.musician}</span>
+          <span class="choice-body">{text.welcome.musicianBody}</span>
+          <span class="choice-go" aria-hidden="true">{text.welcome.musicianAction} <span>→</span></span>
+        </button>
+        <button class="choice" type="button" onclick={chooseTester} disabled={engineState === 'starting'}>
+          <svg class="choice-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3" /><rect x="3" y="14" width="4" height="7" rx="1.5" /><rect x="17" y="14" width="4" height="7" rx="1.5" /></svg>
+          <span class="choice-title">{text.welcome.tester}</span>
+          <span class="choice-body">{text.welcome.testerBody}</span>
+          <span class="choice-go" aria-hidden="true">{text.welcome.testerAction} <span>→</span></span>
+        </button>
+      </div>
 
-        {#if problem !== null}
-          <!-- Attached to the button that failed, rather than filed at the
-               bottom of the page: it is about this action and nothing else. -->
-          <p class="failure">
-            <span>{problem.cause}</span>
-            <span class="fix">{problem.fix}</span>
-          </p>
-        {/if}
-        <!-- Closing is exploring: the tester card already offers the sound without a guitar. -->
-        <button class="tc-close" type="button" aria-label={text.welcome.explore} title={text.welcome.explore} onclick={() => (asking = false)}><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" /></svg></button>
+      {#if problem !== null}
+        <!-- Attached to the button that failed, rather than filed at the
+             bottom of the page: it is about this action and nothing else. -->
+        <p class="failure">
+          <span>{problem.cause}</span>
+          <span class="fix">{problem.fix}</span>
+        </p>
+      {/if}
+    </div>
+    <!-- Closing is exploring: the tester card already offers the sound without a guitar. -->
+    <button class="tc-close" type="button" aria-label={text.welcome.explore} title={text.welcome.explore} onclick={() => (asking = false)}><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" /></svg></button>
   </dialog>
 
   {#if touring}<Tour steps={testerTour} terms={TOUR_TERMS} labels={text.tour} onclose={() => (touring = false)} />{/if}
@@ -1763,21 +1763,22 @@
   .loop-level { display: flex; align-items: center; gap: 10px; margin-left: auto; }
   .loop-level input { width: 110px; min-height: 40px; }
 
-  .languages { display: flex; gap: 2px; }
-  .languages button { min-width: 34px; padding: 6px 8px; border: 1px solid transparent; border-radius: var(--radius); background: none; color: var(--text-3); font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.12em; cursor: pointer; }
-  .languages button:hover { color: var(--text); }
-  .languages button[aria-pressed=true] { color: var(--text); border-color: var(--line-strong); }
 
   .settings-button { display: grid; place-items: center; width: 40px; height: 40px; padding: 8px; border: 0; border-radius: var(--radius); background: none; color: var(--text-2); cursor: pointer; }
   .settings-button:hover { color: var(--text); background: var(--surface-2); }
 
-  /* Audio settings: the tuner's frame, with a secondary detect and a primary done. */
-  .audio-settings { width: min(460px, calc(100vw - 40px)); }
-  .audio-settings[open] { display: flex; flex-direction: column; gap: 22px; }
+  /* Settings: the tuner's frame, a section per subject, a primary done. */
+  .settings { width: min(460px, calc(100vw - 40px)); padding-top: 80px; }
+  .settings::before { content: ''; position: absolute; top: 58px; left: 0; right: 0; border-top: 1px solid var(--line); }
+  .settings[open] { display: flex; flex-direction: column; gap: 22px; }
+  .settings-section { display: flex; flex-direction: column; gap: 14px; }
+  .settings-section h3 { margin: 0; font-size: 9px; color: var(--text-3); }
+  .settings-section + .settings-section { padding-top: 22px; border-top: 1px solid var(--line); }
+  .audio-settings { gap: 20px; }
   .detect { align-self: flex-start; }
   .connect { align-self: flex-end; }
   .device-controls { display: flex; flex-direction: column; gap: 16px; }
-  .audio-settings select { width: 100%; }
+  .settings select { width: 100%; }
   .field { display: flex; flex-direction: column; gap: 6px; }
   .levels { display: flex; gap: var(--u); }
   .level { flex: 1; height: 3px; background: var(--surface-2); overflow: hidden; }
@@ -1785,36 +1786,57 @@
   .failure { display: flex; flex-direction: column; gap: 2px; max-width: 46ch; margin: 0; font: 14px var(--body); color: var(--ember); }
   .fix { color: var(--text-2); }
 
-  /* Welcome: the first screen carries the rose, the inscription and the violet. */
-  .welcome { width: min(600px, calc(100vw - 40px)); text-align: center; }
+  /* Welcome: the lit glass on top, the inscription, and two doors of the same
+     size, because neither is the lesser one: half the people who arrive have a
+     guitar and half want to know what this is before they fetch it. */
+  .welcome { width: min(680px, calc(100vw - 32px)); padding: 0; overflow: hidden auto; }
   .welcome:not([open]) { display: none; }
-  .welcome[open] { display: flex; flex-direction: column; align-items: center; gap: 22px; padding-top: 44px; }
-  .welcome .languages { position: absolute; top: 18px; left: 18px; }
-  .welcome-rose { color: var(--violet-300); }
-  .welcome h2 { margin: -6px 0 6px; font: 600 34px/1.1 var(--inscription); letter-spacing: 0.02em; color: var(--violet-50); }
-  /* Two doors, side by side and the same size, because neither is the lesser
-     one: half the people who arrive have a guitar and half want to know what
-     this is before they fetch it. */
-  .choices { display: flex; flex-wrap: wrap; justify-content: center; align-items: stretch; gap: 16px; width: 100%; }
+  .welcome[open] { display: block; }
+  .welcome-glass { position: relative; height: 150px; overflow: hidden; background: #000; }
+  .welcome-glass img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 42%; opacity: .9; filter: saturate(1.05) brightness(1.15); }
+  .welcome-glass::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, #0000 20%, #15131aaa 62%, var(--surface-1)); box-shadow: inset 0 1px 0 #ffffff14; }
+  .welcome-body { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: -34px; padding: 0 36px 34px; text-align: center; }
+  .welcome h2 { margin: 0; font: 600 38px/1.05 var(--inscription); letter-spacing: .01em; color: var(--violet-50); text-shadow: 0 2px 12px #000; }
+  .welcome h2:focus { outline: none; }
+  .welcome-lede { margin: 0 0 18px; font: 14px var(--body); color: var(--text-2); }
+  .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; width: 100%; }
   .choice {
-    flex: 1 1 20ch;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 10px;
+    gap: 8px;
     min-width: 0;
-    padding: 22px;
+    padding: 22px 22px 18px;
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    background: var(--surface-2);
+    background: var(--faceplate), var(--surface-2);
     color: var(--text);
+    font: inherit;
     text-align: left;
     cursor: pointer;
+    transition: border-color 160ms ease-out, transform 160ms ease-out;
   }
-  .choice:hover { border-color: var(--accent-line); background: var(--violet-900); }
+  .choice:hover:not(:disabled) { border-color: var(--accent-line); transform: translateY(-2px); }
   .choice:disabled { opacity: .4; cursor: default; }
-  .choice .t-module { font-stretch: 125%; color: var(--violet-100); }
-  .choice .t-small { line-height: 1.6; color: var(--text-2); }
+  .choice-icon { margin-bottom: 6px; color: var(--violet-300); }
+  .choice-title { font: 400 12px/1 var(--display); font-stretch: 125%; letter-spacing: .24em; text-transform: uppercase; color: var(--violet-100); }
+  .choice-body { flex: 1; font: 13px/1.55 var(--body); color: var(--text-2); }
+  .choice-go { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 12px; width: 100%; border-top: 1px solid var(--line); font: 500 13px var(--body); color: var(--accent); }
+  .choice-go span { transition: transform 160ms ease-out; }
+  .choice:hover:not(:disabled) .choice-go span { transform: translateX(4px); }
+  .welcome .failure { margin-top: 12px; text-align: left; }
+  .welcome .tc-close { color: var(--violet-50); background: #0008; }
+  .welcome .tc-close:hover { background: #000c; }
+  @media (max-width: 600px) {
+    .welcome-glass { height: 110px; }
+    .welcome-body { padding: 0 18px 22px; margin-top: -26px; }
+    .welcome h2 { font-size: 32px; }
+    .choices { grid-template-columns: 1fr; gap: 10px; }
+    .choice { padding: 16px 18px 14px; }
+    .choice-icon { display: none; }
+    .choice-go { margin-top: 4px; padding-top: 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .choice, .choice-go span { transition: none; } }
 
   @media (min-width: 1500px) { .glass-window { height: 310px; } .workspace { margin-top: 40px; } }
   @media (max-width: 1100px) {
