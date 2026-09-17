@@ -94,13 +94,15 @@ if (!fs.existsSync(path.join(DIST, 'app', 'index.html'))) {
 }
 
 const server = await serve();
+/* The checks read English: every page is opened as an English browser, so a
+   machine set to French does not fail them (a French page says so below). */
 const browser = await chromium.launch({
   args: [
     '--use-fake-device-for-media-stream',
     '--use-fake-ui-for-media-stream',
   ],
 });
-const page = await browser.newPage();
+const page = await browser.newPage({ locale: 'en-US' });
 
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
@@ -119,7 +121,7 @@ const welcome = page.locator('dialog.welcome');
 check('the welcome speaks the browser’s language, English here',
   await welcome.getByRole('heading', { name: 'Welcome to Tonecraft' }).isVisible() && (await page.evaluate(() => document.documentElement.lang)) === 'en');
 check('and offers no language switch of its own',
-  (await welcome.getByRole('button', { name: /^(EN|FR)$/ }).count()) === 0 && (await page.locator('.bar').getByRole('button', { name: /^(EN|FR)$/ }).count()) === 0);
+  (await welcome.getByRole('button', { name: /^(EN|FR)$|Français/ }).count()) === 0 && (await page.locator('.bar').getByRole('button', { name: /^(EN|FR)$|Français/ }).count()) === 0);
 {
   const french = await browser.newPage({ locale: 'fr-FR' });
   await french.goto(`http://127.0.0.1:${PORT}/app/`, { waitUntil: 'networkidle' });
@@ -410,18 +412,28 @@ const take = path.join(ROOT, 'node_modules', '.cache', 'tonecraft-take.wav');
 fs.mkdirSync(path.dirname(take), { recursive: true });
 writeTestTake(take);
 
+// The takes are a drawer over the stage, opened from the transport.
 await page.getByLabel('Guitar DI file', { exact: true }).setInputFiles(take);
 await page.getByLabel('Recorded guitar', { exact: true }).waitFor({ timeout: 20_000 });
 ok('an audio file is decoded and drawn on the guitar lane');
 
 const listenButton = page.locator('.recorder button.listen');
+// The drawer covers the foot of the stage, where the amp's knobs are: it is
+// opened for a press and closed again, and the take plays on behind it.
+async function inTakes(action) {
+  await action();
+}
 async function playTake() {
-  if ((await listenButton.getAttribute('aria-label')) === 'Listen to take') await listenButton.click();
-  await page.getByRole('button', { name: 'Pause take', exact: true }).waitFor({ timeout: 20_000 });
+  await inTakes(async () => {
+    if ((await listenButton.getAttribute('aria-label')) === 'Listen to take') await listenButton.click();
+    await page.getByRole('button', { name: 'Pause take', exact: true }).waitFor({ timeout: 20_000 });
+  });
 }
 async function stopTake() {
-  if ((await listenButton.getAttribute('aria-label')) === 'Pause take') await listenButton.click();
-  await page.getByRole('button', { name: 'Listen to take', exact: true }).waitFor({ timeout: 20_000 });
+  await inTakes(async () => {
+    if ((await listenButton.getAttribute('aria-label')) === 'Pause take') await listenButton.click();
+    await page.getByRole('button', { name: 'Listen to take', exact: true }).waitFor({ timeout: 20_000 });
+  });
 }
 // Loading a take never starts it, so the level checks below have to press play.
 await playTake();
@@ -612,7 +624,7 @@ const before = await rigTop();
 // Written into the slot the rig keeps for it, which is what happens at runtime.
 // Appending a second element would be testing a case the product never makes.
 await page.evaluate(() => {
-  const notice = document.querySelector('.workspace .notice');
+  const notice = document.querySelector('.stage .notice');
   notice.textContent = 'A notice appearing while playing, two lines long, about '
     + 'the take currently on screen and what to do about it.';
 });
@@ -621,7 +633,7 @@ const after = await rigTop();
 const moved = Math.abs(after - before);
 check('a notice does not move the rig', moved < 1, `${moved.toFixed(1)} px`);
 check('and the rig keeps a place for it whether or not there is one',
-  (await page.locator('.workspace .notice').count()) === 1);
+  (await page.locator('.stage .notice').count()) === 1);
 
 // FR-18: the limiter has no control anywhere, in any mode, on any path.
 const bypasses = await page.locator('.amp-panel button[aria-pressed]').allTextContents();
@@ -675,7 +687,7 @@ check('nothing threw', errors.length === 0, errors[0]);
  * demonstration. The demo path must therefore never touch getUserMedia, and
  * "never" is the kind of claim that needs counting rather than reading.
  */
-const demoPage = await browser.newPage();
+const demoPage = await browser.newPage({ locale: 'en-US' });
 await demoPage.addInitScript(() => {
   window.__mic = 0;
   const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
@@ -745,6 +757,13 @@ check('a tester’s settings hold the language and no audio',
 await demoPage.getByRole('radio', { name: 'Français', exact: true }).click();
 // The sheet itself switches on the spot.
 await demoPage.getByRole('button', { name: 'Terminé', exact: true }).click();
+// A tester reads one page: the head, the demo and the reader under each
+// other, and none of the musician's bands (CLAUDE.md §4).
+check('a tester gets the page, not the instrument',
+  (await demoPage.getByRole('tab', { name: /^(Son|Jeu|Tone|Play)$/ }).count()) === 0
+    && (await demoPage.locator('.transport, .recorder').count()) === 0
+    && (await demoPage.locator('.page.tester .stage .demo-panel').count()) === 1
+    && (await demoPage.evaluate(() => document.documentElement.scrollHeight > innerHeight)));
 // The language is state the whole studio reads, not the welcome's and the
 // tutorial's alone: the rig, the amp and the reader follow at once.
 check('French reaches the whole studio, not only the tutorial',
@@ -752,7 +771,7 @@ check('French reaches the whole studio, not only the tutorial',
     const text = (selector) => document.querySelector(selector)?.textContent?.trim() ?? '';
     return text('.global-controls .io-control .label') === 'Entrée'
       && text('.amp-panel .tone-group .group-label').startsWith('TIMBRE')
-      && text('.reader h2') === 'Lecteur de tablatures'
+      && text('.reader .eyebrow') === 'Lecteur de tablatures'
       && document.querySelector('.power-indicator')?.getAttribute('aria-label') === 'Mise en marche de l’ampli';
   }));
 await demoPage.getByRole('button', { name: 'Tutoriel', exact: true }).click();
@@ -794,13 +813,13 @@ check('the demo take bypasses stale CDN responses',
   demoRequests[0] ?? 'no demo request');
 check('and the take is loaded and waiting, not playing at you',
   (await demoPage.locator('.capture-info').getAttribute('data-capture')) === 'loaded' &&
-  (await demoPage.locator('.transport button.start').innerText()) === 'Play');
+  (await demoPage.locator('.demo-panel button.start').innerText()) === 'Play');
 // The chain is what you hear first; turning it off is the deliberate act.
 check('and the chain is on by default',
   (await demoPage.locator('button.power-indicator').getAttribute('aria-pressed')) === 'true');
-await demoPage.locator('.transport button.start').click();
+await demoPage.locator('.demo-panel button.start').click();
 await demoPage.waitForTimeout(1200);
-check('and plays when asked', (await demoPage.locator('.transport button.start').innerText()) === 'Pause');
+check('and plays when asked', (await demoPage.locator('.demo-panel button.start').innerText()) === 'Pause');
 
 const demoLevel = await demoPage.evaluate(async () => {
   let peak = 0;
@@ -824,7 +843,7 @@ check('nothing threw on the demo path', demoErrors.length === 0, demoErrors[0]);
  * would otherwise fail "nothing threw" above. A developer with the engine
  * running locally will see this check fail: it is written for its absence.
  */
-const nativePage = await browser.newPage();
+const nativePage = await browser.newPage({ locale: 'en-US' });
 await nativePage.goto(`http://127.0.0.1:${PORT}/app/`, { waitUntil: 'networkidle' });
 await nativePage.getByRole('button', { name: 'Musician' }).click();
 const engines = nativePage.getByRole('radiogroup', { name: 'Audio engine' }).getByRole('radio');
@@ -891,7 +910,7 @@ check('and the engine choice shows what is actually running',
  * Both ends are faked: the engine by a routed WebSocket that says hello at
  * 0.1.0, GitHub by a routed release list whose newest engine is 0.1.2.
  */
-const updatePage = await browser.newPage();
+const updatePage = await browser.newPage({ locale: 'en-US' });
 await updatePage.routeWebSocket('ws://127.0.0.1:47800/', (ws) => {
   ws.onMessage((data) => {
     const message = JSON.parse(String(data));
@@ -924,7 +943,7 @@ check('an engine older than the newest release is offered the update', updateOff
   // Alone, last: an engine that fails to start under the load of the pages
   // above brings the welcome sheet back over the tutorial.
   for (const context of browser.contexts()) for (const open of context.pages()) await open.close();
-  const phone = await browser.newContext({ ...devices['iPhone 13'] });
+  const phone = await browser.newContext({ ...devices['iPhone 13'], locale: 'en-US' });
   const tap = await phone.newPage();
   const cdp = await phone.newCDPSession(tap);
   const swipeLeft = async () => {

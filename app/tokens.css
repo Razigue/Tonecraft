@@ -93,6 +93,12 @@
   --shadow: 0 14px 30px #0006;
   --lift: var(--shadow);
 
+  /* Motion. One curve: fast out of the gate, long settle, the way a lamp
+     warms rather than the way a web page slides. */
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --dur-quick: 140ms;
+  --dur-settle: 460ms;
+
   /* 8px base unit. */
   --u: 8px;
 
@@ -100,6 +106,21 @@
      take below it are one column: they drifted to 1180 and 1100 apart, which
      reads as a 40px indent nobody chose. */
   --column: 1180px;
+
+  /* The studio's four bands (DESIGN.md §4). The stage takes what they leave. */
+  --bar-height: 56px;
+  /* Read from the guitar: tall enough for keys a hand finds without looking. */
+  --transport-height: 88px;
+  /* The room between the bands and the window's edge, and between the bands. */
+  --gutter: 16px;
+
+  /* The numbers read while playing, at arm's length. [data-view='play'] below
+     sets them for 1.5 m. */
+  --type-clock: 14px;
+  --type-bar: 16px;
+  --type-tempo: 16px;
+  --type-rec: 13px;
+  --type-title: 15px;
 
   --display: "Anybody", "Arial Narrow", "Helvetica Neue", system-ui, sans-serif;
   --body: "Inter Tight", "Helvetica Neue", system-ui, sans-serif;
@@ -113,6 +134,115 @@
     repeating-linear-gradient(0deg, #dccbe903 0 1px, transparent 1px 3px),
     linear-gradient(105deg, #1b1920, #141218 45%, #111016 75%, #17151c);
 }
+
+/* A laptop screen: the DAW gives back what the head's glass needs most. */
+@media (max-height: 820px) {
+  :root { --transport-height: 76px; }
+}
+
+/* Play: the guitar is in the hands and the screen is 1.5 m away. */
+[data-view='play'] {
+  --type-clock: 20px;
+  --type-bar: 26px;
+  --type-tempo: 26px;
+  --type-rec: 18px;
+  --type-title: 20px;
+}
+
+/* The plate every band is cut from: the amp's own faceplate, floating in the room. */
+.tc-plate {
+  box-sizing: border-box;
+  background: var(--faceplate);
+  border: 1px solid var(--line);
+  border-top-color: #3b3441;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow), inset 0 1px 0 #ffffff08;
+}
+
+/* A group of controls in the transport: its name above, its controls below. */
+.tc-group { display: flex; flex-direction: column; justify-content: center; gap: 10px; min-width: 0; }
+.tc-group-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  height: 12px;
+  font: 400 10px/1 var(--display);
+  font-stretch: 125%;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-3);
+}
+.tc-group-label b { overflow: hidden; font: 500 12px/1 var(--body); letter-spacing: 0; text-transform: none; text-overflow: ellipsis; color: var(--text-2); }
+.tc-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+/* The transport's one button: a key cut into the plate, lit from above, quiet
+   until pointed at or on. Its edge is light, not a drawn box. */
+.tc-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  min-width: 40px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  border: 1px solid #ffffff0f;
+  border-top-color: #ffffff17;
+  border-radius: var(--radius);
+  background: linear-gradient(#ffffff0a, #ffffff03);
+  box-shadow: 0 1px 2px #0008;
+  color: var(--text-2);
+  font: 13px var(--body);
+  letter-spacing: .01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur-quick) ease-out, border-color var(--dur-quick) ease-out, background-color var(--dur-quick) ease-out;
+}
+.tc-button svg { flex-shrink: 0; }
+.tc-button:hover:not(:disabled) { border-color: #ffffff26; background-color: #ffffff08; color: var(--text); }
+.tc-button:active:not(:disabled) { background: #0000002e; box-shadow: inset 0 1px 2px #0009; }
+.tc-button:disabled { color: var(--text-3); opacity: .5; cursor: default; box-shadow: none; }
+.tc-button:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
+.tc-button.icon { width: 40px; padding: 0; }
+.tc-button.quiet { border-color: transparent; background: none; box-shadow: none; }
+.tc-button[aria-pressed='true'], .tc-button[aria-expanded='true'], .tc-button.on {
+  border-color: var(--accent-line);
+  background: linear-gradient(#85708b33, #85708b14);
+  color: var(--violet-50);
+}
+/* The two round keys, play and record: the only filled ones. */
+.tc-button.round { width: 48px; height: 48px; border-radius: 50%; }
+.tc-button.primary {
+  border-color: #c2a9c866;
+  background: radial-gradient(circle at 50% 30%, var(--violet-500), var(--action) 70%);
+  box-shadow: 0 2px 6px #0009, inset 0 1px 0 #ffffff26;
+  color: var(--violet-50);
+}
+.tc-button.primary:hover:not(:disabled) { border-color: var(--violet-300); background-color: transparent; color: #fff; }
+.tc-button.primary:disabled { background: var(--surface-2); border-color: #ffffff0f; box-shadow: none; }
+/* Two keys that act as one: the second butts against the first. */
+.tc-split { display: flex; }
+.tc-split > .tc-button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.tc-split > .tc-button + .tc-button { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+
+/* What rises from the transport: a sheet of the plate, arriving without a jump. */
+.tc-popover {
+  margin: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--faceplate), var(--surface-1);
+  color: var(--text);
+  box-shadow: 0 18px 40px #000b, inset 0 1px 0 #ffffff0a;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 180ms ease-out, transform var(--dur-settle) var(--ease-out), overlay 180ms allow-discrete, display 180ms allow-discrete;
+}
+.tc-popover:popover-open { opacity: 1; transform: none; }
+@starting-style { .tc-popover:popover-open { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .tc-popover { transform: none; transition: opacity 120ms linear, overlay 120ms allow-discrete, display 120ms allow-discrete; } }
 
 /* The scale. Seven steps, and text stays on it. */
 .t-wordmark {

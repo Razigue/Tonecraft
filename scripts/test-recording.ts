@@ -7,6 +7,7 @@ import { PRESETS } from '../app/presets.ts';
 import { PARAMS } from '../schema/params.ts';
 import { CABS, cabIR, shapeCabIR } from '../engine/ir.ts';
 import { readWav, toMono } from '../render/wav.ts';
+import { fileURLToPath } from 'node:url';
 
 const wasm = fs.readFileSync(new URL('../public/dsp/chain.wasm', import.meta.url));
 await assert.rejects(decodeRecording(new Blob(['invalid audio'])), /Invalid saved take/);
@@ -51,7 +52,7 @@ const samples = Float32Array.from({ length: 48000 }, (_, i) => 0.05 * Math.sin(2
 const original = samples.slice();
 const cabinetFile = CABS.find((c) => c.id === preset.cab)?.file;
 const impulse = cabinetFile
-  ? shapeCabIR(toMono(readWav(new URL(`../public/${cabinetFile}`, import.meta.url).pathname)), 48000)!
+  ? shapeCabIR(toMono(readWav(fileURLToPath(new URL(`../public/${cabinetFile}`, import.meta.url)))), 48000)!
   : cabIR(48000, preset.cab);
 const tone = { capture, values, cab: preset.cab, cabIR: impulse };
 const model = fs.readFileSync(new URL(`../public/models/${capture.file}`, import.meta.url));

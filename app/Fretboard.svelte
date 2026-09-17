@@ -127,7 +127,8 @@
 
 <style>
   /* The neck sits on the lectern's paper, framed like it. */
-  .neck{flex:1;min-height:120px;display:flex;padding:14px 16px 10px;border-radius:var(--radius);background:radial-gradient(ellipse 80% 140% at 50% 0%,#fffdf8,#f3eee4 70%,#ebe4d6);box-shadow:var(--shadow),0 0 0 1px #000}
+  /* The neck is what gives way on a short screen: the tab above it never does. */
+  .neck{flex:1 1 0;min-height:0;display:flex;padding:14px 16px 10px;border-radius:var(--radius);background:radial-gradient(ellipse 80% 140% at 50% 0%,#fffdf8,#f3eee4 70%,#ebe4d6);box-shadow:var(--shadow),0 0 0 1px #000}
   svg{width:100%;height:100%;max-height:300px;margin:auto}
   .fret{stroke:#cec8bb;stroke-width:1}
   .nut{stroke:#6f6962;stroke-width:3}

@@ -23,9 +23,11 @@
     kind?: 'rms' | 'peak';
     /** A short name under the meter: two thin bars side by side are otherwise anonymous. */
     label?: string;
+    /** Rail length in px. The chain band is 80 px tall and takes a shorter one. */
+    travel?: number;
   }
 
-  const { level, kind = 'rms', label }: Props = $props();
+  const { level, kind = 'rms', label, travel = 96 }: Props = $props();
 
   /**
    * The input window, in dBFS. -18 to -6 is the usual target for a DI into an
@@ -45,6 +47,8 @@
    */
   const HOLD_FALL_DB_PER_S = 20;
 
+  /* Drawn on a 96 px rail whatever the length on screen: the SVG is scaled,
+     so what a bar's height means never changes. */
   const H = 96;
   const DOT = 4;
   const GAP = 4;
@@ -101,7 +105,7 @@
 
 <div class="meter" class:sweet class:clipping role="meter" aria-label={kind === 'peak' ? lang.ui.meter.input : lang.ui.meter.level}
      aria-valuemin={0} aria-valuemax={1} aria-valuenow={Number(level.toFixed(3))} aria-valuetext={valueText}>
-  <svg width="9" height={TOP + H} viewBox={`0 0 9 ${TOP + H}`} aria-hidden="true">
+  <svg width="9" height={TOP + travel} viewBox={`0 0 9 ${TOP + H}`} preserveAspectRatio="none" aria-hidden="true">
     {#if kind === 'peak'}
       <rect class="clip" x="0" y="0" width={DOT} height={DOT} rx="2" />
       <rect class="band" x="7" y={bandTop} width="2" height={bandHeight} />

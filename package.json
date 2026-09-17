@@ -34,7 +34,7 @@
     "test:engine-update": "tsx engine/engine-update.test.ts",
     "test:tab-fades": "tsx engine/tab-fades.test.ts",
     "test:tab-editor": "tsx engine/tab-editor.test.ts",
-    "test:store": "tsx store/session.test.ts",
+    "test:store": "tsx store/session.test.ts && tsx store/tones.test.ts",
     "test:recording": "tsx scripts/test-recording.ts",
     "test:studio": "node scripts/test-studio.mjs",
     "test:browser": "node scripts/browser-test.mjs",

@@ -303,7 +303,8 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   :root {
     --page-max: 1180px;
     --text-max: 620px;
-    --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+    /* The studio's curve and durations (app/tokens.css): one motion system. */
+    --ease: var(--ease-out);
   }
   html { scroll-behavior: smooth; background: var(--surface-0); }
   @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
@@ -336,22 +337,32 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   /* The studio's wordmark, as its header draws it. */
   .wordmark { font: 400 14px/1 var(--display); font-stretch: 125%; letter-spacing: 0.36em; text-transform: uppercase; text-decoration: none; color: var(--text); }
   .top nav { display: flex; align-items: center; gap: clamp(14px, 2.4vw, 32px); }
-  .top nav > a:not(.button) { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.2em; text-transform: uppercase; text-decoration: none; color: var(--text-2); transition: color 160ms var(--ease); }
+  .top nav > a:not(.button) { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.2em; text-transform: uppercase; text-decoration: none; color: var(--text-2); transition: color var(--dur-quick) var(--ease); }
   .top nav > a:not(.button):hover { color: var(--text); }
 
   /* The one eyebrow, and the one heading face: the inscription on the glass. */
   .eyebrow { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.24em; text-transform: uppercase; color: var(--text-2); }
   h2, h3 { font-family: var(--inscription); color: var(--violet-50); letter-spacing: 0.005em; text-wrap: balance; }
 
+  /* The studio's key, cut into the plate: an edge drawn by light, not a box
+     (`.tc-button` in app/tokens.css). The page and the rig press the same. */
   .button {
     display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 22px;
-    border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-2); color: var(--text);
+    border: 1px solid #ffffff0f; border-top-color: #ffffff17; border-radius: var(--radius);
+    background: linear-gradient(#ffffff0a, #ffffff03); box-shadow: 0 1px 2px #0008; color: var(--text);
     font: 14px var(--body); text-decoration: none; white-space: nowrap;
-    transition: background-color 160ms var(--ease), border-color 160ms var(--ease);
+    transition: color var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease), background-color var(--dur-quick) var(--ease);
   }
-  .button:hover { border-color: var(--violet-500); background: #29252f; }
-  .button.primary { border-color: var(--violet-500); background: var(--action); color: var(--action-text); font-weight: 500; }
-  .button.primary:hover { background: var(--action-hover); }
+  .button:hover { border-color: #ffffff26; background-color: #ffffff08; }
+  .button:active { background: #0000002e; box-shadow: inset 0 1px 2px #0009; }
+  .button.primary {
+    border-color: #c2a9c866;
+    background: radial-gradient(circle at 50% 30%, var(--violet-500), var(--action) 70%);
+    box-shadow: 0 2px 6px #0009, inset 0 1px 0 #ffffff26;
+    color: var(--violet-50);
+    font-weight: 500;
+  }
+  .button.primary:hover { border-color: var(--violet-300); color: #fff; }
   .button.small { min-height: 36px; padding: 0 16px; font-size: 13px; }
 
   /* Hero: the stained glass, darkened towards the text. */
@@ -391,7 +402,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   .shot.small { width: min(100%, 440px); }
   .stack { display: grid; gap: 16px; width: min(100%, 980px); margin-bottom: 28px; }
 
-  .window { margin: 36px 0 0; width: 100%; overflow: hidden; border: 1px solid var(--line); border-top-color: #3b3441; border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: var(--shadow), 0 40px 100px #000a; }
+  .window { margin: 36px 0 0; width: 100%; overflow: hidden; border: 1px solid var(--line); border-top-color: #3b3441; border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: var(--shadow), inset 0 1px 0 #ffffff08, 0 40px 100px #000a; }
   .window-bar { display: flex; align-items: center; gap: 6px; padding: 11px 14px; border-bottom: 1px solid #050407; box-shadow: 0 1px 0 #ffffff0a; }
   .window-bar i { width: 8px; height: 8px; border-radius: 50%; background: var(--violet-800); }
   .window-bar span { margin-left: 12px; font: 400 9px/1 var(--display); font-stretch: 125%; letter-spacing: 0.24em; text-transform: uppercase; color: var(--text-3); }
@@ -401,7 +412,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   .steps { list-style: none; padding: 0; counter-reset: step; }
   .steps li { counter-increment: step; display: grid; gap: 6px; }
   .steps .term::before { content: counter(step, decimal-leading-zero) '  '; color: var(--text-3); }
-  .points div, .steps li { min-width: 160px; padding: 16px 20px; border: 1px solid var(--line); border-top-color: #3b3441; border-radius: var(--radius); background: var(--faceplate), var(--surface-1); text-align: left; }
+  .points div, .steps li { min-width: 160px; padding: 16px 20px; border: 1px solid var(--line); border-top-color: #3b3441; border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: var(--shadow), inset 0 1px 0 #ffffff08; text-align: left; }
   .points dt, .steps .term { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.24em; text-transform: uppercase; color: var(--violet-100); }
   .points dd, .steps .def { margin: 8px 0 0; font-size: 14px; color: var(--text-2); }
 
@@ -429,7 +440,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   .req-grid h3 { font-size: 28px; margin-bottom: 16px; }
   .req-list { margin: 20px 0 0; padding-left: 18px; display: grid; gap: 10px; color: var(--text-2); line-height: 1.6; }
   .req-list li::marker { color: var(--violet-500); }
-  .req-grid > div:last-child { padding: 24px 24px 12px; border: 1px solid var(--line); border-top-color: #3b3441; border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: var(--shadow); }
+  .req-grid > div:last-child { padding: 24px 24px 12px; border: 1px solid var(--line); border-top-color: #3b3441; border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: var(--shadow), inset 0 1px 0 #ffffff08; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th, td { padding: 12px 8px; border-bottom: 1px solid var(--line); text-align: left; }
   tbody tr:last-child > * { border-bottom: 0; }
@@ -439,10 +450,10 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
 
   .faq-list { width: min(100%, 760px); text-align: left; margin-top: 16px; }
   details { border-bottom: 1px solid var(--line); }
-  summary { cursor: pointer; list-style: none; padding: 20px 36px 20px 0; position: relative; font-size: 17px; color: var(--text); transition: color 160ms var(--ease); }
+  summary { cursor: pointer; list-style: none; padding: 20px 36px 20px 0; position: relative; font-size: 17px; color: var(--text); transition: color var(--dur-quick) var(--ease); }
   summary:hover { color: var(--violet-100); }
   summary::-webkit-details-marker { display: none; }
-  summary::after { content: '+'; position: absolute; right: 6px; top: 18px; font: 18px var(--mono); color: var(--violet-400); transition: transform 160ms var(--ease); }
+  summary::after { content: '+'; position: absolute; right: 6px; top: 18px; font: 18px var(--mono); color: var(--violet-400); transition: transform var(--dur-quick) var(--ease); }
   details[open] summary::after { transform: rotate(45deg); }
   details p { padding: 0 0 20px; color: var(--text-2); line-height: 1.65; }
 
@@ -476,7 +487,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   .language a[aria-current] { border-color: var(--accent-line); background: var(--violet-900); }
   .language a[aria-current]::after { content: '●'; font-size: 8px; color: var(--accent); }
   @media (prefers-reduced-motion: no-preference) {
-    .language { transition: opacity 180ms var(--ease), transform 180ms var(--ease), display 180ms allow-discrete, overlay 180ms allow-discrete; }
+    .language { transition: opacity var(--dur-settle) var(--ease), transform var(--dur-settle) var(--ease), display var(--dur-settle) allow-discrete, overlay var(--dur-settle) allow-discrete; }
     .language:not(:popover-open) { opacity: 0; transform: translateY(8px); }
     @starting-style { .language:popover-open { opacity: 0; transform: translateY(8px); } }
   }

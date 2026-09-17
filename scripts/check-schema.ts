@@ -33,10 +33,11 @@ validateSchema();
 const declared = new Set(PARAMS.map((p) => p.id));
 const bypass = new Set(STAGES.map((s) => s.bypassParam).filter((s): s is string => s !== null));
 
-/** Controls are declared directly or in a Svelte each block. */
-const rig = readFileSync(join(ROOT, 'app/Rig.svelte'), 'utf8');
+/** Controls are declared directly or in a Svelte each block, in the rig's bands. */
+const rig = ['app/Rig.svelte', 'app/ChainStrip.svelte', 'app/AmpHead.svelte']
+  .map((file) => readFileSync(join(ROOT, file), 'utf8')).join('\n');
 const onFaders = [
-  ...[...rig.matchAll(/<Knob\s+param=\{param\('([^']+)'\)\}/g)].map(m => m[1]!),
+  ...[...rig.matchAll(/<Knob\s+(?:compact(?:=\{[^}]*\})?\s+)?param=\{param\('([^']+)'\)\}/g)].map(m => m[1]!),
   ...[...rig.matchAll(/\{#each \[([^\]]+)\] as id\}<Knob/g)]
     .flatMap(m => [...m[1]!.matchAll(/'([^']+)'/g)].map(x => x[1]!)),
 ];

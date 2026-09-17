@@ -7,6 +7,7 @@
     label = param.label,
     resetValue = param.default,
     powered,
+    compact = false,
   }: {
     param: Param;
     value: number;
@@ -15,6 +16,8 @@
     resetValue?: number;
     /** Opt-in cabinet illumination; absent on the neutral studio controls. */
     powered?: boolean;
+    /** The chain band's size: a smaller dial with its name and value beside it. */
+    compact?: boolean;
   } = $props();
 
   const logarithmic = $derived(param.taper === 'logarithmic' && param.min > 0);
@@ -63,7 +66,7 @@
     }
   }
 </script>
-<label class="knob">
+<label class="knob" class:compact>
   <span class="label">{label}</span>
   <span class="dial" class:power-dial={powered !== undefined} class:powered={powered === true} style={`--angle:${-135 + position * 270}deg;--progress:${position * 270}deg`}>
     {#if powered !== undefined}
@@ -141,6 +144,13 @@
   .dial:focus-within { outline: 2px solid var(--iris); outline-offset: 5px; }
   .value { font: 10px var(--mono); font-variant-numeric: tabular-nums; color: var(--control-label, var(--text-2)); white-space: nowrap; }
   .knob:hover .label { color: var(--text); }
+  /* Name above value, both to the right of a 44 px dial: 44 px tall in all. */
+  .compact { display: grid; grid-template: auto auto / 44px auto; column-gap: 10px; row-gap: 6px; align-items: center; min-width: 0; }
+  .compact .dial { grid-row: 1 / 3; width: 44px; height: 44px; }
+  .compact .label { align-self: end; }
+  .compact .value { align-self: start; }
+  .compact .cap { inset: 7px; }
+  .compact .indicator { top: 3px; height: 7px; }
   /* Two rotating half-rings reveal a fixed light texture. The static mask
      clips the sweep at the saved value; no gradient or filter animates. */
   .power-dial .dial-light {

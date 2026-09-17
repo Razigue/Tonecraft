@@ -7,7 +7,7 @@ still plays.
 
 | Store   | Key                    | Holds |
 |---------|------------------------|-------|
-| `state` | out-of-line (`'session'`, …) | Small records. `session` is the rig as it was left (`session.ts`). |
+| `state` | out-of-line (`'session'`, …) | Small records. `session` is the rig as it was left (`session.ts`); `tones` is the player's saved tones, the whole list in one record (`tones.ts`). |
 | `media` | `id`, index on `kind`  | Blobs the player gave us (`media.ts`). Today the last DI take (`kind: 'take'`). |
 
 ## Rules

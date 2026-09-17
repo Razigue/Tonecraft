@@ -8,8 +8,13 @@
   } from '../engine/recording.ts';
   import { deleteMedia, loadMedia, saveMedia } from '../store/media.ts';
   import { STORES, dbGet, dbPut } from '../store/db.ts';
+  import type { RecorderDeck } from './recorder-deck.svelte.ts';
 
-  let { engine, tone, sinkId = '' }: { engine: Engine | null; tone: RecordingTone; sinkId?: string } = $props();
+  let { engine, tone, sinkId = '', deck }: {
+    engine: Engine | null; tone: RecordingTone; sinkId?: string;
+    /** Where the studio's transport reads the take and finds Record and Stop. */
+    deck: RecorderDeck;
+  } = $props();
 
   type Mode = 'di' | 'processed';
   const STATE_KEY = 'recorder';
@@ -41,10 +46,10 @@
   /** The track Record records into. */
   let armed = $state(0);
   let recording = $state(false);
+  let seconds = $state(0);
   let busy = $state(false);
   let working = $state<'listen' | 'export' | 'prepare' | null>(null);
   let progress = $state(0);
-  let seconds = $state(0);
   let error = $state('');
   let listening = $state(false);
   /** Seconds on the timeline where the playhead is, while listening. */
@@ -509,6 +514,17 @@
       recording = false; error = e instanceof Error ? engineMessage(e.message) : words.engineStopped;
     }
   }
+  // The transport shows this and presses these, drawer open or not.
+  $effect(() => {
+    deck.recording = recording; deck.seconds = seconds; deck.busy = busy || working === 'prepare';
+    deck.available = recording || (engine !== null && !busy && working === null);
+    deck.filled = hasTake || backingFile !== null; deck.error = error;
+  });
+  $effect(() => {
+    deck.record = () => void start();
+    deck.stop = () => void stop();
+  });
+
   async function start() {
     if (!engine || busy || recording || working) return;
     const others = tracks.some((t, i) => i !== armed && t.take);
@@ -629,10 +645,14 @@
       {/each}
     </div>
     <div class="actions">
-      <button class="listen" aria-label={listening ? words.pauseTake : words.listen} disabled={(!hasTake && !backing) || recording || busy || working !== null} onclick={() => void listen()}>{working === 'listen' ? `${Math.round(progress * 100)}%` : listening ? '❚❚' : '▶'}</button>
+      <button class="listen" aria-label={listening ? words.pauseTake : words.listen} disabled={(!hasTake && !backing) || recording || busy || working !== null} onclick={() => void listen()}>{#if working === 'listen'}{Math.round(progress * 100)}%{:else if listening}<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx=".8" /><rect x="9.5" y="2.5" width="3" height="11" rx=".8" /></svg>{:else}<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 2.9v10.2c0 .5.5.8.9.5l8-5.1a.6.6 0 0 0 0-1L5.9 2.4c-.4-.3-.9 0-.9.5z" /></svg>{/if}</button>
+      <!-- Record and Stop are the transport's key; here only what it cannot say:
+           a new take over the armed one, and the overdub being prepared. -->
+      {#if (armedTake && !recording && !busy) || working === 'prepare'}
       <button class="primary" class:recording disabled={busy || working !== null || (!engine && !recording)} onclick={() => recording ? void stop() : void start()}>{working === 'prepare' ? words.preparing(Math.round(progress * 100)) : busy ? (recording ? words.saving : words.starting) : recording ? words.stopRecording : armedTake ? words.newTake : words.record}</button>
+      {/if}
       <div class="export-menu">
-        <button class="export" aria-haspopup="menu" aria-expanded={menu} disabled={(!hasTake && !backing) || recording || busy || working !== null} onclick={() => { menu = !menu; }}>{working === 'export' ? words.exporting(Math.round(progress * 100)) : words.exportWav}</button>
+        <button class="export" aria-haspopup="menu" aria-expanded={menu} disabled={(!hasTake && !backing) || recording || busy || working !== null} onclick={() => { menu = !menu; }}>{#if working === 'export'}{words.exporting(Math.round(progress * 100))}{:else}{words.exportWav}<svg class="chevron" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10l4-4 4 4" /></svg>{/if}</button>
         {#if menu}
           <div class="menu" role="menu" aria-label={words.whatToExport}>
             {#each contents as [id, label, only] (label)}
@@ -690,20 +710,25 @@
     </div>
   </div>
 
-  <div class="record-tools">
+  <!-- The tracks themselves, beside what is done with them. -->
+  <div class="lane-tools">
     {#if tracks.length < MAX_TRACKS}
-      <button class="small add-track" disabled={recording || busy} onclick={addTrack}>{words.addTrack}</button>
+      <button class="small add-track" disabled={recording || busy} onclick={addTrack}><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>{words.addTrack}</button>
     {/if}
     {#if tracks.length > 1 || armedTake}
       <button class="small delete-track" class:confirm={confirmDelete} disabled={recording || busy || working !== null} onclick={() => void askDelete()}>
         {confirmDelete ? words.pressAgain : tracks.length > 1 ? words.deleteTrack(trackName(armed)) : words.deleteTake}</button>
     {/if}
+  </div>
+
+  <div class="record-tools">
+
     {#if backingFile}
       <span class="backing-name" title={backingFile.name}>{backingFile.name}</span>
       <button class="small" disabled={!engine || recording} onclick={preview}>{previewing ? words.stopPreview : words.preview}</button>
       <button class="small" disabled={recording} onclick={() => replaceInput?.click()}>{words.replace}</button>
       <input class="hidden-file" bind:this={replaceInput} type="file" accept="audio/*" aria-label={words.replaceBacking} onchange={e => { void useBacking(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} />
-      <button class="small" aria-label={words.removeBacking} disabled={recording} onclick={removeBacking}>✕</button>
+      <button class="small" aria-label={words.removeBacking} disabled={recording} onclick={removeBacking}><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg></button>
     {/if}
     {#if syncShown && measured}
       {@const shownMs = syncMs ?? measuredMs}
@@ -720,64 +745,81 @@
 </section>
 
 <style>
-  /* Part of the rack's plate: no card of its own, the seam above is the rack's. */
-  .recorder { padding: 20px 24px; }
-  .record-head { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-  .record-title { display: flex; flex-direction: column; gap: 8px; min-width: 88px; }
+  /* The transport's tracks: always on screen, under its row. The lanes take
+     the width; what is done with them stands at their right. */
+  .recorder { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px 24px; padding: 10px 24px 12px 20px; }
+  .record-head { grid-column: 2; grid-row: 1; align-self: start; display: flex; align-items: center; gap: 12px; }
+  .record-title { display: none; }
   .eyebrow { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-2); }
   .duration { display: flex; align-items: center; gap: 7px; font: 18px var(--mono); font-variant-numeric: tabular-nums; }
   .live { color: var(--ember); }
   i { width: 7px; height: 7px; border-radius: 50%; background: var(--ember); }
 
-  .mode { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: var(--radius); }
-  .mode button { display: flex; align-items: center; gap: 7px; min-height: 28px; padding: 4px 12px; border: 0; border-radius: 2px; background: none; font: 11px var(--mono); color: var(--text-2); }
-  .mode button:hover { background: var(--surface-2); }
+  .mode { display: flex; gap: 2px; padding: 2px; border-radius: var(--radius); background: #0000004d; box-shadow: inset 0 1px 2px #0009; }
+  /* Segmented: the chosen side is underlined and lit, never filled (DESIGN.md §6). */
+  .mode button { position: relative; display: flex; flex: 1; justify-content: center; align-items: center; gap: 7px; min-height: 28px; padding: 2px 12px; border: 0; border-radius: 2px; background: none; box-shadow: none; font: 12px var(--body); color: var(--text-3); }
+  .mode button:hover:not(:disabled) { border: 0; color: var(--text-2); }
+  .mode button::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 3px; height: 1px; background: var(--accent); opacity: 0; transform: scaleX(.4); transition: opacity var(--dur-quick) ease-out, transform var(--dur-settle) var(--ease-out); }
   .mode .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--violet-800); }
-  .mode .on, .mode .on:hover { background: var(--violet-900); color: var(--text); }
+  .mode .on, .mode .on:hover:not(:disabled) { color: var(--text); }
+  .mode .on::after { opacity: 1; transform: none; }
   .mode .on .dot { background: var(--accent); }
+  @media (prefers-reduced-motion: reduce) { .mode button::after { transition: none; } }
 
-  .actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-  /* Three weights: primary (record), secondary (export, listen), small (track tools). */
+  .actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+  /* The transport's keys, smaller: primary (a new take), secondary (export, listen), small (track tools). */
   button, .small {
-    min-height: 38px;
-    padding: 0 16px;
-    border: 1px solid var(--line-strong);
+    min-height: 34px;
+    padding: 0 14px;
+    border: 1px solid #ffffff0f;
+    border-top-color: #ffffff17;
     border-radius: var(--radius);
-    background: var(--surface-2);
-    color: var(--text);
-    font: 13px var(--body);
+    background: linear-gradient(#ffffff0a, #ffffff03);
+    box-shadow: 0 1px 2px #0008;
+    color: var(--text-2);
+    font: 12px var(--body);
     white-space: nowrap;
     cursor: pointer;
+    transition: color var(--dur-quick) ease-out, border-color var(--dur-quick) ease-out;
   }
-  button:hover:not(:disabled) { border-color: var(--violet-500); background: #29252f; }
-  button:disabled { opacity: .45; cursor: default; }
+  button:hover:not(:disabled) { border-color: #ffffff26; color: var(--text); }
+  button:disabled { opacity: .45; cursor: default; box-shadow: none; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
+  .drop-hint:focus-visible, .drop-hint:focus-within { outline: 2px solid var(--iris); outline-offset: -2px; }
   .primary { border-color: var(--violet-500); background: var(--action); color: var(--action-text); font-weight: 500; }
   .primary:hover:not(:disabled) { background: var(--action-hover); }
   .primary.recording { border-color: var(--ember-line); background: #3a201b; color: #ffd7cc; }
-  .listen { min-width: 46px; font-variant-numeric: tabular-nums; }
+  .listen { display: inline-flex; align-items: center; justify-content: center; min-width: 46px; font-variant-numeric: tabular-nums; }
+  .export, .add-track, .small { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+  .chevron { color: var(--text-3); }
 
   .export-menu { position: relative; }
-  .menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; display: grid; min-width: 220px; padding: 6px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-1); box-shadow: var(--shadow); }
-  .menu button { display: flex; justify-content: space-between; gap: 16px; min-height: 34px; border: 0; background: none; text-align: left; }
+  /* The dock is at the foot of the screen: the menu opens upward. */
+  .menu { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 5; display: grid; min-width: 220px; padding: 6px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: 0 18px 40px #000b; animation: menu-in var(--dur-settle) var(--ease-out); }
+  @keyframes menu-in { from { opacity: 0; transform: translateY(6px); } }
+  @media (prefers-reduced-motion: reduce) { .menu { animation: none; } }
+  .menu button { display: flex; justify-content: space-between; gap: 16px; min-height: 34px; border: 0; background: none; box-shadow: none; color: var(--text); text-align: left; }
   .menu button:hover:not(:disabled) { background: var(--surface-2); }
   .menu small { font: 10px var(--mono); color: var(--text-2); }
 
-  .timeline { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; margin-top: 18px; }
-  .lane-names { display: grid; grid-auto-rows: 48px; gap: 6px; font: 400 9px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; color: var(--text-3); }
-  .lane-head { display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+  /* A track per row: its name and level, then its lane. Past three tracks the
+     rows scroll, so the stage above keeps its height. */
+  .timeline { grid-column: 1; grid-row: 1; display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 14px; max-height: calc(3 * 34px + 2 * 4px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--violet-700) transparent; }
+  .lane-names { display: grid; grid-auto-rows: 34px; gap: 4px; font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; color: var(--text-2); }
+  .lane-head { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 10px; }
   .lane-head input { width: 100%; height: 16px; margin: 0; cursor: pointer; }
-  .lanes { position: relative; display: grid; grid-auto-rows: 48px; gap: 6px; touch-action: none; cursor: crosshair; }
-  .lane { position: relative; overflow: hidden; background: var(--surface-0); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: inset 0 1px 3px #0008; }
+  .lanes { position: relative; display: grid; grid-auto-rows: 34px; gap: 4px; touch-action: none; cursor: crosshair; }
+  .lane { position: relative; overflow: hidden; background: linear-gradient(#050407, #0b0a0e); border-radius: var(--radius); box-shadow: inset 0 1px 3px #000c, inset 0 0 0 1px #00000080, 0 1px 0 #ffffff0a; transition: box-shadow var(--dur-quick) ease-out; }
   .lane svg { display: block; width: 100%; height: 100%; }
   .lane-title { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
   .arm, .arm:hover:not(:disabled) { display: flex; align-items: center; gap: 6px; min-height: 0; padding: 0; border: 0; background: none; font: inherit; letter-spacing: inherit; color: var(--text-3); }
   .arm span { width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--violet-600); }
   .armed .arm { color: var(--text); }
   .armed .arm span { background: var(--ember); border-color: var(--ember); }
-  .guitar-lane.armed { border-color: var(--line-strong); }
-  .backing-lane.over, .guitar-lane.over { border-color: var(--accent); }
-  .drop-hint, .drop-hint:hover:not(:disabled) { position: absolute; inset: 0; display: grid; place-items: center; min-height: 0; padding: 0 12px; border: 0; border-radius: 0; background: none; text-align: center; line-height: 1.4; font-size: 12px; color: var(--text-3); cursor: pointer; }
-  .drop-hint > span { min-width: 0; max-width: 100%; white-space: normal; }
+  .guitar-lane.armed { box-shadow: inset 0 1px 3px #000c, inset 0 0 0 1px var(--ember-line); }
+  .backing-lane.over, .guitar-lane.over { box-shadow: inset 0 0 0 1px var(--accent), inset 0 0 18px #7b3fa033; }
+  .drop-hint, .drop-hint:hover:not(:disabled) { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-start; min-height: 0; padding: 0 14px; border: 0; border-radius: 0; background: none; box-shadow: none; text-align: left; line-height: 1.2; font-size: 12px; color: var(--text-3); cursor: pointer; }
+  .drop-hint > span { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .drop-hint u { color: var(--text-2); text-decoration-color: var(--violet-500); text-underline-offset: 3px; }
   .drop-hint input, .hidden-file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   .selection { position: absolute; top: 0; bottom: 0; background: #d8c2dd22; border-left: 1px solid var(--accent); border-right: 1px solid var(--accent); pointer-events: none; }
@@ -785,9 +827,11 @@
   .playhead { position: absolute; inset: 0; will-change: transform; }
   .playhead::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 1px; background: var(--violet-50); }
 
-  .record-tools { position: relative; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .lane-tools { grid-column: 2; grid-row: 1; align-self: end; display: flex; justify-content: flex-end; gap: 6px; }
+  .lane-tools:empty { display: none; }
+  .record-tools { grid-column: 1 / -1; position: relative; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .record-tools:empty { display: none; }
-  .small { min-height: 30px; padding: 0 10px; font-size: 12px; }
+  .small { min-height: 28px; padding: 0 10px; font-size: 12px; }
   /* Adding is routine; deleting is quiet until it asks to be confirmed. */
   .delete-track { border-color: transparent; background: none; color: var(--text-2); }
   .delete-track:hover:not(:disabled) { border-color: var(--ember-line); background: none; color: var(--ember); }
@@ -797,9 +841,19 @@
   .level input { width: 110px; }
   .sync output { min-width: 48px; font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--text-2); }
   .selection-info { margin-left: auto; font: 11px var(--mono); color: var(--accent); }
-  p { margin: 12px 0 0; font-size: 12px; color: var(--ember); }
+  p { grid-column: 1 / -1; margin: 0; font-size: 12px; color: var(--ember); }
+  @media (max-height: 820px) {
+    .recorder { padding-top: 8px; padding-bottom: 8px; }
+    .lanes, .lane-names { grid-auto-rows: 28px; }
+    .timeline { max-height: calc(3 * 28px + 2 * 4px); }
+    button { min-height: 30px; }
+    .small { min-height: 26px; }
+    .mode button { min-height: 24px; }
+  }
   @media (max-width: 760px) {
-    .recorder { padding: 18px 14px; }
+    .recorder { grid-template-columns: minmax(0, 1fr); padding: 18px 14px; }
+    .record-head { grid-column: 1; grid-row: auto; flex-wrap: wrap; }
+    .lane-tools { grid-column: 1; grid-row: auto; justify-content: flex-start; }
     .record-head { gap: 12px; }
     .actions { margin-left: 0; flex-wrap: wrap; }
     .timeline { grid-template-columns: minmax(0, 1fr); }

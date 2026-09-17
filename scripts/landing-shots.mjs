@@ -69,21 +69,23 @@ try {
   await shot('amp', page.locator('.amp-head'));
   await shot('controls', page.locator('.global-controls'));
   await shot('panel', page.locator('.amp-panel'));
-  await shot('session', page.locator('.session-bar'));
+  // The transport is the studio's DAW: its row holds the looper and the tab.
+  await shot('session', page.locator('.transport-row'));
   // A take, so the recorder shows a waveform rather than its empty state.
-  await page.getByRole('button', { name: '● Record', exact: true }).click();
+  await page.getByRole('button', { name: 'Record a take', exact: true }).click();
   await page.waitForTimeout(4000);
-  await page.getByRole('button', { name: '■ Stop recording', exact: true }).click();
-  await page.getByRole('button', { name: '● New take', exact: true }).waitFor({ timeout: 20000 });
-  await shot('recorder', page.locator('.recorder'));
+  await page.getByRole('button', { name: 'Stop the take', exact: true }).click();
+  await page.getByRole('button', { name: 'Record a take', exact: true }).waitFor({ timeout: 20000 });
+  await shot('recorder', page.locator('.transport'));
 
+  // A score sends the studio to Play, where the tab has the stage.
   await page.locator('.reader input[type="file"]').setInputFiles(riff);
   await page.locator('.reader svg').first().waitFor({ timeout: 30000 });
   // The riff is in E minor: the neck shows where it lives.
   await page.getByRole('combobox', { name: 'Scale key', exact: true }).selectOption({ label: 'E' });
   await page.getByRole('combobox', { name: 'Scale', exact: true }).selectOption({ label: 'Minor pentatonic' });
   await page.waitForTimeout(1500);
-  await shot('tabs', page.locator('.reader'));
+  await shot('tabs', page.locator('.tab-stage'));
 
   await page.getByRole('button', { name: 'Open tuner' }).click();
   // The fake device's tone needs a moment to be read: a tuner showing a note, not a dash.

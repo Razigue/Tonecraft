@@ -44,7 +44,12 @@ export interface Session {
   readonly metronomeSync: boolean;
   /** How loud the loop sits under the playing. The loop itself is audio, and is not kept. */
   readonly loopLevel: number;
+
+  /** The studio's view: the amp to dial a tone, or the tab to play along. */
+  readonly view: StudioView;
 }
+
+export type StudioView = 'tone' | 'play';
 
 const KEY = 'session';
 /** Bumped when a field changes meaning; `sanitizeSession` upgrades older ones. */
@@ -52,13 +57,28 @@ export const SESSION_VERSION = 1;
 /** Where the previous build kept its subset. Read once, then removed. */
 const LEGACY_KEY = 'tonecraft-v1';
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+export const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 const strOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const pair = (v: unknown): readonly [number, number] | null =>
   Array.isArray(v) && v.length === 2 && v.every((n) => Number.isInteger(n)) ? [v[0], v[1]] : null;
 const oneOf = <const T extends string>(v: unknown, allowed: readonly T[], fallback: NoInfer<T>): T =>
   allowed.includes(v as T) ? (v as T) : fallback;
+
+/**
+ * Parameter values made safe to send to the chain: unknown and deprecated ids
+ * dropped, non-finite values dropped, the rest clamped to the schema's range.
+ * Shared with the saved tones, which carry the same wire meaning.
+ */
+export function sanitizeValues(raw: Record<string, unknown>): Record<string, number> {
+  const values: Record<string, number> = {};
+  for (const p of PARAMS) {
+    const v = raw[p.id];
+    if (p.deprecated === true || typeof v !== 'number' || !Number.isFinite(v)) continue;
+    values[p.id] = Math.min(p.max, Math.max(p.min, v));
+  }
+  return values;
+}
 
 /**
  * Whatever was read, made safe to apply. Pure, so it is tested in Node.
@@ -72,15 +92,7 @@ export function sanitizeSession(raw: unknown): Partial<Session> {
   if (!isObject(raw)) return {};
   const out: { -readonly [K in keyof Session]?: Session[K] } = {};
 
-  if (isObject(raw['values'])) {
-    const values: Record<string, number> = {};
-    for (const p of PARAMS) {
-      const v = raw['values'][p.id];
-      if (p.deprecated === true || typeof v !== 'number' || !Number.isFinite(v)) continue;
-      values[p.id] = Math.min(p.max, Math.max(p.min, v));
-    }
-    out.values = values;
-  }
+  if (isObject(raw['values'])) out.values = sanitizeValues(raw['values']);
   if (typeof raw['captureFile'] === 'string') out.captureFile = raw['captureFile'];
   if (typeof raw['cab'] === 'string') out.cab = raw['cab'];
   if (typeof raw['cabTouched'] === 'boolean') out.cabTouched = raw['cabTouched'];
@@ -115,6 +127,7 @@ export function sanitizeSession(raw: unknown): Partial<Session> {
   if (typeof raw['metronomeSync'] === 'boolean') out.metronomeSync = raw['metronomeSync'];
   const loop = numOrNull(raw['loopLevel']);
   if (loop !== null) out.loopLevel = Math.min(1, Math.max(0, loop));
+  if ('view' in raw) out.view = oneOf(raw['view'], ['tone', 'play'], 'tone');
 
   return out;
 }

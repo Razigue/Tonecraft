@@ -22,11 +22,13 @@
   import { lang } from './locale.svelte.ts';
   import { onDestroy, tick, untrack } from 'svelte';
 
-  let { steps, terms, labels, onclose }: {
+  let { steps, terms, labels, onstep, onclose }: {
     steps: readonly TourStep[];
     /** Term → selector of what it names, on the page or in the card's drawing. */
     terms: Readonly<Record<string, string>>;
     labels: { readonly skip: string; readonly back: string; readonly next: string; readonly done: string; readonly collapse: string; readonly expand: string };
+    /** A step is about to be lit: the page puts on screen what it names before it is measured. */
+    onstep?: (targets: readonly string[]) => void;
     onclose: () => void;
   } = $props();
 
@@ -245,6 +247,7 @@
     rings = [];
     // A step with something to do starts folded, the page it is done on in view.
     collapsed = sheet && untrack(() => blocked);
+    untrack(() => onstep?.(targets));
     void tick().then(() => {
       light(targets);
       position();

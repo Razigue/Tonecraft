@@ -1,179 +1,172 @@
-> **V1 studio direction — September 2026.** The current interface supersedes the light-only, fader-only direction below. Tonecraft owns the black and neutral-grey studio shell, global Input/Gate/Output controls, amplifier/cabinet selection, tone presets and audio session controls. Individual amplifiers own only their central head: art, wordmark, materials and control accents. GUILT is the Lead capture identity; changing its parameters retains its theme. Other captures use the neutral Tonecraft head. Knobs control existing DSP parameters; no new amplifier modelling is implied. GUILT glass brightness follows output RMS mapped from −60 to 0 dBFS, and falls to its unlit baseline when stopped or bypassed. Reduced motion uses steady illumination. The stained-glass asset is reused from the user-supplied GUILT prototype; the surrounding layout is original to Tonecraft.
->
-> The remaining document records the earlier MVP design.
-
 # Tonecraft, design system
+
+This document describes the studio as it is built. `app/tokens.css` holds every value named here; a component never hard-codes one.
 
 ---
 
 ## 1. Direction
 
+**A dark studio, one accent.** Tonecraft owns the shell: black and neutral greys, the bar, the chain, the transport, the dialogs. Each amplifier owns only its head: material, inscription, glass, the accent of its knobs. GUILT is the identity of the Lead capture and keeps it while its parameters move; every other capture wears the neutral Tonecraft head. Knobs control existing DSP parameters; a head never implies modelling that is not there.
 
-**Nylon and mineral.**
+The shell stays flat: no tolex, no chrome, no decorative screws outside the head. The head is the one place with material, and it earns it by being the object the player is tuning.
 
-Every amp sim on the market renders brushed metal, tolex, chicken-head knobs and screw heads. It is skeuomorphism inherited from hardware that most of the audience has never owned. Tonecraft rejects it completely, because the product's whole argument is that it is not hardware and does not need to be installed. The interface should feel like a well-made object in a quiet room: chalky surfaces, matte finishes, cool light, one green.
-
-Reference points are not guitar gear. They are architectural model photography, Braun-era instrument panels, and the flat side of a piece of unglazed ceramic. Warm, but not cosy. Precise, but not clinical.
-
-**The tone of voice matches:** plain, short, never enthusiastic. The interface does not say "Awesome tone!". It says "Clean". It does not apologise when something fails, it says what happened and what to do.
-
-**The one risk we take:** there are no round knobs anywhere in the product. Every continuous control is a vertical linear fader with a hairline travel and a single flat cap. This is a real departure from category convention and it will look wrong to people expecting an amp panel. It is worth it because faders are legible at a glance in a row, they map perfectly to touch and drag on any input device, and a row of them reads as a set of strings, which is the right metaphor for this product. It also means the interface reads instantly as software rather than as a photograph of hardware.
+**The tone of voice:** plain, short, never enthusiastic. The interface does not say "Awesome tone!". It does not apologise when something fails, it says what happened and what to do.
 
 ---
 
 ## 2. Colour
 
-Six tokens. No gradients anywhere, no drop shadows except one elevation level, no glass, no glow.
+| Token | Role |
+|---|---|
+| `--surface-0` | The room: the page, to the edge of the screen. |
+| `--surface-1` | Raised: the head, dialogs, popovers. |
+| `--surface-2` | A control lifted off a plate. |
+| `--faceplate` | The plate material every band and the tab stage are cut from. |
+| `--line`, `--line-strong` | Engraved seams; hover and borders that must be seen. |
+| `--text`, `--text-2`, `--text-3` | Text, three steps. |
+| `--violet-50` … `--violet-900` | The only accent. Light steps light up, dark steps are what they light up against. |
+| `--accent`, `--accent-line` | Active state, signal, selection. |
+| `--action`, `--action-hover`, `--action-text` | The one primary action of a group. |
+| `--ember`, `--ember-line` | Recording, clipping, destruction. Nothing else. |
+| `--iris` | Focus rings only. |
 
-| Token | Hex | Role |
-|---|---|---|
-| `--ink` | `#16181B` | All text, hairlines, fader caps. Cool near-black, never pure black. |
-| `--chalk` | `#E7E8E2` | Page background. Cool grey-green paper, deliberately not a warm cream. |
-| `--bone` | `#F4F4F0` | Raised surfaces: module cards, sheets, the preset drawer. |
-| `--graphite` | `#767A78` | Secondary text, inactive labels, disabled state. |
-| `--celadon` | `#8FB09A` | The only accent. Active states, signal presence, the cord, selected preset. |
-| `--iris` | `#4A46D9` | Focus rings and keyboard navigation only. Never decorative. |
-| `--ember` | `#B24A34` | Clipping and destructive confirmation only. Nothing else, ever. |
+The tab is the only light surface: notation is read, and paper reads. Its playhead and the lit notes on the neck share one amber, the only hue the score owns.
 
-**Why not warm cream and terracotta.** That palette is where every softly-designed audio tool has landed in the last two years, and it reads as generic the moment it is next to a competitor. Pulling the paper cool and green-tinted, and reserving the only saturated hue for a desaturated celadon, gives the product a specific temperature that is recognisable in a screenshot.
-
-**Dark mode ships in v1.1, not v1.** Doing it properly means re-deriving the whole system, and a half-inverted palette looks worse than none. `--ink` and `--chalk` swap roles, `--celadon` lifts to `#A6C4B0`, `--iris` lifts to `#7A77E8`.
+`--ink`, `--chalk`, `--bone`, `--graphite` and `--celadon` survive as aliases for the landing page and older rules. New code uses the names above.
 
 ---
 
 ## 3. Typography
 
-Three roles, three faces. All self-hosted, subset, `woff2`, preloaded.
+Four faces, self-hosted, subset, `woff2`, `font-display: swap`.
 
-**Display: Anybody.** Variable width axis, used at width 125 and weight 300, tracked out to `0.24em`, always uppercase, never above 32px except in the wordmark. It is a wide, slightly strange grotesque and it does the entire job of giving the product a face. Used for: the wordmark, module names (`DRIVE`, `AMP`, `CAB`), section eyebrows. Nothing else. Used more than that it becomes noise.
+- **Display: Anybody**, width 125, uppercase, tracked. The wordmark, eyebrows, band and group labels.
+- **Body: Inter Tight**, 400 and 500. Names, buttons, help, dialogs.
+- **Utility: IBM Plex Mono**, tabular figures. Every number: dB, cents, ms, BPM, bars, time. Fixed-width digits do not jitter at 30 fps.
+- **Inscription: Cormorant Garamond**, GUILT's face and only GUILT's.
 
-**Body: Inter Tight.** Weights 400 and 500. Preset names, descriptions, help text, buttons, dialogs. Chosen over Inter because the tighter width sits better against a wide display face, and it is not the default every interface reaches for.
+### Two scales
 
-**Utility: IBM Plex Mono.** Weight 400, tabular figures. Every number in the product: dB values, cents, milliseconds, BPM, percentages. Numbers in a mono face with fixed-width digits do not jitter when they update at 30 fps, which matters enormously for meters and the tuner.
+The studio is used at two distances. Dialling a tone happens at arm's length; playing along happens at 1.5 m, guitar in hand. Each mode has its scale, switched by `[data-view]` on the page:
 
-### Scale
+| Token | Tone | Play | Use |
+|---|---|---|---|
+| `--type-clock` | 14 px | 20 px | Transport position and duration |
+| `--type-bar` | 16 px | 26 px | Current bar number |
+| `--type-tempo` | 16 px | 26 px | BPM |
+| `--type-rec` | 13 px | 18 px | Take state and time |
 
-| Step | Size / line height | Use |
-|---|---|---|
-| Wordmark | 28 / 1 | Anybody, tracked `0.32em` |
-| Module label | 11 / 1.2 | Anybody, tracked `0.24em`, uppercase |
-| Heading | 20 / 1.3 | Inter Tight 500 |
-| Body | 15 / 1.5 | Inter Tight 400 |
-| Small | 13 / 1.4 | Inter Tight 400, `--graphite` |
-| Readout large | 44 / 1 | Plex Mono, tuner cents only |
-| Readout | 13 / 1 | Plex Mono, all other numbers |
+The tab itself is laid out at a larger base scale than alphaTab's default, permanently: it is only on screen in Play, and re-laying it out at each mode change would block the main thread. The zoom select is relative to that base.
 
-Sentence case everywhere except the display face, which is always uppercase. No title case, ever.
+Sentence case everywhere except the display face, which is always uppercase.
 
 ---
 
 ## 4. Layout
 
-**Concept: the chain is the interface.** The signal path runs left to right across the full width of the viewport as a single horizontal strand of modules, in the exact order the audio passes through them. There is no navigation, no sidebar, no tabs. The page is the rig. Everything else, presets, settings, tuner, arrives as a sheet over the top and leaves again.
+**An instrument, not a page.** One window, `100dvh`, four bands. The document never scrolls; the only thing that does is the tab.
+
+**Plates in a room.** The chain and the transport are plates of the faceplate material, floating with a `--gutter` of room around them, as the head does. In Tone they are exactly the head's column wide, so band, head and transport read as one object in the middle of a dark room; a static violet light behind the head brightens with the output, by opacity only. In Play they open to the full width with the tab. On a screen at least 900 px tall, the chain band in Tone takes full-size knobs, names above and values below; otherwise, and always in Play, it is the compact 80 px row.
 
 ```
 +--------------------------------------------------------------------------+
-|  TONECRAFT                              12.4 ms   |  Tuner  Presets  ...  |
+| TONECRAFT              [ TONE ]  PLAY                   12.4 ms   ⚙      |  bar, 56 px
++--------------------------------------------------------------------------+
+| IN ▮ ◯   GATE ◯ ●   AMP [GUILT · Lead ▾]  CAB [...▾]   ‹ PRESET ›   ◯ ▮ OUT |  chain, 80 px
 +--------------------------------------------------------------------------+
 |                                                                          |
-|                          Crimson Room                                    |
-|                          clean, wide, a little dark                      |
+|                 +--------------------------------------+                 |
+|                 |        the head, --column wide       |                 |  stage, elastic
+|                 +--------------------------------------+                 |
 |                                                                          |
 +--------------------------------------------------------------------------+
-|                                                                          |
-|      IN      GATE      DRIVE        AMP        CAB      REVERB     OUT    |
-|    +----+   +----+   +-------+   +-------+   +-----+   +------+   +---+   |
-|    | ▮  |   | |  |   | | | | |   | | | | |   |  |  |   |  | | |   | ▮ |   |
-|    | ▮  |---| ▯  |---| ▯ ▯ ▯ |---| ▯ ▯ ▯ |---|  ▯  |---|  ▯ ▯ |---| ▮ |   |
-|    | ▮  |   | |  |   | | | | |   | | | | |   |  |  |   |  | | |   | ▮ |   |
-|    +----+   +----+   +-------+   +-------+   +-----+   +------+   +---+   |
-|     -6.2     thr     gn tn lv    gn b m t      mix       mix      -3.0    |
-|                                                                          |
+| ■ ▶ ● [ TAB  0:42 ━━━━○━━ 1:20 │ BAR 12/40 │ BPM 96 ]  ↻ 100% ≡  LOOP  ⊟ ♪ ⏲ |  DAW row, 88 px
+| GUITAR  ━━○  [ lane ................................ ]   DI·PROC ▶ EXPORT    |  tracks, always on screen
+| BACKING ━━○  [ lane ................................ ]            + TRACK    |
 +--------------------------------------------------------------------------+
 ```
 
-The compressor is not in v1 — it joins the strand in v1.1, between the gate and the drive.
+**Two modes, one stage.** The bar carries the studio's only navigation: two tabs, *Tone* and *Play*, always visible, the chosen one underlined on the bar's edge (arrow keys move between them). A mode owns the whole stage; nothing is stacked or folded, because panels sliding in and out of a column made the player hunt for the way back.
 
-The strand is vertically centred and occupies roughly the middle third of the viewport. Above it, only the preset name and its one-line description. Below it, nothing. The emptiness is the point: this is a product about not having a cluttered plugin window.
+**Tone.** The head, `--column` wide (1180 px), centred. Its glass is what gives way on a short screen; everything else on it is a control.
 
-**Grid:** 8px base unit. Module cards are `--bone` on `--chalk`, 2px radius (almost square, not sharp), one elevation shadow at `0 1px 2px rgba(22,24,27,0.06)`. Gap between modules is 24px, filled by the cord.
+**Play.** The tab, as wide as the side room allows, with no maximum width. The head is not on screen, so its power switch appears in the chain band, before the output.
 
-**Responsive:** below 1100px the chain wraps to two rows, still in order, cord continuing across the break. Below 720px the chain becomes a vertical stack and the product shows a notice that playing through the browser on a phone is not supported.
+**Opening a tab goes to Play.** From either mode: the transport's tab zone reads "Open a tab" when none is open. Writing one does the same.
 
-**The listen path has its own layout**, and it is the one most visitors will see. A preset page is the chain rendered read-only — same modules, same fader positions, same cord — over a single play control. It ships no JS engine, so it works identically on a phone. Nothing on it is draggable, and nothing pretends to be.
+**The tab gives way from the bottom.** Under the score, the scale bar and the neck share what is left; below a neck's worth of room they go, and the score keeps its size.
+
+**The transport is the studio's DAW.** Its tracks — the guitar takes and the backing song, with their levels, export and the track tools — are always on screen, under its row, never in a menu. In Tone the transport is the head's width, so its row takes two lines: the keys and the display, then the groups. The stage gives up the height all this takes: the head's glass follows the transport's measured height (`--dock`) down to 140 px, which keeps the inscription whole, and below that the whole head is drawn smaller (`zoom`, never under 0.72; a transform would open a stacking context the tutorial cannot lift through). Past three tracks the lanes scroll inside the transport. Under 820 px of window height the row and the lanes tighten.
+
+**The corners.** The tuner floats at the bottom left, the metronome at the bottom right with its start and tempo above it: small dark tiles with a hairline edge and a thin icon, a dot under a tile when it is on. A side room (`--side`) is kept for them in both modes, which is also why Play is wide without touching the window's edges. The bar alone spans that room, so the name and the settings never move with the mode. What still opens — the tab's track list, the levels — floats as a popover; notices sit over the top of the stage, under the chain.
+
+**Width.** The studio is a desktop instrument; playing is not supported on a phone (`CLAUDE.md` §7). Below the head's width it shrinks to the stage with the same side gutter.
 
 ---
 
-## 5. Signature element: the cord
+## 5. Signature element: the glass
 
-**The modules are connected by a continuous 1px hairline that carries the live signal.** It is not decoration and it is not a static line. Its opacity is driven by the actual amplitude at that point in the chain, read from the shared meter buffer, so you can watch your pick attack travel from input to output. Between the input and the gate it is grey when the gate is closed. After the drive it sits brighter because the signal is hotter. When anything clips, that segment and only that segment turns `--ember`.
+GUILT's stained glass is lit by the signal. Its glow layer's opacity follows the output RMS posted by the worklet at 30 Hz, mapped from −60 to 0 dBFS, and falls to its unlit baseline when the engine stops or the amp is off. The relief and bloom are static SVG filters, rasterised once; only opacity moves.
 
-This is the one thing people will screenshot, and it does real work: it makes the signal chain legible to a beginner who has never thought about gain staging, and it turns troubleshooting into something you can see. No signal reaching the amp is instantly obvious, because the cord is dark before it.
+The glass and the two meters are the whole visualisation layer. There is no spectrum analyser, no oscilloscope, no `AnalyserNode` and no `<canvas>` anywhere in the product. Under `prefers-reduced-motion` the glass holds a steady illumination.
 
-**The cord is the whole visualisation layer.** There is no spectrum analyser, no oscilloscope, no `AnalyserNode` and no `<canvas>` anywhere in the product. Everything that needs to be seen about the signal is seen here.
-
-**Constraints, play path:** per-stage RMS is computed inside the single audio worklet — it is already there, so the measurement is free — written into a pre-allocated `Float32Array` and posted at 30 Hz. The UI reads it in a `requestAnimationFrame` loop and writes CSS custom properties. Thirty messages a second carrying a few dozen bytes is negligible on both threads. Never per-sample, never a canvas redraw. **No `SharedArrayBuffer` and no cross-origin isolation** — the hosting cannot provide them and the cord does not need them.
-
-**Constraints, listen path:** on a pre-rendered preset page there is no audio graph at all. The per-stage RMS envelope is computed at build time, shipped as a small JSON file, and animated from `audio.currentTime`. Identical visual behaviour, zero JS engine.
-
-That symmetry is the point. The cord is the only element strictly identical on both load paths — it is what makes someone who listened to a preset page and then plugged in a guitar recognise the same product rather than two sites sharing a name.
-
-Under `prefers-reduced-motion` the cord holds a steady average instead of tracking transients.
-
-Everything else in the interface stays quiet so this can be the loud thing.
+On a pre-rendered preset page, the same illumination is driven by the RMS envelope computed at build time and animated from `audio.currentTime`, with no audio graph.
 
 ---
 
 ## 6. Components
 
-**Fader.** Vertical, 96px travel, 2px hairline in `--graphite`, cap is a 20 x 6px flat rectangle in `--ink`. Active fill above the cap in `--celadon`. Value appears in Plex Mono below the fader only while dragging, otherwise the label shows. Drag, scroll wheel, arrow keys, shift for fine, double-click to reset to preset default. Hit area is 40px wide regardless of visual width.
+**Knob.** A native `<input type="range">` under an SVG dial: keyboard, screen reader, vertical drag, a logarithmic taper for frequencies, an engineering-unit readout, double-click back to the preset's value. In the chain band it is the compact size, label beside it. Inside the head it takes the head's `--knob-accent`.
 
-**Module card.** `--bone`, module name in Anybody at the top left, bypass toggle at the top right. A bypassed module drops to 40% opacity and its segment of the cord routes straight past it.
+**Meters.** Two, input (peak, before the trim) and output (RMS). No peak-hold line, no printed scale. The clip colour is `--ember`.
 
-**Toggle and selector.** Segmented control, no rounded pills. Selected segment gets an `--ink` underline 2px, not a filled background. Filled backgrounds fight the calm.
+**Segmented control.** Selected segment gets an underline, not a filled background.
 
-**Latency badge.** Top right, always visible, Plex Mono. Under 20 ms it is `--graphite` and says nothing. Between 20 and 35 ms it stays `--graphite` but gains a subtle underline that opens an explanation on click. Over 35 ms it turns `--ember` and the explanation names the hardware cause — most often a guitar plugged into the laptop's mic input. It never nags, it never hides, and **it never blocks**.
+**Latency.** Top right, always visible, Plex Mono, a number and nothing more.
 
-**Tuner.** Full-screen sheet over `--chalk`. Note name in Anybody at 120px, cents deviation in Plex Mono at 44px, and a single horizontal hairline that shifts left and right of centre. In tune is `--celadon` and holds for 400ms so it registers. No strobe animation, no needle.
+**Mode tabs.** Display face, uppercase, the bar's full height; the chosen one in `--text`, the other in `--text-3`. One short lit line under the chosen mode glides to the other.
 
-**Tab reader.** One line of bars, laid out horizontally, sliding under a playhead fixed at the centre of the window. Nothing scrolls vertically: the next bar is always the one to the right. The score sits on paper, `#faf8f3`, the only light surface in the product other than a sheet — it is a sheet of music, and pretending otherwise would make it harder to read, not more coherent.
+**Transport.** One plate, laid out as a DAW. The row, left to right: the keys (stop, play, record), the display, *Practice* (loop, speed, the tab's tracks — shown once a tab is open), *Looper* (its state beside the name), *Levels* (named beside its icon in Play on a wide screen). The display is a window set into the plate, darker than it and faintly lit: the tab's name and title, the take's state and time at its right, then elapsed time, the position groove, the length, the bar and the tempo — or, with no tab, *Open a tab* and *Write a tab*. Under the row, the tracks: a name and a level per lane, the lanes recessed like the display, and at their right the export mode, listening, export and the track tools. One button style (`.tc-button`) throughout: a key cut into the plate, its edge drawn by light rather than a box, icons drawn in SVG. Play is the one round filled key; record is a round dark key with an ember lamp. The tab's track list and the levels are native popovers, anchored above their button where CSS anchoring exists.
 
-**The neck.** Under the tab, on the same paper: a flat fretboard for the track being read — its own string count, taken from the tuning, and always twenty-four frets so a position learnt on one score is in the same place on the next. Frets are **evenly spaced**, not spaced the way a real neck is. This is a reading aid, not a photograph: at true spacing the 24th fret is three millimetres wide. Thin `--graphite` lines, inlay dots barely above the paper, and the note being played lit in the same amber as the playhead — one light at a time per string, gone when the next note arrives. No wood, no fretwire, no shadow: the rule against skeuomorphism applies here most of all, because this is the one component that has a physical object behind it.
+**Tab reader.** One line of bars, laid out horizontally, sliding under a playhead fixed at the centre of the window. Nothing scrolls vertically. The paper is the only light surface.
 
-**Meters.** Two segments only, one for input and one for output, each 4px wide vertical bars in `--celadon` with an `--ember` cap on clip that holds for 1.5 s. No peak-hold lines, no numeric dB scale printed alongside.
+**The neck.** Under the tab, on the same paper: the track's own string count, always twenty-four evenly spaced frets, the sounding notes lit in the playhead's amber. No wood, no fretwire, no shadow.
+
+**Dialogs.** Tuner, metronome, settings and welcome share `.tc-dialog`: one frame, one close, one entrance.
 
 ---
 
 ## 7. Motion
 
-Motion is scarce and it is always functional.
+Motion is scarce and functional.
 
-- **Page load:** modules fade up in signal order, left to right, 40ms apart, 240ms each, `cubic-bezier(0.2, 0, 0, 1)`. It takes under 600ms total and it teaches the signal direction on the first visit without a word of copy.
-- **Sheets** slide up 16px and fade in over 200ms.
-- **Fader drags** are never animated. Direct manipulation must be 1:1 with the pointer.
-- **The cord** is the only continuous animation in the product.
-- **No hover animations on controls.** Hover changes the cursor and lifts the label to `--ink`. That is all.
+One curve, `--ease-out` (fast start, long settle), and two durations, `--dur-quick` for hover and `--dur-settle` for anything that arrives.
 
-Everything above respects `prefers-reduced-motion`, which disables the load sequence entirely and holds the cord steady.
+- **A change of mode** is the one authored moment: the stage's new occupant rises out of the dark (opacity, a few pixels, a hair of scale) and the bands' contents fade back as they take their new width. Width itself is never animated.
+- **Dialogs** rise 16 px and fade in over 200 ms.
+- **Popovers and menus** rise a few pixels as they fade in.
+- **Lamps** warm up: their glow is a layer whose opacity rises, never an animated shadow. A taking record lamp becomes a square and breathes; no key ever blinks.
+- **Knob drags** are never animated. Direct manipulation is 1:1 with the pointer.
+- **The glass** is the only continuous animation.
+- Only `transform` and `opacity` animate. Never `backdrop-filter`, an animated `filter` or an animated `box-shadow`.
+
+Everything respects `prefers-reduced-motion`.
 
 ---
 
 ## 8. Quality floor
 
-Not features, just the baseline the build has to clear.
-
-- Every control reachable and operable by keyboard, with a visible `--iris` focus ring at 2px offset 2px. Faders respond to arrow keys and announce their value.
-- All interactive targets at least 40px in the smaller dimension.
-- Contrast: `--ink` on `--chalk` is well past AA. `--graphite` is only ever used at 13px and above for non-essential text. `--celadon` is never used to carry information on its own, always paired with position or a label, because a red-green colour vision deficiency must not make the cord useless.
-- The UI thread never blocks the audio thread. Any component that cannot hold 30 fps gets simplified rather than optimised.
-- Empty and failure states are designed, not defaults. No input device found is a screen with one instruction and a link to demo mode, not an alert box.
+- Every control reachable and operable by keyboard, with a visible `--iris` focus ring.
+- Interactive targets at least 36 px in the smaller dimension.
+- Colour never carries information on its own: an active state also has a label, a lamp or a position.
+- The main thread never blocks more than 8 ms. A component that cannot hold 30 fps is simplified.
+- Empty and failure states are designed, not defaults.
 
 ---
 
 ## 9. Copy rules
 
-- Amps and presets are named for what they sound like, never after real gear. "Crimson Room", "Nylon", "Bright Hall", "Stack".
-- Every preset has exactly one lowercase description line, three to six words, no exclamation marks. "clean, wide, a little dark".
-- Buttons name the outcome: "Copy tone link", not "Share". The confirmation uses the same word: "Tone link copied".
-- Errors state the cause and the fix in one sentence each. "No audio input found. Connect an interface and reload."
-- Never use the words: immersive, powerful, seamless, unleash, unlock, craft as a verb. The product is called Tonecraft and it will not say the word twice.
+- Amps and presets are named for what they sound like, never after real gear.
+- Buttons name the outcome: "Copy tone link", not "Share".
+- Errors state the cause and the fix in one sentence each.
+- Never use the words: immersive, powerful, seamless, unleash, unlock, craft as a verb.

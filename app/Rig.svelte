@@ -1,27 +1,33 @@
 <script lang="ts">
   // Studio shell owns audio state; amplifier materials are scoped to its head.
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { Engine, EngineError, checkCabIR, readCatalog, type Meters, type Backend, type LoopMeters,
            type InputChannel, type InputDevice, type OutputDevice, type Source } from '../engine/engine.ts';
   import type { NativeOpened } from '../engine/native-host.ts';
   import { openInput } from '../engine/input.ts';
-  import { CABS, CUSTOM_CAB, DEFAULT_CAB } from '../engine/ir.ts';
+  import { CUSTOM_CAB, DEFAULT_CAB } from '../engine/ir.ts';
   import { detectPitch, noteFromFrequency, type PitchReading } from '../engine/tuner.ts';
   import { bpmFromFourTaps, Metronome, MIN_BPM, MAX_BPM } from '../engine/metronome.ts';
   import type { Capture } from '../engine/catalog.ts';
   import { PARAMS, STAGES, type Param } from '../schema/params.ts';
   import { PRESETS, DEFAULT_PRESET, type Preset } from './presets.ts';
-  import { loadSession, saveSession } from '../store/session.ts';
+  import { cleanToneName, loadTones, saveTones, type SavedTone } from '../store/tones.ts';
+  import { loadSession, saveSession, type StudioView } from '../store/session.ts';
   import { loadMedia, saveMedia } from '../store/media.ts';
-  import Knob from './Knob.svelte';
-  import Meter from './Meter.svelte';
   import Segmented from './Segmented.svelte';
   import Waveform from './Waveform.svelte';
   import Tuner from './Tuner.svelte';
   import MetronomePanel from './Metronome.svelte';
   import EngineSettings from './EngineSettings.svelte';
   import TabReader from './TabReader.svelte';
+  import { TabDeck } from './tab-deck.svelte.ts';
+  import { RecorderDeck } from './recorder-deck.svelte.ts';
   import Recorder from './Recorder.svelte';
+  import StudioBar from './StudioBar.svelte';
+  import ChainStrip from './ChainStrip.svelte';
+  import AmpHead from './AmpHead.svelte';
+  import Transport from './Transport.svelte';
+  import TabTransport from './TabTransport.svelte';
   import Tour, { type TourFigure, type TourStep } from './Tour.svelte';
   import type { Locale } from './i18n.ts';
   import { lang, engineMessage, failure } from './locale.svelte.ts';
@@ -30,6 +36,75 @@
   import './tokens.css';
 
   let mode = $state<'musician' | 'tester'>('musician');
+  /**
+   * The studio is one screen that never scrolls, and two uses want opposite
+   * things of it. The amp is dialled once at the start of a session and left
+   * alone; the tab is read for forty minutes with the guitar in hand. So the
+   * stage has two modes, switched from the bar: Tone gives it to the head,
+   * Play to the tab. The chain and the transport are in both.
+   */
+  let view = $state<StudioView>('tone');
+  /** A tester reads a page; only a musician gets the instrument's bands. */
+  const tester = $derived(mode === 'tester');
+  /**
+   * A screen tall enough for the chain band's knobs at full size, beside the
+   * head in Tone. In Play, and on anything shorter, the band stays compact so
+   * the stage keeps the height.
+   */
+  let tall = $state(false);
+  $effect(() => {
+    const query = window.matchMedia('(min-height: 900px)');
+    tall = query.matches;
+    const follow = (e: MediaQueryListEvent) => { tall = e.matches; };
+    query.addEventListener('change', follow);
+    return () => query.removeEventListener('change', follow);
+  });
+  /** A phone or a very short window: the page scrolls as a page, and nothing is fitted to the screen. */
+  let paged = $state(false);
+  $effect(() => {
+    const query = window.matchMedia('(max-width: 760px), (max-height: 560px)');
+    paged = query.matches;
+    const follow = (e: MediaQueryListEvent) => { paged = e.matches; };
+    query.addEventListener('change', follow);
+    return () => query.removeEventListener('change', follow);
+  });
+  function chooseView(next: StudioView): void {
+    if (next === view) return;
+    view = next;
+    persist();
+  }
+  /** The tab's playback, shared with the transport at the foot of the screen. */
+  const deck = new TabDeck();
+  /** The take, shared with the transport's record key; its tracks sit under the transport. */
+  const recorderDeck = new RecorderDeck();
+  /** The transport's height, tracks included, which the head's glass gives way to. */
+  let dockHeight = $state(76);
+  /**
+   * The head's scale. Its glass gives way first, down to what keeps the
+   * inscription whole; below that the whole head is drawn smaller rather than
+   * running under the transport. `zoom`, not a transform: it changes the box
+   * the stage lays out, and it opens no stacking context, so the tutorial can
+   * still lift a block of the head above its shade.
+   */
+  let slotHeight = $state(0);
+  let ampFrame = $state<HTMLElement | null>(null);
+  let ampZoom = $state(1);
+  /** Smaller than this and the knob labels stop being readable. */
+  const MIN_AMP_ZOOM = 0.72;
+  /** Air between the head's feet and the transport, so they never touch. */
+  const AMP_BREATH = 16;
+  $effect(() => {
+    const room = slotHeight;
+    // A scrolling page gives the slot the head's own height: fitting the head
+    // to it would shrink it step by step.
+    if (paged) { ampZoom = 1; return; }
+    if (room === 0 || ampFrame === null) return;
+    const current = untrack(() => ampZoom);
+    const natural = ampFrame.getBoundingClientRect().height / current;
+    if (natural === 0) return;
+    const next = Math.max(MIN_AMP_ZOOM, Math.min(1, (room - AMP_BREATH) / natural));
+    if (Math.abs(next - current) > 0.005) ampZoom = next;
+  });
   let settingsDialog = $state<HTMLDialogElement | null>(null);
   let detecting = $state(false);
   let settingsError = $state('');
@@ -366,6 +441,11 @@
     tutorial: '.tour-button',
   };
   let touring = $state(false);
+  /** A step that names the amp shows the amp; one that names the reader shows the tab. */
+  function tourStep(targets: readonly string[]): void {
+    if (targets.includes('.amp-head')) view = 'tone';
+    else if (targets.includes('.reader')) view = 'play';
+  }
   /** The composing step's task: a note written during this tutorial, not one left in a draft. */
   let wroteNote = $state(false);
   $effect(() => { if (!touring) wroteNote = false; });
@@ -480,13 +560,19 @@
   /** The cabinet IR the player loaded; one at a time, kept on their machine. */
   let customCab = $state<File | null>(null);
   let cabRevision = $state(0);
-  let cabFileInput = $state<HTMLInputElement>();
   const CAB_IR_MEDIA = 'cabinet-ir';
-  /** A select value that is an action, not a cabinet. */
-  const LOAD_CAB = 'load-ir';
   let preset = $state<string | null>(DEFAULT_PRESET);
   /** The preset double-click returns to; survives an edit, unlike `preset`. */
-  let resetPreset: string | null = DEFAULT_PRESET;
+  let resetPreset = $state<string | null>(DEFAULT_PRESET);
+  /** The player's own tones, after the factory ones in the same dropdown. */
+  let savedTones = $state<SavedTone[]>([]);
+  const SAVED_TONE = 'saved:';
+  const tones = $derived<readonly Preset[]>([
+    ...PRESETS,
+    ...savedTones.map((s) => ({
+      name: SAVED_TONE + s.id, label: s.name, pack: 'saved', capture: s.capture, cab: s.cab, values: s.values,
+    })),
+  ]);
 
   let devices = $state<InputDevice[]>([]);
   let deviceId = $state('');
@@ -556,7 +642,6 @@
   let frame = 0;
 
   const capture = $derived(captures.find((c) => c.file === captureFile) ?? null);
-  const cabInfo = $derived(CABS.find((c) => c.id === cab) ?? CABS[0]!);
   const level = (v: number): number => Math.min(1, Math.sqrt(Math.max(0, v)) * 1.6);
   const isGuilt = $derived(captureFile === PRESETS[0]?.capture);
   const ampIlluminated = $derived(engineState === 'running' && !poweredOff);
@@ -590,8 +675,8 @@
     Math.max(0, Math.min(1, 1 - (0.42 + light * 1.25) / VEIL_MAX_BRIGHTNESS)),
   );
   function nextPreset(direction: number) {
-    const index = PRESETS.findIndex(p => p.name === preset);
-    void applyPreset(PRESETS[(index + direction + PRESETS.length) % PRESETS.length]!);
+    const index = tones.findIndex(p => p.name === preset);
+    void applyPreset(tones[(index + direction + tones.length) % tones.length]!);
   }
 
   // --------------------------------------------------------------------------
@@ -608,19 +693,21 @@
       values, captureFile, cab, cabTouched, preset, resetPreset,
       // Tonecraft Engine keeps its own device configuration now; nothing to save here.
       deviceId, outputId, channel, backend, native: null,
-      source, takeId, fileLoop, metronomeBpm, metronomeVolume, metronomeSync, loopLevel,
+      source, takeId, fileLoop, metronomeBpm, metronomeVolume, metronomeSync, loopLevel, view,
     }));
   }
 
   async function restore(): Promise<void> {
-    const saved = await loadSession();
+    const [saved, kept] = await Promise.all([loadSession(), loadTones()]);
+    savedTones = kept;
     if (saved.values !== undefined) values = { ...DEFAULT_VALUES, ...saved.values };
     if (saved.resetPreset !== undefined) {
       resetPreset = saved.resetPreset;
-      const from = PRESETS.find((p) => p.name === resetPreset);
+      const from = tones.find((p) => p.name === resetPreset);
       resetValues = { ...DEFAULT_VALUES, ...(from?.values ?? {}) };
     }
-    if (saved.preset !== undefined) preset = saved.preset;
+    // A saved tone deleted from another tab is no longer what is playing.
+    if (saved.preset !== undefined) preset = tones.some((p) => p.name === saved.preset) ? saved.preset : null;
     if (saved.captureFile !== undefined) captureFile = saved.captureFile;
     if (saved.cab !== undefined) cab = saved.cab;
     customCab = await loadMedia(CAB_IR_MEDIA);
@@ -636,6 +723,7 @@
     if (saved.metronomeVolume !== undefined) metronomeVolume = saved.metronomeVolume;
     if (saved.metronomeSync !== undefined) metronomeSync = saved.metronomeSync;
     if (saved.loopLevel !== undefined) loopLevel = saved.loopLevel;
+    if (saved.view !== undefined) view = saved.view;
     // The tempo comes back ready, never playing: sound waits for a gesture.
     if (saved.metronomeBpm != null && saved.metronomeBpm >= MIN_BPM && saved.metronomeBpm <= MAX_BPM) {
       metronomeBpm = saved.metronomeBpm;
@@ -662,14 +750,45 @@
     // A preset may name a capture that is not installed.
     const wanted = captures.some((c) => c.file === p.capture) ? p.capture : captures[0]?.file;
     cabTouched = false;
-    cab = p.cab;
-    engine?.setCab(p.cab);
+    // A saved tone may name the loaded IR after it was replaced by nothing.
+    cab = p.cab === CUSTOM_CAB && customCab === null ? DEFAULT_CAB : p.cab;
+    engine?.setCab(cab);
     if (wanted !== undefined && wanted !== captureFile) {
       captureFile = wanted;
       await engine?.setCapture(wanted);
     }
     preset = p.name;
     persist();
+  }
+
+  /**
+   * Keeps what is playing under a name. The same name replaces that tone, so
+   * "save" after an edit updates the tone the player started from.
+   */
+  async function saveTone(raw: string): Promise<void> {
+    const name = cleanToneName(raw);
+    if (name === '') return;
+    const same = savedTones.find((s) => s.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+    const tone: SavedTone = {
+      id: same?.id ?? crypto.randomUUID(),
+      name, capture: captureFile, cab, values: $state.snapshot(values), savedAt: Date.now(),
+    };
+    const next = same !== undefined ? savedTones.map((s) => (s.id === tone.id ? tone : s)) : [...savedTones, tone];
+    savedTones = next;
+    preset = resetPreset = SAVED_TONE + tone.id;
+    resetValues = { ...DEFAULT_VALUES, ...tone.values };
+    persist();
+    notice = (await saveTones($state.snapshot(next))) ? null : t.rig.toneNotKept;
+  }
+
+  /** The sound stays as it is: deleting a tone never changes what is heard. */
+  async function deleteTone(key: string): Promise<void> {
+    const next = savedTones.filter((s) => SAVED_TONE + s.id !== key);
+    savedTones = next;
+    if (preset === key) preset = null;
+    if (resetPreset === key) resetPreset = null;
+    persist();
+    await saveTones($state.snapshot(next));
   }
 
   async function chooseCapture(file: string): Promise<void> {
@@ -707,7 +826,6 @@
   }
 
   function chooseCab(id: string): void {
-    if (id === LOAD_CAB) { cabFileInput?.click(); return; }
     cab = id;
     cabTouched = true;
     preset = null;
@@ -753,8 +871,6 @@
 
   const LOOP_KEY = 'l';
 
-  const loopAction = $derived(t.rig.loopAction[loop.state]);
-  const loopOn = $derived(loop.state !== 'empty');
 
   function loopPress(): void {
     if (engineState !== 'running') return;
@@ -1132,231 +1248,137 @@
 
 <svelte:window onkeydown={onWindowKey} />
 
-<div class="page">
-  <header class="bar">
-    <span class="t-wordmark">tonecraft</span>
+<!-- Two layouts, one studio. A musician gets the instrument: four fixed bands,
+     nothing scrolling. A tester arrived with no guitar to try any of it with, so
+     they get a page to read: the same bar, the same chain, the same head, the
+     demo and the reader under it, scrolling as a page does (CLAUDE.md §4). -->
+<div class="page" class:tester data-view={tester ? 'tone' : view} style:--dock={`${dockHeight}px`}>
+  <StudioBar view={tester ? 'tone' : view} onview={chooseView} {latencyMs} {latencyDetail} {touring} showTour={tester} showModes={!tester} settingsDisabled={engineState === 'starting'}
+    ontour={() => (touring = true)} onsettings={openSettings} />
 
-    <div class="bar-right">
-      {#if latencyMs !== null}
-        <!-- The round trip is on screen permanently (FR-35), as a number and
-             nothing more. It used to explain itself and turn red past 35 ms;
-             it does not, because most of what it named is the operating
-             system's buffering and saying so on every frame is nagging, not
-             informing. -->
-        <span class="latency" title={latencyDetail}>{latencyMs.toFixed(1)} ms</span>
-      {/if}
-      {#if mode === 'tester'}
-      <button class="tour-button" type="button" onclick={() => (touring = true)} disabled={touring}>{text.tour.open}</button>
-      {/if}
-      <button class="settings-button" type="button" aria-label={text.settings} title={text.settings} onclick={openSettings} disabled={engineState === 'starting'}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m9.5 3-.6 2.2-1.7 1L5 5.6 2.5 9.9l1.6 1.6v2L2.5 15 5 19.3l2.2-.6 1.7 1 .6 2.3h5l.6-2.3 1.7-1 2.2.6 2.5-4.3-1.6-1.5v-2l1.6-1.6L19 5.6l-2.2.6-1.7-1L14.5 3z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
-      </button>
-    </div>
-  </header>
+  <ChainStrip roomy={tall && view === 'tone' && !tester} inputPeak={meters.input} outputRms={meters.outputRms} {values} {resetValues} {captures} {captureFile} {cab} {customCab} {preset}
+    onparam={setParam} oncapture={f => void chooseCapture(f)} oncab={chooseCab} oncabfile={f => void loadCabFile(f)}
+    {tones} baseTone={resetPreset} onsavetone={saveTone} ondeletetone={deleteTone}
+    onpreset={name => { const p = tones.find(p => p.name === name); if (p) void applyPreset(p); }} onstep={nextPreset}
+    power={view === 'play' && !tester ? { on: ampIlluminated, busy: engineState === 'starting', disabled: engineState === 'starting' || detecting, onpress: () => void power() } : undefined} />
 
-  <main class="workspace">
-    <section class="global-controls" aria-label={t.rig.globalControls}>
-      <div class="io-control"><Meter level={meters.input} kind="peak" label={t.rig.meterIn} /><Knob param={param('in_trim')} value={values.in_trim!} resetValue={resetValues.in_trim} onchange={v => setParam('in_trim',v)} label={t.params.in_trim} /></div>
-      <div class="gate-control"><Knob param={param('gate_threshold')} value={values.gate_threshold!} resetValue={resetValues.gate_threshold} onchange={v => setParam('gate_threshold',v)} label={t.params.gate_threshold} /><button class="enable" aria-label={t.rig.gateEnabled} title={values.gate_bypass === 1 ? t.rig.gateOff : t.rig.gateOn} aria-pressed={values.gate_bypass !== 1} onclick={() => setParam('gate_bypass',values.gate_bypass === 1 ? 0 : 1)}><span></span></button></div>
-      <div class="rig-selectors">
-        <label class="selector"><span>{t.rig.amplifier}</span><select aria-label={t.rig.capture} value={captureFile} onchange={e => chooseCapture(e.currentTarget.value)}>{#each captures as c}<option value={c.file}>{c.file === PRESETS[0]?.capture ? 'GUILT · Lead' : c.name}</option>{/each}</select></label>
-        <label class="selector"><span>{t.rig.cabinet}</span><select aria-label={t.rig.cabinet} value={cab} onchange={e => { const id = e.currentTarget.value; e.currentTarget.value = cab; chooseCab(id); }}>{#each CABS as c}<option value={c.id}>{t.rig.cabs[c.id] ?? c.name}</option>{/each}{#if customCab !== null}<option value={CUSTOM_CAB}>IR · {customCab.name.replace(/\.[^.]+$/, '')}</option>{/if}<option value={LOAD_CAB}>{t.rig.loadIr}</option></select></label>
-        <input bind:this={cabFileInput} aria-label={t.rig.cabinetIrFile} type="file" accept=".wav,.aif,.aiff,.flac,audio/*" hidden onchange={e => { const f = e.currentTarget.files?.[0]; e.currentTarget.value = ''; if (f) void loadCabFile(f); }} />
-      </div>
-      <div class="tone-selector"><span class="eyebrow">{t.rig.tonePreset}</span><div class="preset-picker"><button aria-label={t.rig.previousPreset} onclick={() => nextPreset(-1)}>‹</button><select aria-label={t.rig.tonePreset} value={preset ?? ''} onchange={e => { const p = PRESETS.find(p => p.name === e.currentTarget.value); if(p) void applyPreset(p); }}><option value="" disabled>{t.rig.customTone}</option>{#each PRESETS as p}<option value={p.name}>{t.rig.presets[p.name] ?? p.name}</option>{/each}</select><button aria-label={t.rig.nextPreset} onclick={() => nextPreset(1)}>›</button></div></div>
-      <div class="io-control output-control"><Knob param={param('out_master')} value={values.out_master!} resetValue={resetValues.out_master} onchange={v => setParam('out_master',v)} label={t.params.out_master} /><Meter level={meters.outputRms} label={t.rig.meterOut} /></div>
-    </section>
-
-    <section class="amp-head" class:guilt={isGuilt} class:illuminated={isGuilt && ampIlluminated} class:bypassed={poweredOff} aria-label={isGuilt ? t.rig.guiltAmp : t.rig.neutralAmp}>
-      {#if isGuilt}
-        <div class="guilt-handle" aria-hidden="true"><span></span></div>
-        <div class="guilt-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-        <!-- Static image filters; only the glow layer's opacity follows the meters. -->
-        <svg class="glass-filters" width="0" height="0" aria-hidden="true" focusable="false">
-          <defs>
-            <filter id="guilt-glass-relief" color-interpolation-filters="sRGB">
-              <feColorMatrix type="saturate" values="0" />
-              <feGaussianBlur stdDeviation="0.45" />
-              <feConvolveMatrix order="3" kernelMatrix="-1 -1 0 -1 0 1 0 1 1" divisor="2" bias="0.5" preserveAlpha="true" result="bevel" />
-              <feBlend in="bevel" in2="SourceGraphic" mode="soft-light" />
-            </filter>
-            <filter id="guilt-glass-bloom" x="-5%" y="-10%" width="110%" height="120%" color-interpolation-filters="sRGB">
-              <feComponentTransfer>
-                <feFuncR type="linear" slope="2.4" intercept="-0.35" />
-                <feFuncG type="linear" slope="2.4" intercept="-0.35" />
-                <feFuncB type="linear" slope="2.4" intercept="-0.35" />
-              </feComponentTransfer>
-              <feGaussianBlur stdDeviation="3" result="nearGlow" />
-              <feGaussianBlur stdDeviation="8" />
-              <feBlend in2="nearGlow" mode="screen" />
-            </filter>
-          </defs>
-        </svg>
-      {/if}
-      <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
-      <div class="glass-window">
-        {#if isGuilt}<img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt={t.rig.glassAlt} width="2172" height="724" decoding="async" /><div class="veil" style={`opacity:${veil}`}></div>{:else}<div class="neutral-art"><span>TC</span><small>AMPLIFICATION</small></div>{/if}
-        {#if isGuilt}
-          <div class="glass-bloom-power" aria-hidden="true">
-            <div class="glass-glow" style={`opacity:${0.28 + light * 0.44}`}>
-              <img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt="" width="2172" height="724" decoding="async" />
-            </div>
-          </div>
-        {/if}
-        {#if isGuilt}
-          <div class="glass-reflections" aria-hidden="true"></div>
-          <div class="glass-night" aria-hidden="true"></div>
-        {/if}
-        <div class="amp-brand"><span class="brand-rule"></span><h1>{isGuilt ? 'GUILT' : 'TONECRAFT'}</h1><span class="brand-rule"></span><p>{isGuilt ? 'LUX EX SONO' : t.rig.neutralMotto}</p></div>
-      </div>
-      <div class="amp-panel">
-        <div class="amp-signature"><svg class="sig-symbol" width="30" height="30" viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><circle cx="15" cy="15" r="13.5"/><path d="M15 3.8a5.6 5.6 0 0 1 0 11.2 5.6 5.6 0 0 1 0-11.2ZM15 15a5.6 5.6 0 0 1 0 11.2A5.6 5.6 0 0 1 15 15ZM3.8 15a5.6 5.6 0 0 1 11.2 0 5.6 5.6 0 0 1-11.2 0ZM15 15a5.6 5.6 0 0 1 11.2 0A5.6 5.6 0 0 1 15 15Z"/><circle cx="15" cy="15" r="2"/></svg><span>{isGuilt ? 'Guilt' : 'Tonecraft'}</span><small>{isGuilt ? t.rig.leadAmplifier : t.rig.captureSeries}</small></div>
-        <div class="control-group tone-group"><button class="group-label" aria-label={t.rig.groupEnabled.tone} aria-pressed={values.tone_bypass !== 1} onclick={() => setParam('tone_bypass',values.tone_bypass === 1 ? 0 : 1)}>{t.rig.groups.tone.toUpperCase()} <span>{values.tone_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['tone_bass','tone_mid','tone_treble','tone_presence'] as id}<Knob param={param(id)} label={t.params[id]} value={values[id]!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
-        <div class="control-group"><button class="group-label" aria-label={t.rig.groupEnabled.pitch} aria-pressed={values.pitch_bypass !== 1} onclick={() => setParam('pitch_bypass',values.pitch_bypass === 1 ? 0 : 1)}>{t.rig.groups.pitch.toUpperCase()} <span>{values.pitch_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['pitch_shift','pitch_mix'] as id}<Knob param={param(id)} label={t.params[id]} value={values[id]!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
-        <div class="control-group"><button class="group-label" aria-label={t.rig.groupEnabled.boost} aria-pressed={values.drive_bypass !== 1} onclick={() => setParam('drive_bypass',values.drive_bypass === 1 ? 0 : 1)}>{t.rig.groups.boost.toUpperCase()} <span>{values.drive_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row">{#each ['drive_gain','drive_tone'] as id}<Knob param={param(id)} label={t.params[id]} value={values[id]!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues[id]} onchange={v => setParam(id,v)} />{/each}</div></div>
-        <div class="control-group"><button class="group-label" aria-label={t.rig.groupEnabled.reverb} aria-pressed={values.reverb_bypass !== 1} onclick={() => setParam('reverb_bypass',values.reverb_bypass === 1 ? 0 : 1)}>{t.rig.groups.reverb.toUpperCase()} <span>{values.reverb_bypass === 1 ? '○' : '●'}</span></button><div class="knob-row"><Knob param={param('reverb_mix')} label={t.params.reverb_mix} value={values.reverb_mix!} powered={isGuilt ? ampIlluminated : undefined} resetValue={resetValues.reverb_mix} onchange={v => setParam('reverb_mix',v)} /></div></div>
-        <button class="power-indicator" type="button" aria-label={t.rig.amplifierPower} aria-pressed={ampIlluminated} aria-busy={engineState === 'starting'} disabled={engineState === 'starting' || detecting} onclick={power}>
-          {#if isGuilt}
-            <span class="power-rocker" class:lit={ampIlluminated} aria-hidden="true">
-              <span class="rocker-face"><span class="rocker-on">I</span><span class="rocker-lamp"></span><span class="rocker-off">O</span></span>
-            </span>
-          {:else}
-            <span class:lit={ampIlluminated}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></svg></span>
-          {/if}
-          <small>{t.rig.power.toUpperCase()}</small>
-        </button>
-      </div>
-    </section>
-    <div class="amp-foot"><span></span><span></span></div>
+  <main class="stage">
     <div class="capture-info" data-capture={latencyMs === null ? 'idle' : captureLoaded ? 'loaded' : 'silent'}></div>
-    {#if engineState === 'running' && !captureLoaded}<p class="alert">{t.rig.captureSilent}</p>{/if}
-    <p class="notice" role="status">{notice ?? ''}</p>
-    {#if engineLatest !== null && backend === 'native'}
-      <div class="engine-update" role="status">
-        <span>{t.rig.engineUpdate(engineLatest.latest, engineLatest.current)}</span>
-        <a class="update-button" href={engineDownload} rel="noopener">{t.rig.updateEngine}</a>
+    <!-- Over the top of the stage, so a message never moves what is under it. -->
+    <div class="messages">
+      {#if engineState === 'running' && !captureLoaded}<p class="alert">{t.rig.captureSilent}</p>{/if}
+      <p class="notice" role="status">{notice ?? ''}</p>
+      {#if engineLatest !== null && backend === 'native'}
+        <div class="engine-update" role="status">
+          <span>{t.rig.engineUpdate(engineLatest.latest, engineLatest.current)}</span>
+          <a class="update-button" href={engineDownload} rel="noopener">{t.rig.updateEngine}</a>
+        </div>
+      {/if}
+    </div>
+
+    {#if tester || view === 'tone'}
+      <div class="amp-slot" bind:clientHeight={slotHeight}>
+        <!-- The room's light: violet from behind the head, brighter as it plays.
+             One static gradient; only its opacity follows the signal. -->
+        <div class="room-light" aria-hidden="true" style:opacity={ampIlluminated ? 0.55 + light * 0.45 : 0.25}></div>
+        <div class="amp-frame" bind:this={ampFrame} style:zoom={ampZoom === 1 || tester ? null : ampZoom}>
+          <AmpHead {isGuilt} {ampIlluminated} {poweredOff} {light} {veil} {values} {resetValues}
+            powerBusy={engineState === 'starting'} powerDisabled={engineState === 'starting' || detecting}
+            onparam={setParam} onpower={() => void power()} />
+        </div>
       </div>
     {/if}
-    <div class="rack">
-    {#if mode === 'tester'}
-      <section class="demo-panel" aria-label={t.rig.demo}>
-        {#if !demoOpen}
-          <button class="demo-launch" type="button" disabled={engineState === 'starting'} onclick={() => void openDemo()}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3" /><rect x="3" y="14" width="4" height="7" rx="1.5" /><rect x="17" y="14" width="4" height="7" rx="1.5" /></svg>
-            <span>{t.rig.listenDemo}</span>
-            <span class="demo-play" aria-hidden="true">▶</span>
-          </button>
-        {:else if filePeaks !== null}
-          <div class="file">
-            <Waveform peaks={filePeaks} duration={fileDuration} position={filePosition} onseek={seek} />
-            <div class="transport">
-              <button class="start small" type="button" onclick={() => (filePlaying ? pause() : play())}>
-                {filePlaying ? t.rig.pause : t.rig.play}
-              </button>
-              <label class="check t-small">
-                <input
-                  type="checkbox"
-                  checked={fileLoop}
-                  onchange={(e) => { fileLoop = e.currentTarget.checked; engine?.setLoop(fileLoop); persist(); }}
-                /> {t.rig.loop}
-              </label>
-              <span class="t-small name">{fileName === DEMO_NAME ? t.rig.demoName : fileName}</span>
-            </div>
-          </div>
-        {/if}
-      </section>
-    {/if}
-    {#if mode === 'musician'}
-      <section class="session-bar" aria-label={t.rig.audioSession}>
-        <!-- The looper. It records what leaves the rig, so a part stays as it
-             was played while the capture, the preset and the boost move on
-             under it. One button does rec, stop and overdub, as a pedal does,
-             because both hands are on the guitar; the other one is power. -->
-        <div class="looper" aria-label={t.rig.looper}>
-          <span class="eyebrow">{t.rig.looper}</span>
-          <span class="loop-status" data-state={loop.state}><span class="loop-dot"></span>{t.rig.loopStatus[loop.state]}</span>
-          <button
-            class="loop-main"
-            type="button"
-            data-state={loop.state}
-            disabled={engineState !== 'running'}
-            title={engineState === 'running' ? `${loopAction} (L)` : t.rig.loopNeedsEngine}
-            onclick={loopPress}
-          >{loopAction}</button>
-          <button
-            class="loop-power"
-            type="button"
-            aria-label={t.rig.looperOff}
-            title={t.rig.looperOffTitle}
-            aria-pressed={loopOn}
-            disabled={engineState !== 'running' || !loopOn}
-            onclick={loopPower}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8 1.8v5.6M4.4 4a5 5 0 1 0 7.2 0" /></svg>
-          </button>
-          <label class="loop-level">
-            <span class="eyebrow">{t.rig.level}</span>
-            <input type="range" min="0" max="1" step="0.01" value={loopLevel} aria-label={t.rig.loopLevel} oninput={(e) => setLoopLevel(Number(e.currentTarget.value))} />
-          </label>
+    {#if tester}
+      <!-- The demo and the reader, one under the other, each on its own plate:
+           there is no transport to hold them, and nothing here is played by
+           hand — the tab keeps the transport's own row above it. -->
+      <section class="demo-panel tc-plate" aria-label={t.rig.demo}>{@render demoPanel()}</section>
+      <section class="tab-column tc-plate">
+        <!-- Only once a score is open: with none, the reader's own header is
+             already where a tab is opened, and two invitations is one too many. -->
+        {#if deck.loaded}<div class="tab-row"><TabTransport {deck} view="play" syncBpm={metronomeSync ? metronomeBpm : null} /></div>{/if}
+        <div class="tab-stage">
+          <TabReader {deck} ontempo={takeScoreTempo} syncBpm={metronomeSync ? metronomeBpm : null} onsyncstart={syncTabStart} onwrite={() => { if (touring) wroteNote = true; }} />
         </div>
       </section>
+    {:else}
+      <!-- Mounted in both views, and only stowed in Tone: a song keeps playing
+           under a tone being dialled, and alphaTab keeps a width to lay out in. -->
+      <div class="tab-stage tc-plate" class:stowed={view !== 'play'} inert={view !== 'play'}>
+        <TabReader {deck} ontempo={takeScoreTempo} onopen={() => chooseView('play')} syncBpm={metronomeSync ? metronomeBpm : null} onsyncstart={syncTabStart} onwrite={() => { if (touring) wroteNote = true; }} />
+      </div>
     {/if}
 
-    {#if mode === 'musician'}
-      <Recorder engine={engineState === 'running' ? engine : null} sinkId={engine?.outputId ?? outputId}
-        tone={{ values, capture: captures.find(c => c.file === captureFile) ?? null, cab, cabRevision }} />
-    {/if}
-    <TabReader ontempo={takeScoreTempo} syncBpm={metronomeSync ? metronomeBpm : null} onsyncstart={syncTabStart} onwrite={() => { if (touring) wroteNote = true; }} />
-    </div>
   </main>
 
-  {#if mode === 'musician'}
-    <button
-      class="tuner-launch"
-      type="button"
-      aria-label={t.rig.openTuner}
-      title={t.rig.tuner}
-      aria-busy={tunerOpening}
-      disabled={engineState === 'starting' || tunerOpening}
-      onclick={() => void openTuner()}
-    >
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
-        <path d="M7 3v7a5 5 0 0 0 10 0V3M7 6h3M14 6h3M12 15v6M9.5 21h5" />
-      </svg>
-    </button>
-    <Tuner bind:element={tunerDialog} reading={tunerReading} onclose={() => void onTunerClosed()} />
+  {#snippet takeTracks()}
+    <Recorder deck={recorderDeck} engine={engineState === 'running' ? engine : null} sinkId={engine?.outputId ?? outputId}
+      tone={{ values, capture: captures.find(c => c.file === captureFile) ?? null, cab, cabRevision }} />
+  {/snippet}
+
+  {#snippet demoPanel()}
+    {#if !demoOpen}
+      <button class="demo-launch" type="button" disabled={engineState === 'starting'} onclick={() => void openDemo()}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3" /><rect x="3" y="14" width="4" height="7" rx="1.5" /><rect x="17" y="14" width="4" height="7" rx="1.5" /></svg>
+        <span>{t.rig.listenDemo}</span>
+        <span class="demo-play" aria-hidden="true">▶</span>
+      </button>
+    {:else if filePeaks !== null}
+      <div class="file">
+        <Waveform peaks={filePeaks} duration={fileDuration} position={filePosition} onseek={seek} />
+        <div class="demo-transport">
+          <button class="start small" type="button" onclick={() => (filePlaying ? pause() : play())}>
+            {filePlaying ? t.rig.pause : t.rig.play}
+          </button>
+          <label class="check t-small">
+            <input
+              type="checkbox"
+              checked={fileLoop}
+              onchange={(e) => { fileLoop = e.currentTarget.checked; engine?.setLoop(fileLoop); persist(); }}
+            /> {t.rig.loop}
+          </label>
+          <span class="t-small name">{fileName === DEMO_NAME ? t.rig.demoName : fileName}</span>
+        </div>
+      </div>
+    {/if}
+  {/snippet}
+
+  {#if !tester}
+  <Transport {deck} recorder={recorderDeck} {view} syncBpm={metronomeSync ? metronomeBpm : null}
+    musician={mode === 'musician'} running={engineState === 'running'} tracks={mode === 'musician' ? takeTracks : undefined} bind:height={dockHeight}
+    {loop} {loopLevel} demo={mode === 'tester' ? demoPanel : undefined}
+    onlooppress={loopPress} onlooppower={loopPower} onlooplevel={setLoopLevel} />
   {/if}
 
-  <button
-    class="metronome-toggle"
-    class:active={metronomePlaying}
-    type="button"
-    aria-label={metronomePlaying ? t.rig.pauseMetronome : t.rig.startMetronome}
-    title={metronomeBpm === null ? t.rig.setTempoFirst : metronomePlaying ? t.rig.pauseMetronome : t.rig.startMetronome}
-    aria-pressed={metronomePlaying}
-    disabled={metronomeBpm === null || metronomeOpening}
-    onclick={() => void toggleMetronome()}
-  >
-    {#if metronomePlaying}
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3" y="2.5" width="3.5" height="11" rx=".5"/><rect x="9.5" y="2.5" width="3.5" height="11" rx=".5"/></svg>
-    {:else}
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5 13 8l-9 5.5z"/></svg>
-    {/if}
-  </button>
-  <button
-    class="metronome-launch"
-    type="button"
-    aria-label={t.rig.openMetronome}
-    title={metronomeBpm === null ? t.rig.metronome : `${t.rig.metronome} · ${metronomeBpm} BPM`}
-    aria-busy={metronomeOpening}
-    disabled={metronomeOpening}
-    onclick={() => void openMetronome()}
-  >
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M8 20h8M9 20l2-16h2l2 16M12 7l4 5M16 12l1.5-1.5" />
-    </svg>
-    {#key metronomeGlow}{#if metronomeGlow > 0}<span class="metronome-glow" aria-hidden="true"></span>{/if}{/key}
-  </button>
+  <!-- The tuner and the metronome float in the room's bottom corners, drawn as
+       the settings are at the top: always in the same place, whatever the mode. -->
+  {#if mode === 'musician'}
+    <button class="launcher tuner-launch" type="button" aria-label={t.rig.openTuner} title={t.rig.tuner} aria-busy={tunerOpening}
+      disabled={engineState === 'starting' || tunerOpening} onclick={() => void openTuner()}>
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" aria-hidden="true"><path d="M7 3v7a5 5 0 0 0 10 0V3M7 6h3M14 6h3M12 15v6M9.5 21h5" /></svg>
+    </button>
+  {/if}
+  <div class="launcher-group metronome">
+    <button class="metronome-toggle" type="button"
+      aria-label={metronomePlaying ? t.rig.pauseMetronome : t.rig.startMetronome}
+      title={metronomeBpm === null ? t.rig.setTempoFirst : metronomePlaying ? t.rig.pauseMetronome : t.rig.startMetronome}
+      aria-pressed={metronomePlaying} disabled={metronomeBpm === null || metronomeOpening} onclick={() => void toggleMetronome()}>
+      {#if metronomePlaying}
+        <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3" y="2.5" width="3.5" height="11" rx=".5"/><rect x="9.5" y="2.5" width="3.5" height="11" rx=".5"/></svg>
+      {:else}
+        <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5 13 8l-9 5.5z"/></svg>
+      {/if}
+      {#if metronomeBpm !== null}<span class="bpm">{metronomeBpm}</span>{/if}
+    </button>
+    <button class="launcher metronome-launch" type="button" aria-label={t.rig.openMetronome}
+      title={metronomeBpm === null ? t.rig.metronome : `${t.rig.metronome} · ${metronomeBpm} BPM`}
+      aria-busy={metronomeOpening} disabled={metronomeOpening} onclick={() => void openMetronome()}>
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 20h8M9 20l2-16h2l2 16M12 7l4 5M16 12l1.5-1.5" /></svg>
+      {#key metronomeGlow}{#if metronomeGlow > 0}<span class="metronome-glow" aria-hidden="true"></span>{/if}{/key}
+    </button>
+  </div>
+
+  {#if mode === 'musician'}<Tuner bind:element={tunerDialog} reading={tunerReading} onclose={() => void onTunerClosed()} />{/if}
   <MetronomePanel
     bind:element={metronomeDialog}
     value={metronomeValue}
@@ -1399,8 +1421,6 @@
   </dialog>
 
   <dialog class="tc-dialog welcome" bind:this={welcomeDialog} aria-labelledby="welcome-title" oncancel={() => (asking = false)}>
-    <!-- The glass the amp is lit with: the first screen already wears it. -->
-    <div class="welcome-glass" aria-hidden="true"><img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt="" width="2172" height="724" decoding="async" /></div>
     <div class="welcome-body">
       <!-- Focus lands on the title, not on the first card: a ring on a choice
            nobody has made yet reads as a choice already made. -->
@@ -1435,7 +1455,7 @@
     <button class="tc-close" type="button" aria-label={text.welcome.explore} title={text.welcome.explore} onclick={() => (asking = false)}><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" /></svg></button>
   </dialog>
 
-  {#if touring}<Tour steps={testerTour} terms={TOUR_TERMS} labels={text.tour} onclose={() => (touring = false)} />{/if}
+  {#if touring}<Tour steps={testerTour} terms={TOUR_TERMS} labels={text.tour} onstep={tourStep} onclose={() => (touring = false)} />{/if}
 </div>
 
 <style>
@@ -1454,26 +1474,209 @@
   :global(button:focus-visible) { outline: 2px solid var(--iris); outline-offset: 4px; }
   :global(input[type='range']) { accent-color: var(--violet-300); }
 
+  /* An instrument, not a page: one screen, four full-width bands, and nothing
+     scrolls or reflows. The stage takes whatever height the bar, the chain and
+     the transport leave; what opens rises over it rather than pushing it.
+     Nothing here opens a stacking context either, so the tutorial can still
+     lift a window above its shade by z-index alone. */
   .page {
+    /* The room at each side of the bands: the gutter, and the floating tuner
+       and metronome standing in it. The bar spans it; nothing else does. */
+    --side: calc(var(--gutter) + 74px);
+    display: grid;
+    grid-template-rows: var(--bar-height) auto minmax(0, 1fr) auto;
+    /* One column no wider than the window: a laid-out score is kilometres of
+       min-content, and an auto column would take all of it. */
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--gutter);
+    height: 100dvh;
+    padding: 0 var(--side) var(--gutter);
+    box-sizing: border-box;
+    overflow: hidden;
+    /* Labels are engravings, not prose: a knob dragged past its edge or
+       double-clicked back to its preset value would otherwise paint a
+       selection across the head. */
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  /* What a player may want to paste somewhere (a message to search, a
+     program name to find) stays selectable, and so does what they type. */
+  .page :global(:is([role='alert'], [role='status'], .alert, code, input, textarea, [contenteditable])) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  /* In Tone the bands are the head's own column: one object, as the amp is.
+     In Play they open to the tab's width. */
+  .page > :global(.global-controls), .page > :global(.transport) { justify-self: center; width: min(100%, var(--column)); }
+  [data-view='play'] > :global(.global-controls), [data-view='play'] > :global(.transport) { width: 100%; }
+  /* The bar reaches the window's edges in both modes, so the name and the
+     settings never move. */
+  .page > :global(.bar) { margin-inline: calc(var(--gutter) - var(--side)); }
+
+  /* The corner launchers: bare icons, no tile. A tile would read as a button
+     of the shell, and these are tools standing in the room; the only thing
+     that answers the pointer is the icon dimming. A dot under one says it is
+     on. The 44px box stays for the pointer and for focus, the icon inside it
+     is what is seen. */
+  .launcher, .metronome-toggle {
+    position: fixed;
+    bottom: var(--gutter);
+    z-index: 4;
+    display: grid;
+    place-items: center;
+    width: 66px;
+    height: 66px;
+    padding: 0;
+    border: 0;
+    border-radius: 9px;
+    background: none;
+    color: var(--text);
+    cursor: pointer;
+    transition: color var(--dur-quick) ease-out;
+  }
+  .launcher:hover:not(:disabled), .metronome-toggle:hover:not(:disabled) { color: var(--text-2); }
+  .launcher:active:not(:disabled), .metronome-toggle:active:not(:disabled) { color: var(--text-3); }
+  .launcher:disabled, .metronome-toggle:disabled { color: var(--text-3); opacity: .55; cursor: default; }
+  .launcher::after, .metronome-toggle::after {
+    content: '';
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    width: 4px;
+    height: 4px;
+    margin-left: -2px;
+    border-radius: 50%;
+    background: var(--violet-100);
+    opacity: 0;
+    transition: opacity var(--dur-settle) var(--ease-out);
+  }
+  .launcher[aria-busy='true']::after, .metronome-toggle[aria-pressed='true']::after { opacity: 1; }
+  .tuner-launch { left: calc((var(--side) - 66px) / 2); }
+  .metronome-launch { right: calc((var(--side) - 66px) / 2); }
+  /* The metronome's start and tempo, above its launcher: the corner is one
+     icon wide. */
+  .metronome-toggle {
+    right: calc((var(--side) - 66px) / 2);
+    bottom: calc(var(--gutter) + 60px);
     display: flex;
     flex-direction: column;
-    max-width: 1600px;
-    min-height: 100svh;
-    margin: auto;
-    /* Room under the column: the tuner and metronome launchers are fixed to the
-       foot of the screen and would otherwise sit on the last row, and the tour
-       needs the page to scroll far enough to put a window at the top. */
-    padding: 0 48px 96px;
-    box-sizing: border-box;
+    justify-content: center;
+    gap: 3px;
+    height: 62px;
+    font: 12px/1 var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .metronome-toggle[aria-pressed='true'] { color: var(--violet-50); }
+  .metronome-toggle[aria-pressed='true']:hover:not(:disabled) { color: var(--violet-100); }
+  /* Glowing, above whatever the tab has open. */
+  .metronome-launch:has(.metronome-glow) { z-index: 60; }
+  /* A phone: no side room, the tiles sit in the corner side by side. */
+  @media (max-width: 760px) {
+    .tuner-launch { left: var(--gutter); }
+    .metronome-launch { right: var(--gutter); }
+    .metronome-toggle { right: calc(var(--gutter) + 70px); bottom: var(--gutter); height: 66px; }
+  }
+  /* A score set the tempo: the metronome glows three times, a soft light
+     under it rather than rings leaving it. Opacity only. */
+  .metronome-glow {
+    position: absolute;
+    inset: -14px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #d8c2dd59 0%, #a38aa926 40%, transparent 70%);
+    pointer-events: none;
+    opacity: 0;
+    animation: metronome-lit 2.7s ease-in-out forwards;
+  }
+  @keyframes metronome-lit {
+    0%, 100% { opacity: 0; }
+    15%, 48%, 81% { opacity: 1; }
+    33%, 66% { opacity: .25; }
+  }
+  @keyframes metronome-once { 0%, 100% { opacity: 0; } 30% { opacity: .8; } }
+  @media (prefers-reduced-motion: reduce) {
+    .launcher, .metronome-toggle { transition: none; }
+    .metronome-glow { animation-duration: 1.2s; animation-name: metronome-once; }
   }
 
-  .bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 88px; }
-  .t-wordmark { font-size: 14px; font-weight: 400; font-stretch: 125%; letter-spacing: 0.36em; color: var(--text); }
-  .bar-right { display: flex; align-items: center; gap: 16px; }
-  .latency { font: 12px var(--mono); font-variant-numeric: tabular-nums; color: var(--text-3); }
+  /* A change of mode is one authored moment: the bands settle into their new
+     width (their contents fade back rather than being dragged there), and the
+     stage's new occupant rises out of the dark. Opacity and transform only.
+     Two keyframe names, one per view, so the animation restarts on each change. */
+  [data-view='tone'] > :global(.global-controls), [data-view='tone'] > :global(.transport) { animation: band-tone var(--dur-settle) var(--ease-out); }
+  [data-view='play'] > :global(.global-controls), [data-view='play'] > :global(.transport) { animation: band-play var(--dur-settle) var(--ease-out); }
+  @keyframes band-tone { from { opacity: .3; } }
+  @keyframes band-play { from { opacity: .3; } }
+  .amp-slot { animation: stage-in 700ms var(--ease-out); }
+  .tab-stage:not(.stowed) { animation: stage-in var(--dur-settle) var(--ease-out); }
+  @keyframes stage-in { from { opacity: 0; transform: translateY(10px) scale(.985); } }
+  @media (prefers-reduced-motion: reduce) {
+    .page > :global(.global-controls), .page > :global(.transport), .amp-slot, .tab-stage:not(.stowed) { animation-duration: 1ms; }
+  }
+
+  /* The stage belongs to one mode at a time. Tone: the head in the middle of
+     it. Play: the tab, edge to edge. */
+  .stage { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  /* The slot is the stage's height whatever the head measures: the head is
+     scaled to it, never the other way round. */
+  .amp-slot { position: relative; display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
+  .amp-frame { position: relative; display: flex; justify-content: center; width: 100%; }
+  .amp-frame > :global(.amp-stand) { position: relative; }
+  .room-light {
+    position: absolute;
+    inset: -16px calc(-1 * var(--gutter));
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse 46% 42% at 50% 44%, #7b3fa044, transparent 72%),
+      radial-gradient(ellipse 30% 6% at 50% 96%, #000c, transparent 70%);
+    will-change: opacity;
+    transition: opacity 150ms linear;
+  }
+  @media (prefers-reduced-motion: reduce) { .room-light { transition: none; } }
+  .tab-stage { flex: 1; min-height: 0; overflow: hidden; }
+
+  /* The tester's page. The bands keep their material and their contents; only
+     the frame changes: the window stops being fixed, the stage stops being
+     fitted to it, and the plates stack down a column that scrolls. */
+  .page.tester {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+    padding-bottom: calc(var(--gutter) + 66px);
+  }
+  .page.tester .stage { display: flex; flex: none; flex-direction: column; gap: var(--gutter); }
+  .page.tester .amp-slot { flex: none; padding: calc(var(--u) * 3) 0 calc(var(--u) * 5); }
+  .page.tester .demo-panel { padding: 18px 20px; }
+  .page.tester .tab-column { display: flex; flex-direction: column; overflow: hidden; }
+  .page.tester .tab-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: var(--transport-height);
+    padding: 0 16px;
+    border-bottom: 1px solid #050407;
+    box-shadow: 0 1px 0 #ffffff0a;
+  }
+  /* The reader fills the slot rather than sitting at the top of it: the
+     tutorial lights this box, and an empty state floating in a tall dark
+     rectangle reads as a bug. */
+  /* A firm height, not a minimum: the reader asks for 100% of its slot, and a
+     slot that only has a minimum is still auto to a percentage. */
+  .page.tester .tab-stage { display: flex; flex: none; height: 520px; overflow: hidden; }
+  .page.tester .tab-stage > :global(.reader) { flex: 1; min-height: 0; }
+  /* On a phone the page is already scrolling: the reader grows with its neck
+     rather than clipping it inside a fixed box. */
+  @media (max-width: 760px) {
+    .page.tester .tab-stage { display: block; height: auto; min-height: 520px; overflow: visible; }
+    .page.tester .tab-stage > :global(.reader) { height: auto; }
+  }
+
+  /* Stowed, it keeps its box, so alphaTab never lays out into zero width. */
+  .tab-stage.stowed { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
 
   /* The one eyebrow. Every module name and control label in the studio. */
-  .eyebrow, .selector > span {
+  .eyebrow {
     font: 400 10px/1 var(--display);
     font-stretch: 125%;
     letter-spacing: 0.16em;
@@ -1482,7 +1685,7 @@
   }
 
   /* Buttons, three weights: primary (one per module), secondary, quiet. */
-  .secondary, .start, .loop-main {
+  .secondary, .start {
     min-height: 36px;
     padding: 0 16px;
     border: 1px solid var(--line-strong);
@@ -1492,8 +1695,8 @@
     font: 13px var(--body);
     cursor: pointer;
   }
-  .secondary:hover:not(:disabled), .start:hover:not(:disabled), .loop-main:hover:not(:disabled) { border-color: var(--violet-500); background: #29252f; }
-  .connect, .update-button, .tour-button {
+  .secondary:hover:not(:disabled), .start:hover:not(:disabled) { border-color: var(--violet-500); background: #29252f; }
+  .connect, .update-button {
     min-height: 38px;
     padding: 0 20px;
     border: 1px solid var(--violet-500);
@@ -1507,8 +1710,8 @@
     align-items: center;
     white-space: nowrap;
   }
-  .connect:hover:not(:disabled), .update-button:hover, .tour-button:hover:not(:disabled) { background: var(--action-hover); }
-  .secondary:disabled, .start:disabled, .loop-main:disabled, .connect:disabled, .tour-button:disabled { opacity: .45; cursor: default; }
+  .connect:hover:not(:disabled), .update-button:hover { background: var(--action-hover); }
+  .secondary:disabled, .start:disabled, .connect:disabled { opacity: .45; cursor: default; }
 
   select {
     min-height: 34px;
@@ -1525,222 +1728,28 @@
   select:hover:not(:disabled) { border-color: var(--line-strong); }
   select:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
 
-  /* Floating launchers: tuner on the left, metronome on the right. */
-  .tuner-launch, .metronome-launch, .metronome-toggle {
-    position: fixed;
-    bottom: 20px;
-    z-index: 4;
-    display: grid;
-    place-items: center;
-    width: 42px;
-    height: 42px;
-    padding: 0;
-    border: 1px solid var(--violet-800);
-    border-radius: 50%;
-    background: var(--surface-1);
-    color: var(--text-2);
-    box-shadow: var(--shadow);
-    cursor: pointer;
-  }
-  .tuner-launch { left: 22px; }
-  .metronome-launch { right: 22px; }
-  .metronome-toggle { right: 72px; width: 38px; height: 38px; bottom: 22px; }
-  .metronome-toggle.active { color: var(--violet-100); border-color: var(--accent-line); background: var(--violet-900); }
-  .tuner-launch:hover, .metronome-launch:hover, .metronome-toggle:hover { color: var(--text); border-color: var(--violet-600); }
-  .tuner-launch:disabled, .metronome-launch:disabled, .metronome-toggle:disabled { opacity: .32; cursor: default; }
-  .tuner-launch:focus-visible, .metronome-launch:focus-visible, .metronome-toggle:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; }
-  /* A lit disc that pulses three times, and rings that leave it: opacity and
-     scale only, never an animated box-shadow. Above the focused reader
-     (z-index 50), which is where a tab is often opened. */
-  .metronome-launch:has(.metronome-glow) { z-index: 60; }
-  .metronome-glow {
-    position: absolute;
-    inset: -1px;
-    border-radius: 50%;
-    background: #d9bfdd66;
-    pointer-events: none;
-    opacity: 0;
-    animation: metronome-lit 3.6s ease-out forwards;
-  }
-  .metronome-glow::before, .metronome-glow::after {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    border: 2px solid var(--violet-100);
-    border-radius: 50%;
-    opacity: 0;
-    animation: metronome-ring 1.2s cubic-bezier(.2, 0, 0, 1) 3;
-  }
-  .metronome-glow::after { animation-delay: .4s; }
-  @keyframes metronome-lit {
-    0% { opacity: 0; }
-    8% { opacity: 1; }
-    25% { opacity: .35; }
-    36% { opacity: 1; }
-    58% { opacity: .35; }
-    69% { opacity: 1; }
-    100% { opacity: 0; }
-  }
-  @keyframes metronome-ring {
-    0% { opacity: 0; transform: scale(1); }
-    12% { opacity: 1; transform: scale(1.1); }
-    100% { opacity: 0; transform: scale(2.8); }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .metronome-glow::before, .metronome-glow::after { animation: none; }
-  }
 
-  .workspace { width: 100%; max-width: var(--column); margin: 28px auto 0; }
-
-  /* The global strip: a plate of the same material as the amp's controls, with
-     every label on one line and every select in one treatment. */
-  .global-controls {
-    display: grid;
-    grid-template-columns: 110px 96px minmax(180px, 1fr) minmax(210px, 1.2fr) 110px;
-    align-items: start;
-    gap: 24px;
-    padding: 22px 24px 20px;
-    background: var(--faceplate);
-    border: 1px solid var(--line);
-    border-top-color: #3b3441;
-    border-radius: var(--radius);
-    box-shadow: var(--shadow), inset 0 1px 0 #ffffff08;
-  }
-  .io-control { display: flex; align-items: flex-start; gap: 14px; }
-  .output-control { justify-content: flex-end; }
-  .gate-control { position: relative; display: flex; justify-content: center; }
-  /* The gate's switch is a lamp beside its name, as the amp's blocks have. */
-  .enable {
-    position: absolute;
-    top: -5px;
-    left: calc(50% + 21px);
-    display: grid;
-    place-items: center;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border: 0;
-    background: none;
-    cursor: pointer;
-  }
-  .enable span { width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--violet-600); box-sizing: border-box; }
-  .enable[aria-pressed='true'] span { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 5px #d6b6e399; }
-  .rig-selectors { display: grid; gap: 14px; padding-left: 24px; border-left: 1px solid var(--line); }
-  .selector { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-  .selector select { width: 100%; }
-  .tone-selector { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 20px; border-right: 1px solid var(--line); }
-  .preset-picker { display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 12px; }
-  .preset-picker select { flex: 1; min-height: 44px; font: 500 15px var(--body); text-align: center; text-align-last: center; }
-  .preset-picker button {
-    display: grid;
-    place-items: center;
-    width: 32px;
-    height: 44px;
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius);
-    background: none;
-    color: var(--text-2);
-    font-size: 24px;
-    cursor: pointer;
-  }
-  .preset-picker button:hover { color: var(--text); background: var(--surface-2); }
-
-  .amp-head { position: relative; margin-top: 28px; padding: 17px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-1); box-shadow: var(--shadow); --knob-accent: var(--violet-400); }
-  .glass-window { position: relative; height: 260px; overflow: hidden; background: #101010; border: 2px solid #0e0e10; box-shadow: 0 0 0 1px #55505b; }
-  .glass-window img { width: 100%; height: 100%; object-fit: cover; filter: brightness(1.67); }
-  .glass-window .veil { position: absolute; inset: 0; background: #000; pointer-events: none; will-change: opacity; }
-  .glass-window::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 35px 12px #08080bd9; background: linear-gradient(0deg, #09080bb0, transparent 65%); }
-  .amp-brand { position: absolute; z-index: 1; bottom: 24px; left: 0; right: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 18px; text-align: center; color: #e4d4e8; text-shadow: 0 2px 8px #000; }
-  .amp-brand h1 { margin: 0 -0.3em 0 0; font: 600 46px/1 var(--inscription); letter-spacing: 0.3em; }
-  .brand-rule { width: 42px; height: 1px; background: #ad96b777; }
-  .amp-brand p { flex-basis: 100%; margin: -8px 0 0; font: 400 8px/1 var(--display); font-stretch: 125%; letter-spacing: 0.5em; }
-  .neutral-art { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: repeating-linear-gradient(0deg, #1b1b1b 0 2px, #2e2e2e 2px 3px); color: #848484; }
-  .neutral-art > span { font-size: 80px; font-weight: 800; letter-spacing: -15px; opacity: .35; }
-  .neutral-art small { font-size: 8px; letter-spacing: 6px; }
-  .neutral-art + .amp-brand h1 { font: 400 22px var(--display); font-stretch: 125%; letter-spacing: 7px; }
-  .bypassed .glass-window { opacity: .5; }
-
-  .amp-panel { display: flex; align-items: center; justify-content: space-around; gap: 20px; padding: 22px 20px 20px; background: var(--faceplate); border: 1px solid var(--line-strong); }
-  .control-group { position: relative; padding-left: 20px; border-left: 1px solid #69616a40; }
-  .group-label {
-    display: block;
-    margin: 0 auto 14px;
-    padding: 0;
-    border: 0;
-    background: none;
-    font: 400 9px/1 var(--display);
-    font-stretch: 125%;
-    letter-spacing: 0.24em;
-    color: var(--text-2);
-    cursor: pointer;
-  }
-  .group-label span { margin-left: 5px; font-size: 7px; color: var(--knob-accent); }
-  .group-label[aria-pressed='false'] { opacity: .45; }
-  .knob-row { display: flex; gap: 16px; }
-  .amp-signature { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 110px; color: #c6b9cb; }
-  .amp-signature > span { font: italic 500 30px/1 var(--inscription); }
-  .sig-symbol { color: var(--violet-300); opacity: .85; }
-  .amp-signature small { font: 400 7px/1 var(--display); font-stretch: 125%; letter-spacing: 0.3em; }
-  .power-indicator { display: flex; flex-direction: column; align-items: center; gap: 15px; min-width: 44px; padding: 8px; border: 0; background: none; color: var(--text-2); cursor: pointer; }
-  .power-indicator > span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--violet-900); border: 3px solid #252227; box-shadow: 0 0 0 1px var(--violet-600); }
-  .power-indicator > span.lit { color: #fff; background: var(--violet-600); box-shadow: 0 0 12px #c47adf; }
-  .power-indicator small { font: 400 7px/1 var(--display); font-stretch: 125%; letter-spacing: 0.2em; color: var(--text-2); }
-  .power-indicator:disabled { opacity: .5; cursor: wait; }
-  .screw { position: absolute; width: 5px; height: 5px; border-radius: 50%; background: linear-gradient(135deg, #777, #222 45%, #999 50%, #333 60%); }
-  .tl { top: 6px; left: 7px; } .tr { top: 6px; right: 7px; } .bl { bottom: 6px; left: 7px; } .br { bottom: 6px; right: 7px; }
-  .amp-foot { display: flex; justify-content: space-between; margin: 0 50px; }
-  .amp-foot span { width: 65px; height: 9px; background: #0f0f0f; border-radius: 0 0 3px 3px; }
   .capture-info { margin: 0; }
 
-  .alert, .notice { color: var(--ember); font-size: 13px; }
-  .notice { max-width: 52ch; margin: 10px 0; }
-  .notice:empty { margin: 0; }
-  .engine-update { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 0 0 16px; padding: 12px 16px; border: 1px solid var(--accent-line); border-radius: var(--radius); background: var(--violet-900); color: var(--violet-100); font-size: 13px; line-height: 1.5; }
+  .messages { position: absolute; z-index: 4; top: 12px; left: 24px; right: 24px; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+  .messages > * { pointer-events: auto; }
+  .alert:not(:empty), .notice:not(:empty) { padding: 8px 14px; border-radius: var(--radius); background: var(--surface-1); box-shadow: var(--shadow); }
+  .alert, .notice { margin: 0; color: var(--ember); font-size: 13px; }
+  .notice { max-width: 80ch; }
+  .engine-update { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 0; padding: 12px 16px; border: 1px solid var(--accent-line); border-radius: var(--radius); background: var(--violet-900); color: var(--violet-100); font-size: 13px; line-height: 1.5; }
 
-  /* The rack: everything under the amp is cut from one plate, and modules are
-     separated by an engraved seam rather than floated as cards. */
-  .rack {
-    margin-top: 28px;
-    background: var(--faceplate);
-    border: 1px solid var(--line);
-    border-top-color: #3b3441;
-    border-radius: var(--radius);
-    box-shadow: var(--shadow), inset 0 1px 0 #ffffff08;
-  }
-  .rack > :global(section + section) { border-top: 1px solid #050407; box-shadow: inset 0 1px 0 #ffffff0a; }
-  .rack:empty { display: none; }
-
-  .demo-panel { padding: 20px 24px; }
-  .demo-launch { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 18px; border: 1px solid var(--accent-line); border-radius: var(--radius); background: var(--violet-900); color: var(--violet-50); font: 15px var(--body); text-align: left; cursor: pointer; }
+  .demo-launch { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 2px 4px 2px 12px; border: 1px solid var(--accent-line); border-radius: var(--radius); background: var(--violet-900); color: var(--violet-50); font: 15px var(--body); text-align: left; cursor: pointer; }
   .demo-launch:hover:not(:disabled) { background: var(--violet-800); border-color: var(--violet-400); }
   .demo-launch:disabled { opacity: .5; cursor: default; }
-  .demo-play { display: grid; place-items: center; width: 38px; height: 38px; margin-left: auto; border-radius: 50%; background: var(--action); color: var(--action-text); font-size: 13px; }
-  .file { display: flex; flex-direction: column; gap: var(--u); width: 100%; }
-  .transport { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .demo-play { display: grid; place-items: center; width: 32px; height: 32px; margin-left: auto; border-radius: 50%; background: var(--action); color: var(--action-text); font-size: 13px; }
+  .file { display: flex; flex-direction: row-reverse; align-items: center; gap: 14px; width: 100%; }
+  .file > :global(.wave) { flex: 1; min-width: 0; }
+  .file > :global(.wave svg) { height: 32px; }
+  .demo-transport { display: flex; align-items: center; gap: 12px; }
+  .demo-transport .name { max-width: 160px; }
   .start.small { min-height: 32px; padding: 0 14px; font-size: 13px; }
   .check { display: flex; align-items: center; gap: 4px; }
   .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-  .session-bar { display: flex; align-items: center; gap: 24px; padding: 18px 24px; }
-  .looper { flex: 1; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-  .looper > .eyebrow { min-width: 72px; }
-  .loop-status { display: flex; align-items: center; gap: 7px; min-width: 96px; font: 11px var(--mono); color: var(--text-2); }
-  .loop-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--violet-800); }
-  .loop-status[data-state=recording] .loop-dot, .loop-status[data-state=overdubbing] .loop-dot { background: var(--ember); }
-  .loop-status[data-state=playing] .loop-dot { background: var(--accent); }
-  .loop-main { min-width: 104px; min-height: 40px; }
-  .loop-main[data-state=recording], .loop-main[data-state=overdubbing] { border-color: var(--ember-line); color: #f0d5cf; }
-  .loop-power { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: none; color: var(--text-3); cursor: pointer; }
-  .loop-power[aria-pressed=true] { border-color: var(--accent-line); color: var(--accent); }
-  .loop-power:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); }
-  .loop-power:disabled { opacity: .4; cursor: default; }
-  .loop-level { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-  .loop-level input { width: 110px; min-height: 40px; }
-
-
-  .settings-button { display: grid; place-items: center; width: 40px; height: 40px; padding: 8px; border: 0; border-radius: var(--radius); background: none; color: var(--text-2); cursor: pointer; }
-  .settings-button:hover { color: var(--text); background: var(--surface-2); }
 
   /* Settings: the tuner's frame, a section per subject, a primary done. */
   .settings { width: min(460px, calc(100vw - 40px)); padding-top: 80px; }
@@ -1761,16 +1770,13 @@
   .failure { display: flex; flex-direction: column; gap: 2px; max-width: 46ch; margin: 0; font: 14px var(--body); color: var(--ember); }
   .fix { color: var(--text-2); }
 
-  /* Welcome: the lit glass on top, the inscription, and two doors of the same
+  /* Welcome: the inscription, and two doors of the same
      size, because neither is the lesser one: half the people who arrive have a
      guitar and half want to know what this is before they fetch it. */
   .welcome { width: min(680px, calc(100vw - 32px)); padding: 0; overflow: hidden auto; }
   .welcome:not([open]) { display: none; }
   .welcome[open] { display: block; }
-  .welcome-glass { position: relative; height: 150px; overflow: hidden; background: #000; }
-  .welcome-glass img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 42%; opacity: .9; filter: saturate(1.05) brightness(1.15); }
-  .welcome-glass::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, #0000 20%, #15131aaa 62%, var(--surface-1)); box-shadow: inset 0 1px 0 #ffffff14; }
-  .welcome-body { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: -34px; padding: 0 36px 34px; text-align: center; }
+  .welcome-body { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 36px 34px; text-align: center; }
   .welcome h2 { margin: 0; font: 600 38px/1.05 var(--inscription); letter-spacing: .01em; color: var(--violet-50); text-shadow: 0 2px 12px #000; }
   .welcome h2:focus { outline: none; }
   .welcome-lede { margin: 0 0 18px; font: 14px var(--body); color: var(--text-2); }
@@ -1789,352 +1795,35 @@
     font: inherit;
     text-align: left;
     cursor: pointer;
-    transition: border-color 160ms ease-out, transform 160ms ease-out;
+    transition: border-color 160ms ease-out;
   }
-  .choice:hover:not(:disabled) { border-color: var(--accent-line); transform: translateY(-2px); }
+  .choice:hover:not(:disabled) { border-color: var(--accent-line); }
   .choice:disabled { opacity: .4; cursor: default; }
   .choice-icon { margin-bottom: 6px; color: var(--violet-300); }
   .choice-title { font: 400 12px/1 var(--display); font-stretch: 125%; letter-spacing: .24em; text-transform: uppercase; color: var(--violet-100); }
   .choice-body { flex: 1; font: 13px/1.55 var(--body); color: var(--text-2); }
   .choice-go { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 12px; width: 100%; border-top: 1px solid var(--line); font: 500 13px var(--body); color: var(--accent); }
-  .choice-go span { transition: transform 160ms ease-out; }
-  .choice:hover:not(:disabled) .choice-go span { transform: translateX(4px); }
   .welcome .failure { margin-top: 12px; text-align: left; }
-  .welcome .tc-close { color: var(--violet-50); background: #0008; }
-  .welcome .tc-close:hover { background: #000c; }
   @media (max-width: 600px) {
-    .welcome-glass { height: 110px; }
-    .welcome-body { padding: 0 18px 22px; margin-top: -26px; }
+    .welcome-body { padding: 44px 18px 22px; }
     .welcome h2 { font-size: 32px; }
     .choices { grid-template-columns: 1fr; gap: 10px; }
     .choice { padding: 16px 18px 14px; }
     .choice-icon { display: none; }
     .choice-go { margin-top: 4px; padding-top: 10px; }
   }
-  @media (prefers-reduced-motion: reduce) { .choice, .choice-go span { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .choice { transition: none; } }
 
-  @media (min-width: 1500px) { .glass-window { height: 310px; } .workspace { margin-top: 40px; } }
-  @media (max-width: 1100px) {
-    .page { padding: 0 24px 96px; }
-    .global-controls { gap: 14px; padding: 20px 16px; grid-template-columns: 96px 80px 1fr 1fr 96px; }
-    .rig-selectors { padding-left: 16px; }
-    .tone-selector { padding: 0 10px; }
-    .amp-panel { flex-wrap: wrap; gap: 18px 10px; padding: 20px 12px; }
-    .amp-signature { min-width: 70px; }
-    .control-group { padding-left: 12px; }
-    .knob-row { gap: 5px; }
-    .tone-group { flex-basis: 100%; border-left: 0; padding-left: 0; }
-    .tone-group .knob-row { justify-content: center; gap: 14px; }
-    .session-bar { gap: 15px; }
-  }
-  @media (max-width: 760px) {
-    .page { padding: 0 16px 96px; }
-    .bar { height: 72px; }
-    .bar-right { gap: 10px; }
-    .workspace { margin-top: 20px; }
-    .global-controls { grid-template-columns: 1fr 1fr 1fr; gap: 22px; }
-    .io-control { justify-content: center; }
-    .output-control { grid-column: 3; grid-row: 1; }
-    .rig-selectors { grid-column: 1 / 3; grid-row: 2; padding: 0; border: 0; }
-    .rig-selectors { grid-column: 1 / -1; }
-    .tone-selector { grid-column: 1 / -1; grid-row: 3; align-items: stretch; padding: 0; border: 0; min-width: 0; }
-    .tone-selector .eyebrow { align-self: flex-start; }
-    .preset-picker { margin-top: 0; }
-    .preset-picker select { min-width: 0; font-size: 13px; }
-    .glass-window { height: 210px; }
-    .amp-head { padding: 12px; }
-    .amp-panel { flex-wrap: wrap; padding: 18px 10px; gap: 22px 12px; }
-    .amp-signature { display: none; }
-    .tone-group { flex-basis: 100%; border: 0; padding: 0; }
-    .knob-row { justify-content: space-evenly; gap: 15px; }
-    .control-group { border: 0; padding: 0; }
-    .amp-brand h1 { font-size: 34px; }
-    .session-bar { flex-wrap: wrap; padding: 16px; }
-    .looper { flex-basis: 100%; }
-    .loop-level { margin-left: 0; }
-    .demo-panel { padding: 16px; }
-  }
-  @media (prefers-reduced-motion: reduce) { .glass-window .veil { opacity: .61 !important; } }
-
-  /* GUILT is viewed head-on, just above the cabinet: a shallow, symmetric
-     top plane and rounded rails surround the recessed glass and faceplate. */
-  .amp-head.guilt {
-    --guilt-rim: 26px;
-    --guilt-piping: 19px;
-    --leather-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3' stitchTiles='stitch'/%3E%3CfeDiffuseLighting surfaceScale='2' diffuseConstant='.65' lighting-color='%23b5a9a3'%3E%3CfeDistantLight azimuth='225' elevation='45'/%3E%3C/feDiffuseLighting%3E%3C/filter%3E%3Cpath fill='%23201c21' filter='url(%23grain)' opacity='.24' d='M0 0h180v180H0z'/%3E%3C/svg%3E");
-    --knob-accent: #655e6b;
-    --control-label: #c6bcc9;
-    isolation: isolate;
-    margin-top: 48px;
-    margin-right: 0;
-    padding: var(--guilt-rim);
-    border: 1px solid #454348;
-    border-radius: 20px;
-    background: linear-gradient(180deg,#b8b0ab22,transparent 7px,#0005 18px,transparent 27px,transparent calc(100% - 22px),#a49b9d14 calc(100% - 12px),#0008),var(--leather-grain),linear-gradient(90deg,#403c40,#252327 7px,#18171a 20px,#201e22 50%,#18171a calc(100% - 20px),#252327 calc(100% - 7px),#373439);
-    box-shadow: inset 0 2px 1px #c2b9b54d,inset 2px 0 3px #9d969c33,inset -2px 0 3px #9d969c22,inset 0 -5px 6px #000d,0 2px 0 #080709,0 12px 12px -5px #000b,0 28px 30px -12px #000c;
-  }
-  .amp-head.guilt::before,.amp-head.guilt::after {
-    content: '';
-    position: absolute;
-    pointer-events: none;
-    z-index: -1;
-    border: 1px solid #4c494e;
-  }
-  .amp-head.guilt::before {
-    height: 16px;
-    left: 5px;
-    right: 5px;
-    top: -8px;
-    clip-path: polygon(12px 0,calc(100% - 12px) 0,100% 100%,0 100%);
-    border-radius: 15px 15px 0 0;
-    background: var(--leather-grain),linear-gradient(#201e22,#454047 55%,#302d32 80%,#151317);
-    box-shadow: inset 0 1px 1px #b1a3ae44;
-  }
-  .amp-head.guilt::after {
-    inset: 5px;
-    border-color: #0d0c0f;
-    border-radius: 15px;
-    box-shadow: 0 1px 0 #b6aeb32b,inset 0 1px 2px #0008;
-  }
-  .guilt-handle {
-    position: absolute;
-    z-index: -2;
-    top: -23px;
-    left: calc(50% - 115px);
-    width: 230px;
-    height: 17px;
-    pointer-events: none;
-    border-bottom: 5px solid #161317;
-    filter: drop-shadow(0 3px 2px #0008);
-  }
-  .guilt-handle::before,.guilt-handle::after {
-    content: '';
-    position: absolute;
-    bottom: -4px;
-    width: 27px;
-    height: 9px;
-    border: 1px solid #8b7e69;
-    border-radius: 3px;
-    background: linear-gradient(#b0a18b,#62594e 40%,#292526 80%);
-  }
-  .guilt-handle::before { left: 0; }
-  .guilt-handle::after { right: 0; }
-  .guilt-handle span {
-    position: absolute;
-    inset: 0 17px 0;
-    border: 4px solid #242226;
-    border-bottom: 0;
-    border-radius: 50% 50% 0 0 / 14px 14px 0 0;
-    box-shadow: inset 0 2px 1px #897b8444,0 -1px 0 #615b60;
-    background: linear-gradient(#39353b,#201e22 65%,transparent 66%);
-  }
-  .guilt-corners { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
-  /* One continuous piping line ties the glass and control plate into a
-     recessed front, while the outer seam describes the rolled leather edge. */
-  .guilt-corners::before,.guilt-corners::after {
-    content: '';
-    position: absolute;
-    border-radius: 8px;
-  }
-  .guilt-corners::before {
-    inset: var(--guilt-piping);
-    border: 1px solid;
-    border-color: #9a8d78 #6c6155 #554c46 #897b69;
-    box-shadow: 0 0 0 1px #09080b,0 1px 0 1px #c9bba226,inset 0 1px 1px #e7d8bc22;
-  }
-  .guilt-corners::after {
-    inset: calc(var(--guilt-piping) + 3px);
-    border: 1px solid #09080c;
-    border-radius: 6px;
-    box-shadow: inset 0 7px 7px #000a,inset 3px 0 4px #0006,inset -3px 0 4px #0006,0 0 2px #000;
-  }
-  .guilt-corners i {
-    position: absolute;
-    width: 40px;
-    height: 40px;
-    border: 1px solid #565359;
-    background: linear-gradient(135deg,#68636b,#302d33 22%,#1a181d 50%,#332f37 76%,#121014);
-    box-shadow: 0 2px 3px #0009,inset 1px 1px 2px #d5cdd033;
-  }
-  .guilt-corners i:nth-child(1) { top: -1px; left: -1px; border-radius: 20px 4px 5px 4px; clip-path: polygon(0 0,100% 0,100% 27%,27% 27%,27% 100%,0 100%); }
-  .guilt-corners i:nth-child(2) { top: -1px; right: -1px; border-radius: 4px 20px 4px 5px; clip-path: polygon(0 0,100% 0,100% 100%,73% 100%,73% 27%,0 27%); }
-  .guilt-corners i:nth-child(3) { bottom: -1px; left: -1px; border-radius: 4px 5px 4px 20px; clip-path: polygon(0 0,27% 0,27% 73%,100% 73%,100% 100%,0 100%); }
-  .guilt-corners i:nth-child(4) { bottom: -1px; right: -1px; border-radius: 5px 4px 20px 4px; clip-path: polygon(73% 0,100% 0,100% 100%,0 100%,0 73%,73% 73%); }
-  .guilt .tl,.guilt .tr { top: 4px; }
-  .guilt .bl,.guilt .br { bottom: 4px; }
-  .guilt .tl,.guilt .bl { left: 26px; }
-  .guilt .tr,.guilt .br { right: 26px; }
-  .guilt .screw {
-    width: 5px;
-    height: 5px;
-    z-index: 4;
-    background: linear-gradient(135deg,#b5a9ad,#4d444d 40%,#171319 42% 56%,#a0939c 58%,#3d353e);
-    box-shadow: 0 1px 2px #000,inset 0 0 0 1px #c0b0b044;
-  }
-  .guilt .glass-window {
-    border: 6px solid;
-    border-top-width: 10px;
-    border-color: #0c0b10 #211d26 #423b47;
-    border-radius: 5px 5px 0 0;
-    box-shadow: 0 0 0 1px #0b090e,0 -2px 3px #000c,0 1px 0 #8b7d9144;
-  }
-  .glass-filters { position: absolute; pointer-events: none; }
-  .guilt .glass-window { isolation: isolate; opacity: 1; }
-  /* Dim the glass against black, never the cabinet behind it: lowering the
-     whole window's opacity let the grey leather show through the dark glass. */
-  .glass-night {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    pointer-events: none;
-    background: #010104;
-    opacity: .94;
-    transition: opacity 500ms ease-out;
-  }
-  .guilt.illuminated .glass-night { opacity: 0; animation: guilt-ignite 1500ms linear; }
-  .guilt .glass-window .veil { transition: opacity 150ms linear; }
-  .guilt:not(.illuminated) .glass-window .veil { transition-duration: 500ms; }
-  /* Two restrained ignition dips, then steady RMS illumination. No loop. */
-  @keyframes guilt-ignite {
-    0% { opacity: .94; }
-    20% { opacity: .18; }
-    30% { opacity: .18; }
-    36% { opacity: .94; }
-    48% { opacity: .08; }
-    60% { opacity: .08; }
-    66% { opacity: .94; }
-    84% { opacity: .04; }
-    100% { opacity: 0; }
-  }
-  .guilt .glass-window>img { filter: url(#guilt-glass-relief) brightness(1.8) contrast(1.13) saturate(.9); }
-  .glass-bloom-power {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    mix-blend-mode: screen;
-    opacity: 0;
-    transition: opacity 500ms ease-out;
-  }
-  .guilt.illuminated .glass-bloom-power { opacity: 1; transition: opacity 1200ms ease-in; }
-  .glass-glow {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    mix-blend-mode: screen;
-    will-change: opacity;
-  }
-  .guilt .glass-glow img { filter: url(#guilt-glass-bloom); }
-  .guilt .glass-window::after {
-    z-index: 1;
-    border: 1px solid #ddc0f333;
-    box-shadow: inset 0 13px 15px #06030bf0,inset 8px 0 12px #08050db3,inset -8px 0 12px #08050db3,inset 0 -3px 6px #0b0610b3;
-    background: linear-gradient(0deg,#09060ec2,transparent 40%,transparent 80%,#07030c44);
-  }
-  .glass-reflections {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background: linear-gradient(118deg,transparent 4%,#ead8ff12 19%,#f3e9ff24 19.3%,#e8d5ff05 20%,transparent 35%,#e8d5ff12 35.3%,transparent 52%),linear-gradient(175deg,#eedaff14,transparent 35%,#9972b408 70%,transparent);
-    box-shadow: inset 0 2px 0 #f4e3ff55,inset 2px 0 0 #eddbff22,inset 0 -2px 0 #ad83ba33;
-  }
-  .guilt .amp-brand { z-index: 2; bottom: 21px; }
-  .guilt .amp-brand h1 {
-    color: #e0cedf;
-    text-shadow: 0 1px 0 #f7eaf6,0 2px 0 #857087,0 3px 0 #49334e,2px 5px 3px #000,0 8px 13px #000;
-  }
-  .guilt .amp-brand p { color: #d0b7d4; text-shadow: 0 2px 2px #000; }
-  .guilt .amp-panel {
-    position: relative;
-    margin-top: 2px;
-    border: 1px solid;
-    border-color: #655d6a #211d27 #111015 #312b38;
-    border-radius: 0 0 4px 4px;
-    background: repeating-linear-gradient(0deg,#dccbe903 0 1px,transparent 1px 3px),linear-gradient(105deg,#302c34,#211e26 40%,#19171f 75%,#28232d);
-    box-shadow: 0 -1px 0 #08070a,inset 0 1px 1px #dfcfe21a,inset 3px 0 6px #0007,inset -3px 0 6px #0007,inset 0 -3px 5px #0007,0 4px 5px #000c;
-  }
-  .guilt .amp-signature { color: #ccbacc; text-shadow: 0 1px 0 #09070d,0 -1px 0 #ffffff22; }
-  .guilt .group-label span { position: relative; display: inline-block; }
-  .guilt .group-label span::after {
-    content: '●';
-    position: absolute;
-    inset: 0;
-    color: #d7bedf;
-    text-shadow: 0 0 5px #d6b6e399;
-    opacity: 0;
-    transition: opacity 400ms ease-out;
-  }
-  .guilt.illuminated .group-label[aria-pressed=true] span::after { opacity: 1; transition: opacity 900ms ease-in 120ms; }
-  .guilt .power-indicator { gap: 11px; padding: 8px 4px; min-width: 48px; }
-  .guilt .power-indicator>span.power-rocker {
-    position: relative;
-    display: block;
-    width: 36px;
-    height: 58px;
-    padding: 3px;
-    border: 1px solid;
-    border-color: #645b68 #39313e #84758b #4d4355;
-    border-radius: 5px;
-    background: #0b080f;
-    perspective: 180px;
-    box-shadow: 0 0 0 2px #121016,0 3px 5px #000b,inset 0 2px 4px #000;
-  }
-  .rocker-face {
-    position: absolute;
-    inset: 4px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: space-around;
-    border: 1px solid #544c5c;
-    border-radius: 3px;
-    background: linear-gradient(#4c4553,#29232f 48%,#17121e 52%,#211b28);
-    transform: rotateX(-13deg);
-    box-shadow: 0 -3px 0 #211a29,0 -4px 1px #73677c,inset 0 1px 1px #b2a0bd33;
-    color: #9a8dA3;
-    font: 10px var(--mono);
-    text-shadow: 0 1px 1px #000;
-  }
-  .rocker-on { color: #7d7187; }
-  .rocker-off { color: #ddd1e2; }
-  .rocker-lamp { position: relative; width: 15px; height: 3px; border-radius: 2px; background: #312236; box-shadow: inset 0 1px 2px #000; }
-  .rocker-lamp::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: #eac0fc;
-    box-shadow: 0 0 4px #eccbff,0 0 12px #c875efaa,inset 0 1px 0 #fff8;
-    opacity: 0;
-    transition: opacity 400ms ease-out;
-  }
-  .power-rocker.lit .rocker-face {
-    transform: rotateX(13deg);
-    background: linear-gradient(#201a29,#302637 48%,#494050 52%,#332b3e);
-    box-shadow: 0 3px 0 #18111f,0 4px 1px #5b4b67,inset 0 1px 3px #0008;
-  }
-  .power-rocker.lit .rocker-on { color: #f1e1f7; }
-  .power-rocker.lit .rocker-off { color: #85728f; }
-  .power-rocker.lit .rocker-lamp::after { opacity: 1; transition: opacity 650ms ease-in; }
-  .guilt .power-indicator:hover:not(:disabled) .power-rocker { border-color: #a091aa; }
-  .guilt .power-indicator:active:not(:disabled) .rocker-face { transform: rotateX(0deg) translateZ(-1px); }
-  .guilt+.amp-foot { margin: 0 58px; }
-  .guilt+.amp-foot span { width: 55px; height: 20px; border-radius: 0 0 10px 10px; background: linear-gradient(90deg,#111014,#3a363e 25%,#201d25 75%,#100d14); border-bottom: 3px solid #0b090e; box-shadow: 0 5px 5px #0007,inset 0 5px 6px #000; }
-  @media(prefers-reduced-motion:reduce) {
-    .glass-night { animation: none !important; transition: none; }
-    .glass-bloom-power,.guilt .glass-window .veil,.guilt .group-label span::after,.rocker-lamp::after { transition: none !important; }
-    .glass-glow { will-change: auto; }
-    .guilt.illuminated .glass-glow { opacity: .34 !important; }
-  }
-  @media(max-width:760px) {
-    .amp-head.guilt { --guilt-rim: 18px; --guilt-piping: 12px; margin-top: 40px; }
-    .amp-head.guilt::before { height: 11px; top: -6px; }
-    .amp-head.guilt::after { inset: 5px; }
-    .guilt-handle { top: -14px; width: 150px; left: calc(50% - 75px); }
-    .guilt .glass-window { border-width: 5px; }
-    .guilt .amp-panel { padding: 20px 6px; }
-    .guilt .tone-group .knob-row { gap: 6px; }
-    .guilt .tone-group :global(.knob) { min-width: 0; flex: 1; }
-    .guilt .tone-group :global(.dial) { width: 54px; height: 54px; }
-    .guilt .tone-group :global(.label) { font-size: 8px; letter-spacing: .8px; }
+  /* A phone, or a screen too short for an instrument: the bands stack and the
+     page scrolls, as a page. The play path is not offered on mobile anyway;
+     this keeps what can be read there readable. */
+  @media (max-width: 760px), (max-height: 560px) {
+    .page { --side: var(--gutter); display: flex; flex-direction: column; height: auto; min-height: 100dvh; overflow: visible; }
+    .page :global(.global-controls), .page :global(.transport-row) { flex-wrap: wrap; height: auto; padding-top: 10px; padding-bottom: 10px; }
+    .page :global(.transport-row > .display) { flex-basis: 100%; }
+    [data-view='play'] > :global(.global-controls), [data-view='play'] > :global(.transport) { width: 100%; }
+    [data-view='play'] > .stage { margin-inline: 0; }
+    .stage { flex: none; }
+    .tab-stage { min-height: 520px; }
   }
 </style>

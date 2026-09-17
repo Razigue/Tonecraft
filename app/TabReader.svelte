@@ -8,6 +8,7 @@
   import { restoreFadedVolume } from '../engine/tab-fades.ts';
   import { syncedSpeed } from '../engine/metronome.ts';
   import { lang } from './locale.svelte.ts';
+  import type { TabDeck } from './tab-deck.svelte.ts';
   import {
     DURATIONS, SIGNATURES, STRING_COUNTS, TUNINGS, addTrack, barTicks, clearString, deleteBeat, emptyTab, layout as layBeats, makeRest, nudgeDuration,
     pickFret, readTab, removeTrack, setDuration, setSignature, setStrings, setTempo, setTuning, stepBeat, stepString, toAlphaTex, toggleDotted, typeDigit,
@@ -15,8 +16,12 @@
   } from '../engine/tab-editor.ts';
 
   const words = $derived(lang.ui.reader);
-  let { ontempo, onwrite, syncBpm = null, onsyncstart }: {
+  let { deck, ontempo, onopen, onwrite, syncBpm = null, onsyncstart }: {
+    /** Where the studio's transport reads the playback and finds its controls. */
+    deck: TabDeck;
     ontempo?: (bpm: number) => void;
+    /** A score the player chose was opened, or the editor was: the tab is wanted on screen. */
+    onopen?: () => void;
     /** The metronome's tempo while the tab is synced to it; null when it is not. */
     syncBpm?: number | null;
     /**
@@ -46,6 +51,14 @@
    * their <19> — is laid out at its own minimum whatever this says.
    */
   const STRETCH = 1.5;
+  /**
+   * The size the zoom menu calls 100%. The tab is read from where the guitar is
+   * played, about 1.5 m from the screen, and alphaTab's own 1 is sized for a
+   * page held at arm's length. Fixed rather than following the studio's view:
+   * the tab is only on screen in Play, and laying it out again at every fold
+   * of the amp would hold the main thread for a whole score.
+   */
+  const BASE_SCALE = 1.35;
   let section: HTMLElement;
   let surface: HTMLDivElement;
   let viewport: HTMLDivElement;
@@ -61,11 +74,9 @@
   let error = $state('');
   let storageNote = $state('');
   let dragging = $state(false);
-  let focused = $state(false);
   let track = $state(0);
   let ready = $state(false);
   let playing = $state(false);
-  let speed = $state(100);
   let zoom = $state(100);
   let notation = $state('tab');
   let looping = $state(false);
@@ -82,7 +93,6 @@
   const muted = $derived(mutedTracks.has(track));
   let position = $state(0);
   let duration = $state(0);
-  let volume = $state(60);
   let tail = $state(0);
   /** What the hand is holding right now, on the track being read. */
   let lit = $state.raw<{ string: number; fret: number }[]>([]);
@@ -242,8 +252,8 @@
    * One reader per score, rather than a new score into the reader on screen.
    * A layout runs in alphaTab's own worker and what comes back is resolved
    * against whatever score the api holds by then, so replacing the score under
-   * a render still in flight — a second import after a resize or after leaving
-   * focus view — throws on bars that no longer exist. `destroy()` terminates
+   * a render still in flight — a second import after a resize or after switching
+   * the studio's view — throws on bars that no longer exist. `destroy()` terminates
    * that worker and closes its audio context, so nothing from the previous
    * score can arrive at all. It costs one soundfont decode per import, on a
    * deliberate action that already shows Opening…, and it is why every display
@@ -262,10 +272,10 @@
       // (CLAUDE.md section 4) and alphaTab renders either way.
       // Every part of the line drawn as soon as it is laid out, not when it
       // scrolls into view: alphaTab's intersection-driven drawing left parts
-      // blank for good after a zoom — while playing, or in focus view — some
+      // blank for good after a zoom — while playing, or after a change of view — some
       // requested and never drawn, some never reported visible at all.
       core: { fontDirectory: `${BASE}font/`, engine: 'svg', enableLazyLoading: false },
-      display: { scale: zoom / 100, padding: [24, 28, 24, 28], layoutMode: alpha.LayoutMode.Horizontal,
+      display: { scale: BASE_SCALE * zoom / 100, padding: [24, 28, 24, 28], layoutMode: alpha.LayoutMode.Horizontal,
         effectBandPaddingBottom: EFFECT_ROW_GAP, stretchForce: STRETCH,
         staveProfile: notation === 'tab' ? alpha.StaveProfile.Tab : alpha.StaveProfile.ScoreTab },
       // The footer — the copyright and its "All Rights Reserved" second line,
@@ -288,7 +298,7 @@
     }).catch(e => {
       if (api === created) error = words.unavailable(e instanceof Error ? e.message : String(e));
     });
-    api.masterVolume = volume / 100;
+    api.masterVolume = deck.volume / 100;
     // alphaTab's own handler for this layout parks the cursor on the left edge.
     api.customScrollHandler = {
       [Symbol.dispose]() {},
@@ -385,6 +395,7 @@
         // Only a file the player just opened: the one restored at start-up
         // would overwrite a tempo they may have changed since.
         ontempo?.(Math.round(parsed.tempo));
+        onopen?.();
         const saved = await saveMedia(file, 'score', 'last-score');
         if (saved === null) storageNote = words.sessionOnly;
       }
@@ -421,26 +432,12 @@
     api.changeTrackMute([score.tracks[track]!], mutedTracks.has(track));
   }
 
-  /**
-   * Focus view takes the reader out of the page's flow, so the page shortens
-   * under it and the browser clamps its scroll; Firefox leaves it there, near
-   * the top, when focus view closes. Leaving puts the page back where it was.
-   */
-  let pageScroll = 0;
-  async function setFocused(on: boolean) {
-    if (on === focused) return;
-    if (on) pageScroll = window.scrollY;
-    focused = on;
-    if (on) return;
-    await tick();
-    window.scrollTo({ top: pageScroll, behavior: 'instant' });
-  }
   function updateDisplay() {
     if (!api) return;
     // Numeric enum values come from the installed library, loaded on demand.
     void library().then(alpha => {
       if (!api || disposed) return;
-      api.settings.display.scale = zoom / 100;
+      api.settings.display.scale = BASE_SCALE * zoom / 100;
       api.settings.display.staveProfile = notation === 'tab' ? alpha.StaveProfile.Tab : alpha.StaveProfile.ScoreTab;
       api.updateSettings(); api.render({ reuseViewport: true });
     });
@@ -450,10 +447,10 @@
    * is the ratio between the two, and the Speed menu steps aside.
    */
   function applySpeed(reader: AlphaTabApi) {
-    reader.playbackSpeed = syncBpm !== null && score ? syncedSpeed(syncBpm, score.tempo) : speed / 100;
+    reader.playbackSpeed = syncBpm !== null && score ? syncedSpeed(syncBpm, score.tempo) : deck.speed / 100;
   }
   $effect(() => {
-    void syncBpm; void speed; void score; void ready;
+    void syncBpm; void deck.speed; void score; void ready;
     if (api) applySpeed(api);
   });
 
@@ -467,6 +464,28 @@
   let cueing = $state(false);
   let cue = 0;
   function cancelCue() { clearTimeout(cue); cueing = false; }
+  function toggleLoop() { looping = !looping; if (api) api.isLooping = looping; }
+
+  // The transport shows this and presses these. Svelte writes a field only
+  // when it changes, so the position ticking is the one write per update.
+  $effect(() => {
+    deck.loaded = score !== null; deck.ready = ready; deck.busy = busy; deck.playing = playing; deck.cueing = cueing;
+    deck.position = position; deck.duration = duration; deck.looping = looping; deck.selection = selection;
+    deck.title = score ? (score.title || filename) : '';
+    deck.bars = score?.masterBars.length ?? 0;
+    deck.bar = score ? barAt(currentTick) + 1 : 0;
+    deck.bpm = score ? (syncBpm ?? Math.round(score.tempo * deck.speed / 100)) : 0;
+  });
+  $effect(() => { const level = deck.volume / 100; if (api) api.masterVolume = level; });
+  $effect(() => {
+    deck.open = file => void open(file);
+    deck.write = () => { if (!editing) void startEditing(); };
+    deck.toggle = () => void togglePlay();
+    deck.stop = () => { cancelCue(); api?.stop(); };
+    deck.seek = seek;
+    deck.loop = toggleLoop;
+    deck.clearSelection = () => { if (api) api.playbackRange = null; };
+  });
   async function togglePlay() {
     if (!ready || busy || !api) return;
     if (cueing) { cancelCue(); return; }
@@ -593,7 +612,6 @@
     section?.focus({ preventScroll: true });
   }
   function keydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && focused) { void setFocused(false); e.stopPropagation(); }
     if (editKey(e)) return;
     if (e.code === 'Space' && e.target instanceof Element && !e.target.closest('input,select,button')) {
       e.preventDefault(); e.stopPropagation(); void togglePlay();
@@ -653,6 +671,10 @@
       cursor = { track: 0, beat: 0, string: draft.tracks[0]!.tuning.length };
       pendingDigit = null;
       editing = true; filename = ''; track = 0;
+      // The editor's bar is on screen from here: the keys have to reach it from
+      // here too, not a render later, or the first digit typed falls nowhere.
+      section?.focus({ preventScroll: true });
+      onopen?.();
       mutedTracks = new Set(); soloed = new Set(); trackVolumes = new Map(); looping = false; selection = false; position = 0; duration = 0; lit = [];
       const fresh = await reader(alpha);
       applySpeed(fresh);
@@ -844,12 +866,22 @@
   onDestroy(() => { disposed = true; cancelCue(); signature.disconnect(); api?.destroy(); });
 </script>
 
-<section class="reader" class:focused role="application" aria-label={words.region} tabindex="-1"
+<section class="reader" role="application" aria-label={words.region} tabindex="-1"
   bind:this={section} onkeydown={keydown} onpointerdown={grabKeys}>
+  <!-- One row: what is on the lectern, how it is shown, and where another comes
+       from. Playing it is the studio's transport, at the foot of the screen. -->
   <div class="reader-heading">
-    <div><span class="eyebrow">{words.eyebrow}</span><h2>{words.title}</h2></div>
+    <div class="reader-title">
+      {#if editing || !score}<span class="eyebrow">{editing ? words.editor : words.title}</span>{/if}
+      {#if score && !editing}<h2 title={score.title || filename}>{score.title || filename}{#if score.artist}<span> · {score.artist}</span>{/if}</h2>{/if}
+    </div>
+    {#if score}
+      <div class="display">
+        <label>{words.view}<select aria-label={words.viewLabel} bind:value={notation} onchange={updateDisplay}><option value="tab">{words.viewTab}</option><option value="both">{words.viewBoth}</option></select></label>
+        <label>{words.zoom}<select aria-label={words.zoomLabel} bind:value={zoom} onchange={updateDisplay}>{#each [75, 90, 100, 110, 125, 150] as n}<option value={n}>{n}%</option>{/each}</select></label>
+      </div>
+    {/if}
     <div class="heading-actions">
-      {#if score}<button class="secondary" aria-pressed={focused} onclick={() => setFocused(!focused)}> {focused ? words.exitFocus : words.focus} </button>{/if}
       <button class="secondary write-tab" aria-pressed={editing} disabled={busy} onclick={() => (editing ? stopEditing() : startEditing())}>{editing ? words.closeEditor : words.write}</button>
       <button class="primary" class:settled={!!score} disabled={busy} onclick={() => picker.click()}>{busy ? words.opening : score ? words.openAnother : words.import}</button>
     </div>
@@ -861,24 +893,6 @@
     ondragover={e => { e.preventDefault(); dragging = true; }}
     ondragleave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) dragging = false; }}
     ondrop={e => { e.preventDefault(); dragging = false; const f = e.dataTransfer?.files[0]; if (f) void open(f); }}>
-    {#if score}
-      <div class="transport">
-        <div class="playback">
-          <button class="play primary" class:cueing aria-label={cueing ? words.cancelCue : playing ? words.pauseTab : words.playTab} disabled={!ready || busy} onclick={() => void togglePlay()}>{playing || cueing ? 'Ⅱ' : '▶'}</button>
-          <button aria-label={words.stopTab} onclick={() => { cancelCue(); api?.stop(); }}>■</button>
-          <span class="clock">{time(position)} <span>/ {time(duration)}</span></span>
-        </div>
-        <input class="scrub" type="range" aria-label={words.position} min="0" max={Math.max(1, duration)} step="100"
-          value={position} disabled={duration === 0} oninput={e => seek(Number(e.currentTarget.value))} />
-        {#if syncBpm !== null}<span class="synced" title={words.syncedTitle}>{words.synced(syncBpm)}</span>
-        {:else}<label>{words.speed}<select aria-label={words.speedLabel} bind:value={speed}>{#each [25, 50, 60, 70, 80, 90, 100, 110, 125, 150] as n}<option value={n}>{n}%</option>{/each}</select></label>{/if}
-        <button class:active={looping} aria-pressed={looping} onclick={() => { looping = !looping; if (api) api.isLooping = looping; }}>↻ {selection ? words.loopSelection : words.loopSong}</button>
-        {#if selection}<button onclick={() => { if (api) api.playbackRange = null; }}>{words.clearSelection}</button>{/if}
-        <label class="volume">{words.volume}<input type="range" aria-label={words.volumeLabel} min="0" max="100" bind:value={volume} oninput={() => { if (api) api.masterVolume = volume / 100; }} /></label>
-        <label class="view-select">{words.view}<select aria-label={words.viewLabel} bind:value={notation} onchange={updateDisplay}><option value="tab">{words.viewTab}</option><option value="both">{words.viewBoth}</option></select></label>
-        <label>{words.zoom}<select aria-label={words.zoomLabel} bind:value={zoom} onchange={updateDisplay}>{#each [75, 90, 100, 110, 125, 150] as n}<option value={n}>{n}%</option>{/each}</select></label>
-      </div>
-    {/if}
     {#if editing && score}
       <div class="editor-bar" role="toolbar" aria-label={words.editor}>
         <label>{words.bpm}<input class="tempo" type="number" aria-label={words.tempo} min="30" max="300" step="1" value={draft.tempo}
@@ -909,7 +923,9 @@
     {/if}
     <div class="reader-body" class:empty={!score}>
       {#if score}
-        <aside aria-label={words.scoreTracks}>
+        <!-- Opened from the studio's transport, over everything: the tab keeps
+             the whole width, and the list is there when a track is wanted. -->
+        <aside id="tab-tracks" class="tc-popover" popover aria-label={words.scoreTracks}>
           <span class="eyebrow">{words.tracks(score.tracks.length)}</span>
           <div class="tracks">{#each score.tracks as t, i}
             <div class="track-row">
@@ -928,7 +944,7 @@
               <button class="jump quiet" onclick={goToTrack}>{words.firstBar}</button>
             {:else}0/{score.masterBars.length}{/if}
           </p>
-          <p>{syncBpm ?? Math.round(score.tempo * speed / 100)} BPM <span>· {words.bars(score.masterBars.length)}</span></p>
+          <p>{deck.bpm} BPM <span>· {words.bars(score.masterBars.length)}</span></p>
         </aside>
       {/if}
       <div class="stage">
@@ -960,17 +976,20 @@
       {/if}
       </div>
     </div>
-    {#if score}<div class="reader-footer"><span>{score.title || filename}{score.artist ? ` · ${score.artist}` : ''}</span></div>{/if}
   </div>
 </section>
 
 <style>
-  /* Part of the rack's plate; only the focused view floats, and it takes the plate with it. */
-  .reader { min-width: 0; }
+  /* The whole stage of the Play view: the studio gives it a height and the
+     reader fills it, the track list and the neck included, never the page. */
+  .reader { display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; }
   .reader:focus { outline: none; }
-  .reader-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; }
+  .reader-heading { display: flex; align-items: center; gap: 16px; min-height: 56px; padding: 8px 20px; box-sizing: border-box; }
+  .reader-title { display: flex; flex-direction: column; gap: 6px; flex: 1 1 0; min-width: 0; }
   .eyebrow { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-2); }
-  h2 { margin: 8px 0 0; font: 500 17px var(--body); color: var(--text); }
+  h2 { margin: 0; overflow: hidden; font: 500 var(--type-title)/1.2 var(--body); color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+  h2 span { color: var(--text-2); font-weight: 400; }
+  .display { display: flex; align-items: center; gap: 14px; }
   .heading-actions { display: flex; gap: 10px; }
   .reader-heading > input { display: none; }
 
@@ -996,35 +1015,39 @@
   .primary.settled:hover:not(:disabled) { background: #29252f; }
   .quiet { border-color: transparent; background: none; color: var(--text-2); }
   .quiet:hover:not(:disabled) { border-color: transparent; background: none; color: var(--text); }
-  [aria-pressed='true']:not(.play), .active { border-color: var(--accent-line); background: var(--violet-900); color: var(--violet-100); }
-  .error, .storage-note { margin: 0; padding: 0 24px 15px; font-size: 13px; }
+  [aria-pressed='true'], .active { border-color: var(--accent-line); background: var(--violet-900); color: var(--violet-100); }
+  .error, .storage-note { margin: 0; padding: 0 20px 10px; font-size: 13px; }
   .error { color: var(--ember); }
   .storage-note { color: var(--text-2); }
 
+  .drop-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; }
   .dragging { outline: 2px dashed var(--accent-line); outline-offset: -5px; }
-  .transport, .editor-bar, .scale-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 24px; border-top: 1px solid #050407; box-shadow: inset 0 1px 0 #ffffff0a; }
-  .transport label, .editor-bar label, .scale-bar label { display: flex; align-items: center; gap: 8px; font: 400 9px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); }
-  .playback { display: flex; align-items: center; gap: 6px; }
-  .play { width: 40px; padding: 0; }
-  .play.cueing { animation: cue 500ms ease-in-out infinite alternate; }
-  @keyframes cue { to { opacity: .45; } }
-  @media (prefers-reduced-motion: reduce) { .play.cueing { animation: none; opacity: .6; } }
-  .synced { font: 11px var(--mono); color: var(--accent); white-space: nowrap; }
-  .clock { margin: 0 8px; font: 12px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .clock span { color: var(--text-3); }
-  .volume input { width: 70px; }
-  .scrub { flex: 1 1 160px; min-width: 110px; min-height: 34px; }
-  .scrub:disabled { opacity: .4; }
-  .view-select { margin-left: auto; }
+  .editor-bar, .scale-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 20px; border-top: 1px solid #050407; box-shadow: inset 0 1px 0 #ffffff0a; }
+  .display label, .editor-bar label, .scale-bar label { display: flex; align-items: center; gap: 8px; font: 400 9px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); }
   .tempo { width: 62px; box-sizing: border-box; min-height: 34px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-2); color: var(--text); font: 12px var(--mono); }
   .durations { display: flex; flex-wrap: wrap; gap: 3px; }
   .durations button { padding: 0 8px; font: 11px var(--mono); }
   .export { margin-left: auto; }
 
-  .reader-body { display: grid; grid-template-columns: 190px minmax(0, 1fr); border-top: 1px solid #050407; box-shadow: inset 0 1px 0 #ffffff0a; }
-  .reader-body.empty { display: block; }
-  aside { display: flex; flex-direction: column; min-width: 0; padding: 20px 14px; border-right: 1px solid var(--line); }
-  .tracks { display: grid; gap: 4px; max-height: 360px; margin-top: 14px; overflow: auto; }
+  .reader-body { display: flex; flex: 1; flex-direction: column; min-height: 0; border-top: 1px solid #050407; box-shadow: inset 0 1px 0 #ffffff0a; }
+  .reader-body.empty { justify-content: center; }
+  /* Rises from the transport's Tracks button, at the left of the screen. */
+  aside {
+    position: fixed;
+    inset: auto auto calc(var(--transport-height, 64px) + 8px) 16px;
+    width: 280px;
+    max-height: calc(100dvh - 240px);
+    margin: 0;
+    padding: 16px 14px;
+    overflow: auto;
+    box-sizing: border-box;
+  }
+  aside:popover-open { display: flex; flex-direction: column; }
+  /* Over the button that opened it, where anchoring exists; the corner otherwise. */
+  @supports (position-anchor: --a) {
+    aside { position-anchor: --tab-tracks; inset: auto; bottom: anchor(top); left: anchor(left); margin-bottom: 8px; position-try-fallbacks: flip-inline; }
+  }
+  .tracks { display: grid; gap: 4px; margin-top: 14px; }
   .track-row { display: grid; min-width: 0; }
   .tracks button { display: flex; align-items: baseline; gap: 10px; padding: 9px 8px; border-color: transparent; background: none; text-align: left; line-height: 1.5; overflow-wrap: anywhere; font-size: 13px; }
   .tracks button:hover:not(:disabled) { border-color: var(--line); background: var(--surface-2); }
@@ -1050,8 +1073,17 @@
 
   /* The lectern: paper under a lamp, framed and set into the plate, fading in
      when a score lands on it. The paper stays light because notation is read. */
-  .stage { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; padding: 16px; }
-  .score-viewport { position: relative; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-color: var(--violet-400) #e9e3d7; }
+  /* The line sits in the middle of the height it is given, the neck under it. */
+  .stage { display: flex; flex: 1; flex-direction: column; justify-content: center; gap: 14px; min-width: 0; min-height: 0; padding: 16px; overflow: hidden; container: lectern / size; }
+  /* Under a neck's worth of room, the neck goes rather than shrinking to a
+     line: the tab is what is being read. 480 px is the tab, the scale bar
+     and a 120 px neck. */
+  @container lectern (max-height: 480px) {
+    .stage > :global(.neck), .scale-bar { display: none; }
+    /* Alone, the paper is a whole sheet: no dark band above and below a line. */
+    .score-viewport.has-score { flex: 1 0 auto; }
+  }
+  .score-viewport { position: relative; flex: 0 0 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-color: var(--violet-400) #e9e3d7; }
   .has-score {
     display: flex;
     align-items: stretch;
@@ -1059,7 +1091,7 @@
     background: radial-gradient(ellipse 80% 120% at 50% 0%, #fffdf8 0%, #f6f1e7 55%, #ebe4d6 100%);
     color: #222;
     box-shadow: var(--shadow), 0 0 0 1px #000, inset 0 0 0 1px #ffffff80;
-    animation: lectern-in 360ms ease-out;
+    animation: lectern-in var(--dur-settle) var(--ease-out);
   }
   @keyframes lectern-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) { .has-score { animation: none; } }
@@ -1081,39 +1113,25 @@
   .legend .tone { border: 1.5px solid var(--violet-400); }
   .legend .play { background: #c08a32; }
 
-  .reader-footer { display: flex; justify-content: space-between; gap: 16px; padding: 12px 24px; border-top: 1px solid var(--line); font: 11px var(--mono); color: var(--text-2); }
-  .reader-footer > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .focused { position: fixed; inset: 16px; z-index: 50; display: flex; flex-direction: column; margin: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: 0 0 0 30px #080808e8; }
-  .focused .drop-surface { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .focused .reader-body { flex: 1; min-height: 0; }
-  .focused .stage { justify-content: center; }
-  .focused aside { overflow: auto; }
 
   :global(.at-cursor-bar) { background: #bda77230; }
   :global(.at-cursor-beat) { background: #866329; width: 3px; }
   :global(.at-selection div) { background: #bda77244; }
   :global(.at-highlight *) { fill: #a37320 !important; stroke: #a37320 !important; }
   @media (max-width: 760px) {
-    .transport, .editor-bar { padding: 10px 12px; gap: 8px; }
+    .reader { height: auto; }
+    /* The page scrolls here: the lectern has no height to be a size container of. */
+    .stage { container-type: normal; }
+    .reader-heading { flex-wrap: wrap; }
+    .display { order: 3; flex-basis: 100%; }
+    .editor-bar { padding: 10px 12px; gap: 8px; }
     .scale-bar { gap: 8px; }
     .legend { display: none; }
-    .reader-heading { padding: 18px 14px; }
+    .reader-heading { padding: 14px; }
     .heading-actions { gap: 6px; }
     .heading-actions button { padding: 0 8px; }
-    .reader-body { grid-template-columns: minmax(0, 1fr); }
-    aside { padding: 12px; border-right: 0; border-bottom: 1px solid var(--line); }
-    aside > .eyebrow, aside p:not(.plays) { display: none; }
-    .plays { margin-top: 10px !important; }
-    .jump { display: inline-block; margin: 0 0 0 8px; }
-    .tracks { display: flex; max-height: 120px; margin: 0; overflow: auto; }
-    .track-row { flex-shrink: 0; max-width: 180px; }
-    .track-tools { max-width: 160px; margin: 10px 0 0; }
+    aside { left: 8px; right: 8px; width: auto; }
     .stage { padding: 10px; }
-    .volume { display: none !important; }
-    .view-select { margin-left: 0; }
-    .focused { inset: 6px; }
-    .focused .reader-body { display: flex; flex-direction: column; }
-    .focused .stage { flex: 1; }
     .empty-state { padding: 32px 18px; }
   }
 </style>

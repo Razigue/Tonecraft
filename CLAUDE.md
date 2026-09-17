@@ -40,7 +40,7 @@ Trois contraintes non négociables, par ordre de priorité :
 | Prototypage DSP | Faust (`@grame/faustwasm`) | Non |
 | Baffle et reverb | Convolution dans la chaîne : tête FIR directe + queue partitionnée, latence nulle | Non |
 | Lecture de tablatures | alphaTab, chargé par `import()` à la première ouverture de fichier | Non |
-| Styles | CSS custom properties + Tailwind | Non |
+| Styles | CSS custom properties (`app/tokens.css`) + CSS scopé Svelte | Non |
 | Hébergement | GitHub Pages + domaine custom | Oui |
 | Analytics | GoatCounter ou Cloudflare Web Analytics | Non |
 
@@ -103,7 +103,7 @@ matériel du joueur, pas son son, et n'a rien à faire dans un tone link.
 - **Zéro allocation dans `process()`.** Tous les buffers sont pré-alloués à l'init. Pas de `new`, pas de closure créée par appel, pas de `console.log`.
 - Aucun accès DOM, aucun `await`, aucune exception dans le chemin audio.
 - **Les paramètres traversent en valeurs brutes et la chaîne les lisse elle-même** (`dsp/smooth.h`, l'équivalent exact de `setTargetAtTime`, échantillon par échantillon). Cette règle disait `AudioParam` ; mais l'hôte natif n'a pas d'`AudioParam`, et deux couches de lissage différentes feraient sonner différemment un fader en mouvement selon l'hôte. Une seule couche, dans la chaîne, pour les deux (AD-20). Tout passe donc par un appel `tc_*` : `postMessage` dans le navigateur, la socket loopback pour Tonecraft Engine.
-- **Métrage : RMS par étage calculé dans le worklet** — on y est déjà, c'est gratuit — écrit dans un `Float32Array` pré-alloué et posté à 30 Hz. Trente messages par seconde et quelques dizaines d'octets : négligeable. C'est ce qui alimente le cordon et les meters. **Pas de `SharedArrayBuffer`, pas de COOP/COEP, pas de `coi-serviceworker`, aucune isolation cross-origin nulle part.**
+- **Métrage : RMS par étage calculé dans le worklet** — on y est déjà, c'est gratuit — écrit dans un `Float32Array` pré-alloué et posté à 30 Hz. Trente messages par seconde et quelques dizaines d'octets : négligeable. C'est ce qui alimente les meters d'entrée et de sortie et l'éclairage du vitrail de la tête. **Pas de `SharedArrayBuffer`, pas de COOP/COEP, pas de `coi-serviceworker`, aucune isolation cross-origin nulle part.**
 
 ### DSP
 
@@ -173,10 +173,13 @@ L'utilisateur ne peut pas distinguer un problème d'impédance d'un mauvais mote
 
 - Les pages de contenu envoient **0 kB de JS**. Toute hydratation doit être justifiée.
 - L'application est **un seul îlot**, sur une seule route (`/app/`, hors index et hors sitemap), en `client:only="svelte"`. L'accueil (`/` et `/fr/`) est une landing statique qui y mène avec `?lang=` ; les deux partagent le choix de langue (`tonecraft-locale`).
-- **Aucun contrôle rotatif. Tous les contrôles continus sont des faders verticaux linéaires**, en SVG + `transform: translate()` en CSS. Jamais de canvas, jamais de sprite sheet. Composité GPU, coût CPU nul. Voir `DESIGN.md` §1 et §6 : c'est une position argumentée, pas une préférence.
-- **Aucun `<canvas>`, aucun `AnalyserNode`, ni spectre ni oscilloscope.** Toute la visualisation est portée par le cordon (`DESIGN.md` §5) : un filet SVG/CSS dont l'opacité par segment est pilotée par le RMS de chaque étage, calculé dans le worklet et posté à 30 Hz. Suspendu quand l'onglet est caché.
-- Sur les pages preset pré-rendues, le cordon est alimenté par l'enveloppe RMS calculée au build et livrée en JSON, animée depuis `audio.currentTime`. Aucun graphe audio, même signature visuelle sur les deux chemins.
-- Interdits en animation : `backdrop-filter`, `filter: blur()`, `box-shadow` animée. Uniquement `transform` et `opacity`.
+- **Le studio ne scrolle pas, côté musicien.** Une seule fenêtre fixe, `100dvh`, quatre bandes pleine largeur : barre (56 px), chaîne (80 px), scène élastique, transport. Le transport est le DAW du studio : sa rangée (88 px) et, dessous, les pistes du recorder, toujours visibles ; la scène cède la hauteur qu'elles prennent, le vitrail de la tête suit la hauteur mesurée du transport. Ce qui s'ouvre encore (pistes de la tab, niveaux) se superpose à la scène. Le seul contenu qui défile est la tab. Vérifié par `npm run test:studio` (`scrollHeight === innerHeight` dans les deux vues). La page du testeur, elle, défile : voir la règle suivante.
+- **Le layout à bandes est celui du musicien ; le testeur garde la colonne.** Qui arrive sans guitare lit une page : barre, bande chaîne, tête d'ampli, puis la colonne — démo et lecteur de tablatures — qui défile, et le tutoriel par-dessus. Raison : le studio à bandes est un instrument, dimensionné pour des mains sur une guitare, et il n'a pas de sens pour quelqu'un qui n'en a pas ; une page qui défile, elle, se parcourt. Les deux modes partagent la même matière, les mêmes tokens, les mêmes composants et les mêmes dialogues : **le visuel ne se dédouble jamais, seule la disposition change** — cela vaut aussi pour la landing, qui suit les mêmes tokens.
+- **Deux modes, une scène.** Un sélecteur *Son / Jeu* permanent, au centre de la barre, est la seule navigation du studio. *Son* : la tête d'ampli, largeur fixe `--column`, centrée. *Jeu* : la tab, bord à bord, sur toute la scène ; l'alimentation de l'ampli passe dans la bande chaîne. Ouvrir une tab bascule en *Jeu*. Pas de volets empilés ni de bandeau replié : un mode possède toute la scène. Le mode est sauvé dans la session.
+- **Contrôles continus : des potentiomètres (`Knob.svelte`)**, sur un `<input type="range">` natif — clavier, lecteur d'écran, glisser vertical, double-clic pour revenir à la valeur du preset. Rendu en SVG + `transform`, jamais en canvas ni en sprite sheet. Les faders verticaux de la première maquette ont été abandonnés : une tête d'ampli se lit à ses boutons.
+- **Aucun `<canvas>`, aucun `AnalyserNode`, ni spectre ni oscilloscope.** La visualisation du signal se limite aux deux meters (entrée en crête, sortie en RMS) et à l'éclairage du vitrail, dont seule l'`opacity` suit le RMS de sortie posté par le worklet à 30 Hz. Suspendu quand l'onglet est caché.
+- Sur les pages preset pré-rendues, cette même visualisation est alimentée par l'enveloppe RMS calculée au build et livrée en JSON, animée depuis `audio.currentTime`. Aucun graphe audio.
+- Interdits en animation : `backdrop-filter`, `filter` animé, `box-shadow` animée. Uniquement `transform` et `opacity`. Un filtre SVG **statique** sur une image (relief et halo du vitrail) est permis : il est rastérisé une fois, seule l'opacité du calque varie ensuite.
 - Polices self-hostées, woff2, sous-ensemblées, `font-display: swap`. Aucun appel à Google Fonts.
 - Le thread principal ne doit jamais bloquer plus de 8 ms : un jank UI se traduit par un dropout audible.
 - **Le lecteur de tablatures ne touche pas à la chaîne, et la chaîne ne l'attend pas.** Rendu en SVG, jamais en canvas — alphaTab sait faire les deux, le choix est écrit dans la config plutôt que hérité d'un défaut. Sa lecture audio a son propre `AudioContext` : elle ne partage ni le graphe, ni l'horloge, ni le worklet, et n'entre donc ni dans le looper ni dans une prise. Le moteur, les polices de notation et le soundfont sont chargés au premier fichier ouvert, pas avant.
@@ -187,13 +190,13 @@ L'utilisateur ne peut pas distinguer un problème d'impédance d'un mauvais mote
 
 **`DESIGN.md` est la source de vérité.** Cette section n'en est que le rappel ; en cas d'écart, `DESIGN.md` gagne.
 
-Direction : **nylon et minéral**. Les références ne sont pas du matériel de guitare — ce sont la photographie de maquettes d'architecture, les panneaux d'instruments Braun, et la face mate d'une céramique non émaillée. Aucune référence à un plugin existant ni à un artiste : `PRODUCT.md` §7 l'interdit explicitement, et s'en réclamer dans le dépôt finirait par se voir dans le produit.
+Direction : **un studio sombre, un seul accent**. Tonecraft possède la coque — noir et gris neutres, barre, chaîne, transport, dialogues. Chaque ampli ne possède que sa tête : matière, inscription, vitrail, accent de ses boutons. GUILT est l'identité de la capture Lead ; les autres captures portent la tête neutre Tonecraft. Aucune référence à un plugin existant ni à un artiste : `PRODUCT.md` §7 l'interdit.
 
-- Minimalisme flat assumé. Aucun skeuomorphisme, aucune texture de tolex, aucun reflet chromé.
-- Palette de six tokens. Fond **gris-vert froid** `--chalk #E7E8E2`, délibérément pas un crème chaud : le crème est l'endroit où tous les outils audio « doux » ont atterri ces deux dernières années, et il rend générique dès qu'on est à côté d'un concurrent. Une seule couleur d'accent, `--celadon`.
-- Typographie fine, généreusement espacée. Beaucoup d'espace négatif.
-- **Aucun knob rond nulle part.** Tous les contrôles continus sont des faders verticaux linéaires à filet fin et cap plat. C'est un écart assumé avec la convention de la catégorie : une rangée de faders se lit d'un coup d'œil, se manipule au doigt comme à la souris, et se lit instantanément comme du logiciel plutôt que comme une photo de matériel.
-- Hiérarchie par l'espacement et le poids typographique, pas par des bordures ou des cadres.
+- Pas de tolex, pas de chrome, pas de vis décoratives hors de la tête d'ampli. La coque reste plate.
+- Trois surfaces (`--surface-0..2`), trois niveaux de texte, **un seul accent, violet** (`--violet-*`, `--accent`). `--ember` est réservé à l'enregistrement, à l'écrêtage et à la destruction. `--iris` aux anneaux de focus.
+- La tab est la seule surface claire : de la notation se lit sur du papier.
+- Typographie fine et espacée ; deux échelles, celle du réglage (Tone) et une échelle agrandie pour la lecture à 1,5 m (Play).
+- Hiérarchie par l'espacement et le poids typographique, pas par des cadres.
 
 Tous les tokens (couleurs, espacements, rayons, durées) sont centralisés en custom properties CSS. Aucune valeur en dur dans les composants.
 

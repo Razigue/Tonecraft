@@ -14,7 +14,10 @@
  */
 
 export interface Preset {
+  /** The key the rig selects it by. A saved tone's is `saved:<id>`. */
   readonly name: string;
+  /** What the dropdown shows, when it is not a translated factory name. */
+  readonly label?: string;
   readonly pack: string;
   readonly capture: string;
   readonly cab: string;

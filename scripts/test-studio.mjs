@@ -21,7 +21,7 @@ const server = http.createServer((req, res) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
-const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
+const page = await browser.newPage({ viewport: { width: 1440, height: 1100 }, locale: 'en-US' });
 const errors = [];
 // Printed as it happens: the final assertion only says an error was thrown,
 // never which step threw it.
@@ -36,14 +36,43 @@ try {
   await page.getByRole('button', { name: 'Musician' }).click();
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await page.locator('.capture-info[data-capture="loaded"]').waitFor({ state: 'attached', timeout: 30000 });
-  await page.getByRole('button', { name: '● Record', exact: true }).click();
-  await page.getByRole('button', { name: '■ Stop recording', exact: true }).waitFor();
+  // The studio is one screen, in both views: the document never scrolls.
+  const fits = () => page.evaluate(() => document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth);
+  assert(await fits(), 'the Tone view fits the window');
+  // A tone is saved, found again after a reload, and deleted, all from the preset dropdown.
+  const tonePicker = page.getByRole('combobox', { name: 'Tone preset' });
+  await page.getByRole('slider', { name: 'Gain' }).first().press('ArrowUp');
+  await tonePicker.selectOption('action:save');
+  await page.getByRole('textbox', { name: 'Tone name' }).fill('  Test   crunch ');
+  await page.getByRole('textbox', { name: 'Tone name' }).press('Enter');
+  const savedOption = tonePicker.locator('optgroup[label="My tones"] option', { hasText: 'Test crunch' });
+  await savedOption.waitFor({ state: 'attached' });
+  assert.equal(await tonePicker.inputValue(), await savedOption.getAttribute('value'), 'the saved tone is the one selected');
+  const savedKey = await savedOption.getAttribute('value');
+  await page.waitForTimeout(500); // the session write is debounced by 250 ms
+  await page.reload();
+  // Nothing starts by itself after a reload; the dropdown is enough to check.
+  await savedOption.waitFor({ state: 'attached', timeout: 30000 });
+  await page.waitForFunction(key => document.querySelector('select[aria-label="Tone preset"]')?.value === key, savedKey, { timeout: 10000 });
+  await tonePicker.selectOption('action:delete');
+  await savedOption.waitFor({ state: 'detached' });
+  assert.equal(await tonePicker.inputValue(), '', 'deleting the tone leaves the sound as a custom tone');
+  assert(await fits(), 'the tone dropdown does not change the layout');
+  // The reload left the amp off, as it should: start it again as the page first did.
+  await page.getByRole('button', { name: 'Musician' }).click();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.locator('.capture-info[data-capture="loaded"]').waitFor({ state: 'attached', timeout: 30000 });
+  // A take is recorded from the transport, and the tracks under it show it.
+  await page.getByRole('button', { name: 'Record a take', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop the take', exact: true }).waitFor({ timeout: 20000 });
   await page.waitForTimeout(3000); // capture a real fake-device stream
-  await page.getByRole('button', { name: '■ Stop recording', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop the take', exact: true }).click();
+  await page.getByRole('button', { name: 'Record a take', exact: true }).waitFor({ timeout: 20000 });
+  assert(await fits(), 'the open drawer rises over the stage, it does not lengthen the page');
   await page.getByRole('button', { name: '● New take', exact: true }).waitFor({ timeout: 20000 });
   const download = async item => {
     const pending = page.waitForEvent('download', { timeout: 60000 });
-    await page.getByRole('button', { name: 'Export WAV ▾', exact: true }).click();
+    await page.getByRole('button', { name: 'Export WAV', exact: true }).click();
     await page.getByRole('menuitem', { name: new RegExp(`^${item.replace('+', '\\+')}`) }).click();
     const result = await pending;
     const target = path.join(artifacts, result.suggestedFilename());
@@ -65,10 +94,10 @@ try {
   const wet = await download('Guitar only');
   assert.notDeepEqual(dry, wet);
   // Without a backing track, the list offers only the guitar.
-  await page.getByRole('button', { name: 'Export WAV ▾', exact: true }).click();
+  await page.getByRole('button', { name: 'Export WAV', exact: true }).click();
   assert(await page.getByRole('menuitem', { name: /^Guitar \+ backing/ }).isDisabled(), 'no mix without a backing track');
   assert(await page.getByRole('menuitem', { name: /^Backing only/ }).isDisabled(), 'no backing export without one');
-  await page.locator('.recorder .record-title').click();
+  await page.locator('.recorder .lane-names').click();
   assert.equal(await page.getByRole('menu').count(), 0, 'the list closes on a click elsewhere');
   console.log('ok live recording, persistent DI, dry and processed WAV downloads');
 
@@ -83,9 +112,9 @@ try {
   await page.getByLabel('Backing track file', { exact: true }).setInputFiles({ name: 'song.wav', mimeType: 'audio/wav', buffer: song });
   await page.getByLabel('Backing track waveform', { exact: true }).waitFor({ timeout: 15000 });
   await page.getByRole('button', { name: '● New take', exact: true }).click();
-  await page.getByRole('button', { name: '■ Stop recording', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Stop the take', exact: true }).waitFor();
   await page.waitForTimeout(1200);
-  await page.getByRole('button', { name: '■ Stop recording', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop the take', exact: true }).click();
   await page.getByRole('button', { name: '● New take', exact: true }).waitFor({ timeout: 20000 });
   await page.getByRole('radio', { name: 'DI', exact: true }).click();
   const cover = await download('Guitar + backing');
@@ -142,13 +171,13 @@ try {
   // A second track, added with the button and recorded over the first: the
   // first is heard through the chain while it records, and each exports alone
   // or together. Removing it leaves the first track as it was.
-  await page.getByRole('button', { name: '+ Add track', exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: '+ Add track', exact: true }).count(), 0, 'two tracks at most');
+  await page.getByRole('button', { name: 'Add track', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Add track', exact: true }).count(), 0, 'two tracks at most');
   assert.equal(await page.getByRole('radio', { name: 'Record into Guitar 2', exact: true }).getAttribute('aria-checked'), 'true', 'a new track is the one recorded into');
-  await page.getByRole('button', { name: '● Record', exact: true }).click();
-  await page.getByRole('button', { name: '■ Stop recording', exact: true }).waitFor({ timeout: 60000 });
+  await page.getByRole('button', { name: 'Record a take', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop the take', exact: true }).waitFor({ timeout: 60000 });
   await page.waitForTimeout(1500);
-  await page.getByRole('button', { name: '■ Stop recording', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop the take', exact: true }).click();
   await page.getByLabel('Recorded guitar 2', { exact: true }).waitFor({ timeout: 20000 });
   await page.getByRole('radio', { name: 'DI', exact: true }).click();
   const second = await download('Guitar 2 only');
@@ -179,9 +208,22 @@ try {
   const score = importer.readScore();
   const gp = Buffer.from(new alpha.exporter.Gp7Exporter().export(score));
   const picker = page.getByLabel('Import tablature', { exact: true });
-  await page.locator('.reader').scrollIntoViewIfNeeded();
-  await picker.setInputFiles({ name: 'practice.gp', mimeType: 'application/octet-stream', buffer: gp });
+  // The track list is a popover opened from the transport.
+  const tracks = async () => {
+    const list = page.locator('#tab-tracks');
+    if (!(await list.evaluate(el => el.matches(':popover-open')))) await page.getByRole('button', { name: 'Tracks', exact: true }).click();
+    return list;
+  };
+  const closeTracks = () => page.evaluate(() => document.getElementById('tab-tracks')?.hidePopover());
+  // Opened from the transport, in the Tone mode: the studio goes to Play, and the tab has the stage.
+  const mode = name => page.getByRole('tab', { name, exact: true });
+  assert.equal(await mode('Tone').getAttribute('aria-selected'), 'true', 'the studio opens on the amp');
+  await page.getByLabel('Open a tab', { exact: true }).setInputFiles({ name: 'practice.gp', mimeType: 'application/octet-stream', buffer: gp });
   await page.locator('.score-paper svg').first().waitFor({ timeout: 30000 });
+  await page.waitForFunction(() => document.querySelector('[role=tab][aria-selected=true]')?.textContent === 'Play');
+  assert.equal(await page.locator('.amp-head').count(), 0, 'in Play the amp leaves the stage');
+  assert(await page.getByRole('button', { name: 'Amplifier power', exact: true }).isVisible(), 'and its power is in the chain band');
+  assert(await fits(), 'the Play view fits the window');
   await page.waitForTimeout(1500);
   const signed = await page.evaluate(() => [...document.querySelectorAll('.score-paper svg text')]
     .filter(t => t.textContent.includes('rendered by') && t.getClientRects().length > 0).length);
@@ -193,69 +235,69 @@ try {
   assert(rows.every(Boolean), `the section, the palm mute and the tempo are drawn (${JSON.stringify(rows)})`);
   const apart = (a, b) => a.bottom <= b.top || b.bottom <= a.top || a.right <= b.left || b.right <= a.left;
   assert(apart(rows[0], rows[1]) && apart(rows[0], rows[2]) && apart(rows[1], rows[2]), `rows of effects starting on one beat do not overlap (${JSON.stringify(rows)})`);
-  await page.getByRole('button', { name: /^02 Bass/ }).click();
-  assert.equal(await page.getByRole('button', { name: /^02 Bass/ }).getAttribute('aria-pressed'), 'true');
-  await page.getByRole('button', { name: 'Solo', exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: 'Solo', exact: true }).getAttribute('aria-pressed'), 'true');
-  await page.getByRole('button', { name: /^01 Guitar/ }).click();
-  assert.equal(await page.getByRole('button', { name: 'Solo', exact: true }).getAttribute('aria-pressed'), 'false');
+  await (await tracks()).getByRole('button', { name: /^02 Bass/ }).click();
+  assert.equal(await (await tracks()).getByRole('button', { name: /^02 Bass/ }).getAttribute('aria-pressed'), 'true');
+  await (await tracks()).getByRole('button', { name: 'Solo', exact: true }).click();
+  assert.equal(await (await tracks()).getByRole('button', { name: 'Solo', exact: true }).getAttribute('aria-pressed'), 'true');
+  await (await tracks()).getByRole('button', { name: /^01 Guitar/ }).click();
+  assert.equal(await (await tracks()).getByRole('button', { name: 'Solo', exact: true }).getAttribute('aria-pressed'), 'false');
   // Solo and mute belong to their track: choosing another one used to clear
   // them all, so muting a second track unmuted the first.
-  await page.getByRole('button', { name: 'Mute', exact: true }).click();
-  await page.getByRole('button', { name: /^03 Late Solo/ }).click();
-  assert.equal(await page.getByRole('button', { name: 'Mute', exact: true }).getAttribute('aria-pressed'), 'false');
-  await page.getByRole('button', { name: 'Mute', exact: true }).click();
-  await page.getByRole('button', { name: /^01 Guitar/ }).click();
-  assert.equal(await page.getByRole('button', { name: 'Mute', exact: true }).getAttribute('aria-pressed'), 'true', 'muting a second track leaves the first muted');
+  await (await tracks()).getByRole('button', { name: 'Mute', exact: true }).click();
+  await (await tracks()).getByRole('button', { name: /^03 Late Solo/ }).click();
+  assert.equal(await (await tracks()).getByRole('button', { name: 'Mute', exact: true }).getAttribute('aria-pressed'), 'false');
+  await (await tracks()).getByRole('button', { name: 'Mute', exact: true }).click();
+  await (await tracks()).getByRole('button', { name: /^01 Guitar/ }).click();
+  assert.equal(await (await tracks()).getByRole('button', { name: 'Mute', exact: true }).getAttribute('aria-pressed'), 'true', 'muting a second track leaves the first muted');
   assert.equal(await page.locator('.tracks button.muted .flag.mute').count(), 2, 'the track list shows which tracks are muted');
-  await page.getByRole('button', { name: /^02 Bass/ }).click();
-  assert.equal(await page.getByRole('button', { name: 'Solo', exact: true }).getAttribute('aria-pressed'), 'true', 'a solo survives choosing other tracks');
+  await (await tracks()).getByRole('button', { name: /^02 Bass/ }).click();
+  assert.equal(await (await tracks()).getByRole('button', { name: 'Solo', exact: true }).getAttribute('aria-pressed'), 'true', 'a solo survives choosing other tracks');
   assert.equal(await page.locator('.tracks button.silenced').count(), 2, 'the track list shows which tracks a solo silences');
   // A volume per track, kept like mute and solo while other tracks are chosen.
   assert.equal(await page.locator('.tracks input.track-volume').count(), 3, 'every track has its own volume');
-  await page.getByLabel('Volume of Guitar', { exact: true }).fill('35');
-  await page.getByRole('button', { name: /^03 Late Solo/ }).click();
-  await page.getByRole('button', { name: /^02 Bass/ }).click();
-  assert.equal(await page.getByLabel('Volume of Guitar', { exact: true }).inputValue(), '35', 'a track keeps its volume');
-  assert.equal(await page.getByLabel('Volume of Bass', { exact: true }).inputValue(), '100', 'the others stay at full volume');
-  await page.getByLabel('Volume of Guitar', { exact: true }).fill('100');
+  await (await tracks()).getByLabel('Volume of Guitar', { exact: true }).fill('35');
+  await (await tracks()).getByRole('button', { name: /^03 Late Solo/ }).click();
+  await (await tracks()).getByRole('button', { name: /^02 Bass/ }).click();
+  assert.equal(await (await tracks()).getByLabel('Volume of Guitar', { exact: true }).inputValue(), '35', 'a track keeps its volume');
+  assert.equal(await (await tracks()).getByLabel('Volume of Bass', { exact: true }).inputValue(), '100', 'the others stay at full volume');
+  await (await tracks()).getByLabel('Volume of Guitar', { exact: true }).fill('100');
   // Back to the whole band unmuted, for the playback below.
-  await page.getByRole('button', { name: 'Solo', exact: true }).click();
-  await page.getByRole('button', { name: /^01 Guitar/ }).click();
-  await page.getByRole('button', { name: 'Mute', exact: true }).click();
-  await page.getByRole('button', { name: /^03 Late Solo/ }).click();
-  await page.getByRole('button', { name: 'Mute', exact: true }).click();
-  await page.getByRole('button', { name: /^01 Guitar/ }).click();
+  await (await tracks()).getByRole('button', { name: 'Solo', exact: true }).click();
+  await (await tracks()).getByRole('button', { name: /^01 Guitar/ }).click();
+  await (await tracks()).getByRole('button', { name: 'Mute', exact: true }).click();
+  await (await tracks()).getByRole('button', { name: /^03 Late Solo/ }).click();
+  await (await tracks()).getByRole('button', { name: 'Mute', exact: true }).click();
+  await (await tracks()).getByRole('button', { name: /^01 Guitar/ }).click();
+  await closeTracks();
   await page.getByRole('button', { name: 'Play tablature', exact: true }).click({ timeout: 30000 });
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor();
   await page.waitForFunction(() => !document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
   assert.deepEqual(soundFonts, [200], 'the MuseScore_General soundfont is fetched once, and served');
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
   await page.getByRole('combobox', { name: 'Playback speed', exact: true }).selectOption('70');
-  await page.getByRole('button', { name: '↻ Loop song', exact: true }).click();
+  await page.getByRole('button', { name: 'Loop song', exact: true }).click();
   await page.getByRole('combobox', { name: 'Notation view', exact: true }).selectOption('both');
-  // From the end of the page, where the page shortening under focus view
-  // clamps the scroll: leaving it has to put the page back where it was.
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  const pageBefore = await page.evaluate(() => window.scrollY);
-  await page.getByRole('button', { name: 'Focus view', exact: true }).click();
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(artifacts, 'tab-reader-desktop.png') });
-  await page.evaluate(() => window.scrollTo(0, 0));   // what Firefox leaves behind
-  await page.getByRole('button', { name: 'Exit focus', exact: true }).click();
-  await page.waitForTimeout(300);
-  assert.equal(await page.evaluate(() => window.scrollY), pageBefore, 'leaving focus view puts the page back where it was');
-  console.log('ok Guitar Pro import, tracks, solo, notation, playback, speed, loop and focus view');
+  // The two modes, one press apart, the tab kept laid out while the amp has the stage.
+  await mode('Tone').click();
+  await page.locator('.amp-head').waitFor();
+  assert(await page.locator('.tab-stage').evaluate(el => el.inert), 'the stowed tab takes no input');
+  assert(await fits(), 'back in Tone, the studio still fits');
+  await mode('Tone').press('ArrowRight');
+  assert.equal(await mode('Play').getAttribute('aria-selected'), 'true', 'the arrow keys move between the modes');
+  await page.locator('.amp-head').waitFor({ state: 'detached' });
+  console.log('ok Guitar Pro import, tracks, solo, notation, playback, speed, loop, and the two modes');
 
   // Where a track plays, and getting there. A track that enters late is not a
   // broken track, but nothing said so until the count and the jump existed.
-  const late = page.getByRole('button', { name: /^03 Late Solo/ });
+  const late = (await tracks()).getByRole('button', { name: /^03 Late Solo/ });
   assert.equal((await late.innerText()).trim().split(/\s+/).pop(), '1', 'the track list counts the bars a track plays in');
   await late.click();
   await page.locator('.plays').filter({ hasText: '40\u201340 \u00b7 1/40' }).waitFor();
   await page.getByRole('button', { name: 'Stop tablature', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
-  await page.getByRole('button', { name: 'Go to its first bar', exact: true }).click();
+  await (await tracks()).getByRole('button', { name: 'Go to its first bar', exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
   await page.getByLabel('Playback position').fill('0');
   await page.waitForFunction(() => document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
@@ -318,7 +360,7 @@ try {
   console.log('ok zooming keeps the line exactly as long as the score');
 
   // The arrows: a beat at a time while paused, a bar at a time while playing.
-  await page.getByRole('button', { name: /^01 Guitar/ }).click();
+  await (await tracks()).getByRole('button', { name: /^01 Guitar/ }).click();
   await page.getByRole('button', { name: 'Stop tablature', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
   const cursorAt = selector => page.evaluate(s => {
@@ -340,6 +382,8 @@ try {
   assert.equal(await page.locator('.neck .core').count(), 1, 'paused, the neck lights the note under the cursor');
   await page.getByRole('button', { name: 'Play tablature', exact: true }).click();
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor({ timeout: 10000 });
+  // The transport's button has the focus now; the arrows are the reader's.
+  await page.locator('.reader').focus();
   await page.waitForTimeout(300);
   const barBefore = await cursorAt('.at-cursor-bar');
   await page.keyboard.press('ArrowRight');
@@ -386,27 +430,28 @@ try {
     assert.deepEqual(stringCores, [1, 0, 0], `${view}: the neck lights the note on that string, and nothing on a string with none`);
     // Down, back to the lowest string, so the next view starts from the same place.
     await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown');
-    await page.getByRole('button', { name: /^01 Guitar/ }).click();
+    await (await tracks()).getByRole('button', { name: /^01 Guitar/ }).click();
     await page.locator('.reader').focus();
   }
   await page.getByRole('button', { name: 'Play tablature', exact: true }).click();
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor({ timeout: 10000 });
   assert.equal(await page.locator('.string-cursor').count(), 0, 'playing hides the string cursor');
+  await page.locator('.reader').focus();
   const before = await page.locator('.tracks button[aria-pressed="true"]').innerText();
   await page.keyboard.press('ArrowDown');
   await page.waitForTimeout(200);
   const after = await page.locator('.tracks button[aria-pressed="true"]').innerText();
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
   assert.notEqual(after, before, `playing, the down arrow chooses the next track (${before.split(/\s+/)[1]} → ${after.split(/\s+/)[1]})`);
-  await page.getByRole('button', { name: /^01 Guitar/ }).click();
+  await (await tracks()).getByRole('button', { name: /^01 Guitar/ }).click();
   console.log('ok up and down move a string cursor while paused and change track while playing');
 
   // The neck under the tab is the track's own: a four-string bass draws four.
   assert.equal(await page.locator('.neck .fret').count(), 24);
   assert.equal(await page.locator('.neck .string').count(), 6);
-  await page.getByRole('button', { name: /^02 Bass/ }).click();
+  await (await tracks()).getByRole('button', { name: /^02 Bass/ }).click();
   await page.waitForFunction(() => document.querySelectorAll('.neck .string').length === 4, { timeout: 10000 });
-  await page.getByRole('button', { name: /^01 Guitar/ }).click();
+  await (await tracks()).getByRole('button', { name: /^01 Guitar/ }).click();
   await page.waitForFunction(() => document.querySelectorAll('.neck .string').length === 6, { timeout: 10000 });
   // It lights where the note is, and the light leaves for the next one.
   await page.getByRole('button', { name: 'Play tablature', exact: true }).click();
@@ -529,6 +574,7 @@ try {
   await picker.setInputFiles({ name: 'broken.gpx', mimeType: 'application/octet-stream', buffer: Buffer.from('not a score') });
   await page.locator('.reader .error').waitFor();
   assert(await page.locator('.score-paper svg').count() > 0, 'A bad import must preserve the current score');
+  await page.waitForTimeout(500); // the session write is debounced by 250 ms
   await page.reload();
   await page.getByRole('button', { name: 'Explore first' }).click();
   await page.getByRole('button', { name: 'Play tablature', exact: true }).waitFor({ timeout: 30000 });
