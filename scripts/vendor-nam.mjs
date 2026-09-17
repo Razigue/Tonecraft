@@ -3,7 +3,7 @@
    -----------------------------------------------------------------------------
    The application runs entirely offline, with no CDN and nothing fetched at
    runtime that is not ours. This script downloads the amp captures from
-   pelennor2170/NAM_models (GNU GPL v3) and VIC AUDIO (T3K),
+   pelennor2170/NAM_models (GNU GPL v3), VIC AUDIO and TONE3000 (T3K),
    into `public/models/`, which is what the site ships.
 
    The engine is not vendored any more: scripts/build-nam.mjs compiles it from
@@ -33,12 +33,13 @@ const MODEL_REPO = 'pelennor2170/NAM_models';
 
    `pack` : the family shown in the interface.
    `cab`  : the cabinet offered by default with this capture.
-   The Helga captures contain the amplifier alone. VIC AUDIO's Nightmare is
-   a full rig; its extra Celestion IR reproduces the requested player setup.
+   The Helga captures contain the amplifier alone. Nightmare and Super Reverb
+   are full rigs; their extra IRs reproduce the requested player setups.
 --------------------------------------------------------------------------- */
 const PACKS = [
   { id: 'metal', name: 'Metal', order: 1 },
-  // Packs to come: clean, crunch, bass.
+  { id: 'clean', name: 'Clean', order: 2 },
+  // Packs to come: crunch, bass.
 ];
 
 const MODEL_CATALOG = [
@@ -70,6 +71,15 @@ const MODEL_CATALOG = [
     name: 'VA Nightmare (MD and Mesa Oversized)', pack: 'metal', cab: 'celestion-g12-vintage',
     note: 'Driftwood Purple Nightmare full rig: Merciless Drive, Mesa Oversized, SM57 + M160.',
   },
+  {
+    src: 'Fender Super Reverb EQ Flat Volume 3 sm57 and AKG 414.nam',
+    url: 'https://api.tone3000.com/storage/v1/object/public/models/f5on0jl7xbp_a2.nam',
+    sourcePage: 'https://www.tone3000.com/tones/fender-super-reverb-1977-19',
+    license: 'T3K', author: 'TONE3000',
+    name: 'Fender Super Reverb: EQ Flat, Volume 3, sm57 and AKG 414',
+    pack: 'clean', cab: 'mesa-412-os',
+    note: '1977 Fender Super Reverb, flat EQ, volume 3; SM57 and AKG C414 blend.',
+  },
 ];
 
 const log = (...a) => console.log(...a);
@@ -77,7 +87,7 @@ const ensure = (d) => fs.mkdirSync(d, { recursive: true });
 
 /* ------------------------------ the captures ----------------------------- */
 async function vendorModels() {
-  log('\nNAM captures (Helga: GNU GPL v3; VIC AUDIO: T3K — see attribution files)');
+  log('\nNAM captures (Helga: GNU GPL v3; VIC AUDIO and TONE3000: T3K — see attribution files)');
   ensure(MODELS);
   const raw = 'https://raw.githubusercontent.com/' + MODEL_REPO + '/main/';
   const index = [];
@@ -119,6 +129,7 @@ async function vendorIR() {
   ensure(dir);
   for (const [source, file] of [
     ['ui/public/irs/celestion.wav', 'celestion-g12-vintage.wav'],
+    ['ui/public/irs/mesa.wav', 'mesa-412-os.wav'],
     ['LICENSE', 'TONE3000-LICENSE.txt'],
   ]) {
     const r = await fetch(raw + source);

@@ -46,6 +46,18 @@ export const PRESETS: readonly Preset[] = [
       pitch_shift: 0, reverb_bypass: 1, reverb_mix: 0.12, out_master: -12.4,
     },
   },
+  {
+    name: 'Clean',
+    pack: 'clean',
+    capture: 'fender-super-reverb-eq-flat-volume-3-sm57-and-akg-414.nam',
+    cab: 'mesa-412-os',
+    values: {
+      // Preserve the clean capture's headroom, flat EQ and microphone blend.
+      in_trim: 0, gate_threshold: -65, drive_bypass: 1, drive_gain: 0, drive_tone: 5200,
+      tone_bass: 0, tone_mid: 0, tone_treble: 0, tone_presence: 0,
+      pitch_shift: 0, reverb_bypass: 1, reverb_mix: 0.12, out_master: -12.4,
+    },
+  },
 ] as const;
 
 /** The one everybody hears first. Its values are the schema defaults. */

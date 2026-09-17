@@ -111,6 +111,12 @@ export const CABS: readonly Cab[] = [
     hint: 'The recorded Celestion G12 Vintage IR from the TONE3000 player.',
     file: 'irs/celestion-g12-vintage.wav',
   },
+  {
+    id: 'mesa-412-os',
+    name: 'Mesa 412 OS',
+    hint: 'The recorded Mesa 412 OS IR from the TONE3000 player.',
+    file: 'irs/mesa-412-os.wav',
+  },
 ] as const;
 
 export const DEFAULT_CAB = 'v30mod';
