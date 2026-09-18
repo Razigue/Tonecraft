@@ -354,6 +354,9 @@
 
   async function toggleMetronome(): Promise<void> {
     if (metronomeOpening || metronomeBpm === null) return;
+    // Started by hand, it is the player's own click from here on, and the tab
+    // stopping no longer takes it with it.
+    metronomeBySync = false;
     if (metronomePlaying) {
       metronome.pause();
       metronomePlaying = false;
@@ -401,6 +404,13 @@
   }
 
   /**
+   * Whether the click that is ticking was started by the tab rather than by the
+   * player. A tab that starts the click owns it and stops it again when it
+   * pauses; a click the player started themselves is theirs, and keeps going.
+   */
+  let metronomeBySync = false;
+
+  /**
    * A synced tab asks when to begin. A click already ticking in this tab is
    * followed where it is; otherwise it is (re)started, so its first beat is
    * now — including inside Tonecraft Engine, whose phase is never reported.
@@ -418,7 +428,21 @@
     metronome.setVolume(metronomeVolume);
     metronome.play(metronomeBpm);
     metronomePlaying = true;
+    metronomeBySync = true;
     return metronome.msToDownbeat() ?? 0;
+  }
+
+  /**
+   * The tab stopped — paused, stopped, or run to its end. A click it started
+   * for itself stops with it: the tab was what asked for the beat, and leaving
+   * it ticking over a silent page means reaching for the corner to stop a sound
+   * nothing on screen claims.
+   */
+  function syncTabStop(): void {
+    if (!metronomeBySync) return;
+    metronomeBySync = false;
+    metronome.pause();
+    metronomePlaying = false;
   }
 
   function onMetronomeClosed(): void {
@@ -1350,14 +1374,14 @@
              already where a tab is opened, and two invitations is one too many. -->
         {#if deck.loaded}<div class="tab-row"><TabTransport {deck} view="play" syncBpm={metronomeSync ? metronomeBpm : null} /></div>{/if}
         <div class="tab-stage">
-          <TabReader {deck} ontempo={takeScoreTempo} syncBpm={metronomeSync ? metronomeBpm : null} onsyncstart={syncTabStart} onwrite={() => { if (touring) wroteNote = true; }} />
+          <TabReader {deck} ontempo={takeScoreTempo} syncBpm={metronomeSync ? metronomeBpm : null} onsyncstart={syncTabStart} onsyncstop={syncTabStop} onwrite={() => { if (touring) wroteNote = true; }} />
         </div>
       </section>
     {:else}
       <!-- Mounted in both views, and only stowed in Tone: a song keeps playing
            under a tone being dialled, and alphaTab keeps a width to lay out in. -->
       <div class="tab-stage tc-plate" class:stowed={view !== 'play'} inert={view !== 'play'}>
-        <TabReader {deck} ontempo={takeScoreTempo} onopen={() => chooseView('play')} syncBpm={metronomeSync ? metronomeBpm : null} onsyncstart={syncTabStart} onwrite={() => { if (touring) wroteNote = true; }} />
+        <TabReader {deck} ontempo={takeScoreTempo} onopen={() => chooseView('play')} syncBpm={metronomeSync ? metronomeBpm : null} onsyncstart={syncTabStart} onsyncstop={syncTabStop} onwrite={() => { if (touring) wroteNote = true; }} />
       </div>
     {/if}
 
@@ -1728,14 +1752,22 @@
   .page.tester .amp-slot { flex: none; padding: calc(var(--u) * 3) 0 calc(var(--u) * 5); }
   .page.tester .demo-panel { padding: 18px 20px; }
   .page.tester .tab-column { display: flex; flex-direction: column; overflow: hidden; }
+  /* The same row the transport has, on the tester's own plate. It wraps for the
+     same reason: under about 900 px the keys, the display and how the tab is
+     practised do not share a line, and unwrapped they were printed over each
+     other rather than merely tight. */
   .page.tester .tab-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 14px;
+    gap: 12px 14px;
     min-height: var(--transport-height);
-    padding: 0 16px;
+    padding: 10px 16px;
     border-bottom: 1px solid #050407;
     box-shadow: 0 1px 0 #ffffff0a;
+  }
+  @media (max-width: 900px) {
+    .page.tester .tab-row > :global(.display) { flex: 1 1 100%; }
   }
   /* The reader fills the slot rather than sitting at the top of it: the
      tutorial lights this box, and an empty state floating in a tall dark

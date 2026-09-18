@@ -162,11 +162,69 @@ try {
   const dropped = await download('Guitar only');
   assert(Math.abs(frames(dropped) - 3.5 * dropped.readUInt32LE(24)) <= 2, `the dropped DI is the whole take (${frames(dropped)} frames)`);
   await page.getByRole('radio', { name: 'Processed', exact: true }).click();
+  /* Listening to a take switches the chain to the file and back. It must not
+     give the interface back in between: reopening a device costs a few hundred
+     milliseconds, or fails if something took it in the gap, and the amp sat
+     dark with the guitar silent behind it at the end of every take listened to. */
+  await page.evaluate(() => {
+    const media = navigator.mediaDevices;
+    const original = media.getUserMedia.bind(media);
+    window.__opens = 0;
+    media.getUserMedia = (...args) => { window.__opens++; return original(...args); };
+  });
   await page.getByRole('button', { name: 'Listen to take', exact: true }).click();
   await page.getByRole('button', { name: 'Pause take', exact: true }).waitFor({ timeout: 20000 });
   await page.getByRole('button', { name: 'Pause take', exact: true }).click();
   await page.getByRole('button', { name: 'Listen to take', exact: true }).waitFor({ timeout: 20000 });
-  console.log('ok a DI dropped on the guitar lane is the take, exported, and played live through the amp');
+  await page.waitForTimeout(1000);
+  assert.equal(await page.evaluate(() => window.__opens), 0, 'listening to a take never reopens the interface');
+  console.log('ok a DI dropped on the guitar lane is the take, exported, and played live through the amp, and the interface is never given back');
+
+  // The timeline is an editor, not a drawing: a track is dragged along it by
+  // its grip, and a selection is taken out of every lane at once.
+  const lanesBox = await page.locator('.recorder .lanes').boundingBox();
+  const gripBox = await page.locator('.recorder .guitar-lane .lane-grip').first().boundingBox();
+  assert(gripBox !== null, 'a track with audio has a grip to move it by');
+  const laneDraw = () => page.evaluate(() => {
+    const points = document.querySelector('.recorder .guitar-lane polyline')?.getAttribute('points')?.split(' ') ?? [];
+    return { first: points.length ? Number(points[0].split(',')[0]) : -1, grip: document.querySelector('.recorder .guitar-lane .lane-grip')?.getBoundingClientRect().left ?? -1 };
+  });
+  const atRest = await laneDraw();
+  await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(gripBox.x + gripBox.width / 2 + lanesBox.width * 0.25, gripBox.y + gripBox.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const dragged = await laneDraw();
+  assert(dragged.first > 40 && dragged.grip > atRest.grip + 40,
+    `dragging the grip moves the track and the room in front of it stays empty (${JSON.stringify(dragged)})`);
+  await page.getByRole('radio', { name: 'DI', exact: true }).click();
+  const movedExport = await download('Guitar only');
+  assert(frames(movedExport) > frames(dropped) + movedExport.readUInt32LE(24) * 0.5, `a moved track is exported where it was put (${frames(movedExport)} against ${frames(dropped)})`);
+  // Home puts it back where it was, and the export is the take again.
+  await page.locator('.recorder .guitar-lane .lane-grip').first().focus();
+  await page.keyboard.press('Home');
+  await page.waitForTimeout(400);
+  assert.deepEqual(await laneDraw(), atRest, 'Home returns the track to where it was recorded');
+  assert.equal(frames(await download('Guitar only')), frames(dropped));
+
+  // A span selected across the lanes, cut, and put back.
+  await page.mouse.move(lanesBox.x + lanesBox.width * 0.2, lanesBox.y + 8);
+  await page.mouse.down();
+  for (let i = 0; i <= 10; i++) await page.mouse.move(lanesBox.x + lanesBox.width * (0.2 + 0.03 * i), lanesBox.y + 8);
+  await page.mouse.up();
+  await page.locator('.recorder .selection').waitFor();
+  await page.getByRole('button', { name: 'Cut', exact: true }).click();
+  await page.waitForTimeout(600);
+  assert.equal(await page.locator('.recorder .selection').count(), 0, 'the cut consumes the selection');
+  const shorter = await download('Guitar only');
+  assert(frames(shorter) < frames(dropped) - 1000 && frames(shorter) > 0,
+    `the cut takes its span out of the take (${frames(shorter)} of ${frames(dropped)})`);
+  await page.getByRole('button', { name: 'Undo cut', exact: true }).click();
+  await page.waitForTimeout(600);
+  assert.equal(frames(await download('Guitar only')), frames(dropped), 'and one undo puts it back');
+  await page.getByRole('radio', { name: 'Processed', exact: true }).click();
+  console.log('ok the timeline moves a track by its grip, cuts a selection out of every lane, and undoes it');
 
   // A second track, added with the button and recorded over the first: the
   // first is heard through the chain while it records, and each exports alone
@@ -315,6 +373,34 @@ try {
   await page.getByRole('button', { name: 'Play tablature', exact: true }).waitFor({ timeout: 10000 });
   assert.equal(await page.evaluate(() => window.scrollY), scrollBefore, 'space must not scroll the page');
   console.log('ok space plays and pauses once the reader has been clicked');
+
+  // Synced, the tab starts the click and gives it back when it stops. It used
+  // to start one and leave it ticking over a paused page, with nothing on
+  // screen claiming the sound.
+  const clicking = () => page.locator('.metronome-toggle').getAttribute('aria-pressed');
+  await page.getByRole('button', { name: 'Open metronome' }).click();
+  const syncButton = page.locator('dialog.metronome .sync');
+  if (await syncButton.getAttribute('aria-pressed') !== 'true') await syncButton.click();
+  await page.getByRole('button', { name: 'Close metronome' }).click();
+  assert.equal(await clicking(), 'false', 'the sync alone starts nothing');
+  await page.getByRole('button', { name: 'Play tablature', exact: true }).click();
+  await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor({ timeout: 15000 });
+  await page.waitForFunction(() => document.querySelector('.metronome-toggle')?.getAttribute('aria-pressed') === 'true', null, { timeout: 15000 });
+  await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.metronome-toggle')?.getAttribute('aria-pressed') === 'false', null, { timeout: 15000 });
+  // A click the player started is theirs, and the tab never takes it away.
+  await page.locator('.metronome-toggle').click();
+  assert.equal(await clicking(), 'true');
+  await page.getByRole('button', { name: 'Play tablature', exact: true }).click();
+  await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor({ timeout: 15000 });
+  await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
+  await page.getByRole('button', { name: 'Play tablature', exact: true }).waitFor({ timeout: 15000 });
+  assert.equal(await clicking(), 'true', 'the tab stops only the click it started itself');
+  await page.locator('.metronome-toggle').click();
+  await page.getByRole('button', { name: 'Open metronome' }).click();
+  await syncButton.click();
+  await page.getByRole('button', { name: 'Close metronome' }).click();
+  console.log('ok a synced tab starts the click and gives it back, and never takes the player\'s own');
 
   // One line, sliding under a playhead that stays in the middle of the window.
   // alphaTab's own handler for this layout parks the cursor on the left edge.

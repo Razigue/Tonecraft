@@ -396,7 +396,10 @@ export class WebHost implements ChainHost {
     }
   }
 
-  /** Releases the input entirely (file source) or opens it again (live). */
+  /** Whether the interface is open, whatever the chain is currently listening to. */
+  get capturing(): boolean { return this.#stream !== null; }
+
+  /** Releases the input entirely (stopping) or opens it (going live). */
   async setLive(on: boolean): Promise<void> {
     const ctx = this.#ctx;
     const node = this.#node;

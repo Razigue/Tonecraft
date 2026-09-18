@@ -98,6 +98,8 @@ Sentence case everywhere except the display face, which is always uppercase.
 
 **The transport is the studio's DAW.** Its tracks — the guitar takes and the backing song, with their levels, export and the track tools — are always on screen, under its row, never in a menu. In Tone the transport is the head's width, so its row takes two lines: the keys and the display, then the groups. The stage gives up the height all this takes, and the head is scaled to what is left (`zoom`, fitted to whichever of width and height runs out first; a transform would open a stacking context the tutorial cannot lift through). Past three tracks the lanes scroll inside the transport. Under 820 px of window height the row and the lanes tighten.
 
+**The timeline is edited, not only looked at.** Dragging across the lanes selects a span; dragging a track's grip — a bar on the lane at the track's own start — moves that track in time, and the arrow keys nudge it by a tenth of a second, Shift by a hundredth, Home back to where it was recorded. With a span selected, *Cut* takes it out of every lane at once and closes the gap, as does Delete; one *Undo* puts back whichever of the two was last done. A track that has been moved leaves the room in front of it empty, and both gestures are what the export renders.
+
 **The corners.** The tuner floats at the bottom left, the metronome at the bottom right with its start and tempo above it: small dark tiles with a hairline edge and a thin icon, a dot under a tile when it is on. A side room (`--side`) is kept for them in both modes, which is also why Play is wide without touching the window's edges. The bar alone spans that room, so the name and the settings never move with the mode. What still opens — the tab's track list, the levels — floats as a popover; notices sit over the top of the stage, under the chain.
 
 **Width.** The studio is a desktop instrument; playing is not supported on a phone (`CLAUDE.md` §7). What is on a phone still has to be whole. Three thresholds, and nothing else changes:
@@ -127,6 +129,8 @@ On a pre-rendered preset page, the same illumination is driven by the RMS envelo
 **Segmented control.** Selected segment gets an underline, not a filled background.
 
 **Latency.** Top right, always visible, Plex Mono, a number and nothing more.
+
+**The metronome and the tab.** Synced, the tab starts the click on its first beat and stops it again when it pauses, stops, or reaches the last bar — the tab is what asked for the beat, and a click left ticking over a paused page is a sound nothing on screen claims. A click the player started themselves is theirs and is never taken away.
 
 **Mode tabs.** Display face, uppercase, the bar's full height; the chosen one in `--text`, the other in `--text-3`. One short lit line under the chosen mode glides to the other.
 

@@ -16,7 +16,7 @@
   } from '../engine/tab-editor.ts';
 
   const words = $derived(lang.ui.reader);
-  let { deck, ontempo, onopen, onwrite, syncBpm = null, onsyncstart }: {
+  let { deck, ontempo, onopen, onwrite, syncBpm = null, onsyncstart, onsyncstop }: {
     /** Where the studio's transport reads the playback and finds its controls. */
     deck: TabDeck;
     ontempo?: (bpm: number) => void;
@@ -29,6 +29,8 @@
      * measure begins — null when there is no click to follow after all.
      */
     onsyncstart?: () => Promise<number | null>;
+    /** Playback stopped: the studio takes back a click it started for this tab. */
+    onsyncstop?: () => void;
     /** A note written in the editor, from the keys or the neck. */
     onwrite?: () => void;
   } = $props();
@@ -327,6 +329,9 @@
     api.playerStateChanged.on(e => {
       const was = playing;
       playing = e.state === 1;
+      // Paused, stopped, or run to the last bar: all three are the tab no longer
+      // asking for a beat.
+      if (was && !playing) onsyncstop?.();
       if (playing) stringCursor = null;
       // Only a pause moves the cursor to where playback stopped: every new
       // layout reloads the player, which reports "stopped" at tick 0, and
@@ -481,14 +486,16 @@
     deck.open = file => void open(file);
     deck.write = () => { if (!editing) void startEditing(); };
     deck.toggle = () => void togglePlay();
-    deck.stop = () => { cancelCue(); api?.stop(); };
+    deck.stop = () => { const cued = cueing; cancelCue(); api?.stop(); if (cued) onsyncstop?.(); };
     deck.seek = seek;
     deck.loop = toggleLoop;
     deck.clearSelection = () => { if (api) api.playbackRange = null; };
   });
   async function togglePlay() {
     if (!ready || busy || !api) return;
-    if (cueing) { cancelCue(); return; }
+    // Cued but not yet playing: the player changed their mind before the first
+    // beat, and the click started for the count-in goes with it.
+    if (cueing) { cancelCue(); onsyncstop?.(); return; }
     if (playing || syncBpm === null || !onsyncstart || !score) { api.playPause(); return; }
     const reader = api;
     reader.tickPosition = score.masterBars[barAt(positionTick())]?.start ?? 0;

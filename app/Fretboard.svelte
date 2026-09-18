@@ -128,8 +128,11 @@
 <style>
   /* The neck sits on the lectern's paper, framed like it. */
   /* The neck is what gives way on a short screen: the tab above it never does. */
-  .neck{flex:1 1 0;min-height:0;display:flex;padding:14px 16px 10px;border-radius:var(--radius);background:radial-gradient(ellipse 80% 140% at 50% 0%,#fffdf8,#f3eee4 70%,#ebe4d6);box-shadow:var(--shadow),0 0 0 1px #000}
-  svg{width:100%;height:100%;max-height:300px;margin:auto}
+  /* The plate is the drawing's own size, not whatever height is left over: the
+     svg keeps its viewBox's shape and the paper hugs it. Given the leftover
+     instead, a neck on a tall page was a thin line adrift in a cream field. */
+  .neck{flex:0 1 auto;min-height:0;display:flex;padding:14px 16px 10px;border-radius:var(--radius);background:radial-gradient(ellipse 80% 140% at 50% 0%,#fffdf8,#f3eee4 70%,#ebe4d6);box-shadow:var(--shadow),0 0 0 1px #000}
+  svg{width:100%;height:auto;max-height:300px;margin:auto}
   .fret{stroke:#cec8bb;stroke-width:1}
   .nut{stroke:#6f6962;stroke-width:3}
   .capo{stroke:#a37320;stroke-width:3;opacity:.55}

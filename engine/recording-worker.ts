@@ -22,8 +22,9 @@ self.onmessage = async (event: MessageEvent<{ takes: Recording[]; sampleRate: nu
       }
     }
     const samples = mixTimeline({
-      guitars: takes.map((t, i) => ({ samples: rendered[i]!, level: options.guitarLevels?.[i] ?? 1, latencyFrames: t.latencyFrames ?? 0, overdub: t.overdub })),
-      backing, backingLevel: options.backingLevel ?? 1,
+      guitars: takes.map((t, i) => ({ samples: rendered[i]!, level: options.guitarLevels?.[i] ?? 1, latencyFrames: t.latencyFrames ?? 0,
+        overdub: t.overdub, offsetFrames: options.guitarOffsets?.[i] ?? 0 })),
+      backing, backingLevel: options.backingLevel ?? 1, backingOffset: options.backingOffset ?? 0,
     }, content, options.range, options.only);
     if (samples.length === 0) throw new Error('There is nothing to export in this selection.');
     const wav = encodeWav({ samples, sampleRate });

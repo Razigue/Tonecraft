@@ -908,9 +908,16 @@ export class Engine {
     const host = this.#host;
     if (host === null) return;
     if (source === 'live') this.#stopFile();
-    // The browser releases the microphone for a file and opens it again for
-    // live; Tonecraft Engine's input simply stops being read.
-    await this.#web?.setLive(source === 'live');
+    /* Going to a file does not give the interface back. `#syncLive` below shuts
+       the capture at the source, which costs nothing and is instant; releasing
+       the device costs a few hundred milliseconds to open again — or fails, if
+       something took it during the gap, leaving a chain with no input at all.
+       That is what turned the amp dark at the end of a take being listened to:
+       the take stopped, the microphone was not back yet, and the glass fell to
+       its unlit floor with the guitar silent behind it.
+       Opening one that was never open is still this call's job: a page that
+       started on a file has no capture until the player asks for one. */
+    if (source === 'live' && this.#web?.capturing === false) await this.#web.setLive(true);
     host.send('tc_set_source', [source === 'file' ? 1 : 0]);
     this.#syncLive();
   }

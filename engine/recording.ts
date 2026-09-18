@@ -69,6 +69,13 @@ export interface GuitarLane {
   latencyFrames: number;
   /** Recorded while other guitar tracks played: it lines up with them even with no backing track. */
   overdub?: boolean;
+  /**
+   * How far later the player has since moved this track, in frames, never
+   * negative: a track is placed against the others by dragging one of them
+   * later, so nothing is ever dragged off the front of the timeline and lost.
+   * The alignment above is where the track sits before anyone touches it.
+   */
+  offsetFrames?: number;
 }
 
 /**
@@ -87,15 +94,23 @@ export interface Timeline {
   guitars: readonly GuitarLane[];
   backing: Float32Array | null;
   backingLevel: number;
+  /** How far later the player has moved the backing track, in frames, never negative. */
+  backingOffset?: number;
 }
 
-export const laneShift = (t: Timeline, lane: GuitarLane): number => (t.backing || lane.overdub ? lane.latencyFrames : 0);
+/**
+ * How many frames of a take sit before the timeline's origin: the round trip it
+ * was recorded a beat late by, less however far the player has moved it since.
+ * Negative means the track starts that many frames into the timeline.
+ */
+export const laneShift = (t: Timeline, lane: GuitarLane): number =>
+  (t.backing || lane.overdub ? lane.latencyFrames : 0) - (lane.offsetFrames ?? 0);
 
-/** How long each lane is on the timeline, in frames. */
+/** How long each lane is on the timeline, in frames — where it ends, not how much audio it holds. */
 export function laneFrames(t: Timeline): { guitars: number[]; backing: number } {
   return {
     guitars: t.guitars.map((g) => Math.max(0, g.samples.length - laneShift(t, g))),
-    backing: t.backing?.length ?? 0,
+    backing: t.backing === null ? 0 : t.backing.length + (t.backingOffset ?? 0),
   };
 }
 
@@ -126,10 +141,59 @@ export function mixTimeline(t: Timeline, content: ExportContent, range?: readonl
   }
   if (content !== 'guitar' && t.backing) {
     const b = t.backing, level = t.backingLevel;
-    const n = Math.min(out.length, b.length - from);
-    for (let i = 0; i < n; i++) out[i]! += b[from + i]! * level;
+    // The same arithmetic as a guitar lane: a moved track reads from before its
+    // own first sample, and those frames are silence, not the head of the file.
+    const offset = from - (t.backingOffset ?? 0);
+    const n = Math.min(out.length, b.length - offset);
+    for (let i = Math.max(0, -offset); i < n; i++) out[i]! += b[offset + i]! * level;
   }
   return out;
+}
+
+/** What a cut leaves: each lane's audio and where it now starts. */
+export interface Cut {
+  guitars: { samples: Float32Array<ArrayBuffer>; offsetFrames: number }[];
+  backing: Float32Array<ArrayBuffer> | null;
+  backingOffset: number;
+}
+
+/** Where a lane's first sample sits on the timeline, in frames; the guitars can be negative. */
+const laneStart = (shift: number): number => -shift;
+
+/**
+ * One span removed from every lane at once, the rest closing up behind it.
+ *
+ * Across every lane, not only the one under the pointer: the selection is a
+ * span of the timeline — it is what an export is cut to — and taking it out of
+ * one track alone would move that track against the others by exactly the
+ * amount removed. A take and the song it was played to would no longer line up,
+ * which is the one thing the timeline exists to hold.
+ *
+ * A lane that begins after the cut moves earlier by however much of the cut fell
+ * before it, so the silence in front of it shortens with everything else.
+ */
+export function cutTimeline(t: Timeline, range: readonly [number, number]): Cut {
+  const from = Math.max(0, Math.floor(range[0])), to = Math.max(from, Math.floor(range[1]));
+  const take = (samples: Float32Array | null, start: number): { samples: Float32Array<ArrayBuffer> | null; start: number } => {
+    if (samples === null) return { samples: null, start };
+    // In the lane's own frames, clamped to the audio it actually has.
+    const a = Math.max(0, Math.min(samples.length, from - start));
+    const b = Math.max(a, Math.min(samples.length, to - start));
+    const out = new Float32Array(samples.length - (b - a));
+    out.set(samples.subarray(0, a));
+    out.set(samples.subarray(b), a);
+    // Whatever of the cut fell in front of this lane pulls it earlier.
+    return { samples: out, start: start - Math.max(0, Math.min(to, start) - from) };
+  };
+  const guitars = t.guitars.map((lane) => {
+    const cut = take(lane.samples, laneStart(laneShift(t, lane)));
+    // The alignment is not a move and is not undone by one: what the take owes
+    // the round trip stays, and only the player's own offset can reach zero.
+    const aligned = (t.backing || lane.overdub ? lane.latencyFrames : 0);
+    return { samples: cut.samples ?? new Float32Array(0), offsetFrames: Math.max(0, cut.start + aligned) };
+  });
+  const backing = take(t.backing, t.backingOffset ?? 0);
+  return { guitars, backing: backing.samples, backingOffset: Math.max(0, backing.start) };
 }
 
 /** A backing file as the chain plays it: at the take's rate, its two channels averaged. */
@@ -151,7 +215,11 @@ export interface ExportOptions {
   backing?: Float32Array<ArrayBuffer> | null;
   /** Per guitar track, by index; 1 when absent. */
   guitarLevels?: readonly number[];
+  /** Where each guitar track has been moved to, by index, in frames; 0 when absent. */
+  guitarOffsets?: readonly number[];
   backingLevel?: number;
+  /** Where the backing track has been moved to, in frames. */
+  backingOffset?: number;
   /** Frames on the timeline; the default range when absent. */
   range?: readonly [number, number];
 }

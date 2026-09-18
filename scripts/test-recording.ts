@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { instantiateChain } from '../public/dsp/chain-core.js';
-import { encodeWav, decodeRecording, defaultRange, laneFrames, mixTimeline } from '../engine/recording.ts';
+import { encodeWav, decodeRecording, defaultRange, laneFrames, mixTimeline, cutTimeline } from '../engine/recording.ts';
 import { renderRecording } from '../engine/render-recording.ts';
 import { PRESETS } from '../app/presets.ts';
 import { PARAMS } from '../schema/params.ts';
@@ -137,4 +137,33 @@ console.log('ok processed WAV uses the amp and current controls, preserves DI an
   assert.deepEqual([...mixTimeline(two, 'guitar', undefined, 1)], [10, 20, 30], 'one track alone, where it sits in the mix');
   assert.deepEqual([...mixTimeline({ ...two, guitars: [two.guitars[0]!] }, 'guitar')], [1, 2, 3, 4], 'a track does not move when another is removed');
   console.log('ok exports cut the timeline: a selection, or the longer lane, guitar lined up with the backing track');
+
+  // Moving a track: it sounds later by exactly what it was moved, and the lane
+  // it leaves behind it is silence, never the head of its own audio.
+  const moved = { ...t, guitars: [{ ...t.guitars[0]!, offsetFrames: 2 }] };
+  assert.deepEqual(laneFrames(moved), { guitars: [6], backing: 3 });
+  // Moved two frames later, its round trip is paid off and its first sample lands on the origin.
+  assert.deepEqual([...mixTimeline(moved, 'guitar')], [1, 2, 3, 4, 5, 6], 'a moved take starts where it was put');
+  assert.deepEqual([...mixTimeline(moved, 'mix', [0, 3])], [1 + 5, 2 + 10, 3 + 15], 'and mixes against the backing where it now sits');
+  const song = { ...t, backingOffset: 2 };
+  assert.deepEqual(laneFrames(song), { guitars: [4], backing: 5 });
+  assert.deepEqual([...mixTimeline(song, 'backing')], [0, 0, 5, 10, 15], 'a moved backing track is silence until it starts');
+
+  // A cut takes the span out of every lane at once and closes the gap, so what
+  // lined up before still lines up after.
+  const before = [...mixTimeline(t, 'mix')];
+  const cut = cutTimeline(t, [1, 3]);
+  // The take starts two frames before the origin, so timeline 1 to 3 is its
+  // samples 3 and 4 — the cut is taken in each lane's own frames.
+  assert.deepEqual([...cut.guitars[0]!.samples], [1, 2, 3, 6], 'the cut is taken in the take\'s own frames');
+  assert.deepEqual([...(cut.backing ?? [])], [10], 'and out of the backing track at the same place');
+  assert.equal(cut.guitars[0]!.offsetFrames, 0);
+  assert.deepEqual([...mixTimeline({ ...t, guitars: [{ ...t.guitars[0]!, samples: cut.guitars[0]!.samples }], backing: cut.backing }, 'mix')],
+    [before[0]!, before[3]!], 'the mix after the cut is the mix before it, without those frames');
+  // A cut entirely in front of a moved track pulls it earlier by its length.
+  const front = cutTimeline({ ...t, guitars: [{ ...t.guitars[0]!, offsetFrames: 4 }] }, [0, 2]);
+  assert.equal(front.guitars[0]!.offsetFrames, 2, 'a cut before a track moves it earlier');
+  assert.deepEqual([...front.guitars[0]!.samples], [1, 2, 3, 4, 5, 6], 'without taking anything out of it');
+  assert.equal(cutTimeline({ ...t, backingOffset: 1 }, [0, 5]).backingOffset, 0, 'and never earlier than the start');
+  console.log('ok tracks move on the timeline, and a cut takes its span out of every lane at once');
 }

@@ -3,7 +3,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { builtInCabIRAt, type Engine } from '../engine/engine.ts';
   import {
-    encodeWav, decodeRecording, decodeBacking, exportRecording, laneFrames, laneShift,
+    encodeWav, decodeRecording, decodeBacking, exportRecording, laneFrames, laneShift, cutTimeline,
     type ExportContent, type Recording, type RecordingTone, type Timeline,
   } from '../engine/recording.ts';
   import { deleteMedia, loadMedia, saveMedia } from '../store/media.ts';
@@ -35,9 +35,11 @@
     /** The take was dropped as a DI, not recorded. */
     readonly fromFile: boolean;
     readonly level: number;
+    /** How far later the player has dragged it on the timeline, in frames. */
+    readonly offset: number;
   }
   let nextTrackId = 0;
-  const newTrack = (): Track => ({ id: nextTrackId++, take: null, fromFile: false, level: 1 });
+  const newTrack = (): Track => ({ id: nextTrackId++, take: null, fromFile: false, level: 1, offset: 0 });
   /** The first track keeps the id the single take always had, so sessions from before tracks still load. */
   const mediaId = (index: number) => (index === 0 ? 'last-recording' : `last-recording-${index + 1}`);
   const trackName = (index: number) => (index === 0 ? words.guitar : words.guitarN(index + 1));
@@ -61,6 +63,8 @@
   /** The rate `backing` was decoded at: a take restored at another rate needs it again. */
   let backingDecodedAt = 0;
   let backingLevel = $state(0.8);
+  /** How far later the song has been dragged on the timeline, in frames. */
+  let backingOffset = $state(0);
   let previewing = $state(false);
   let dragOver = $state(false);
   /** Seconds on the timeline, start before end. */
@@ -99,8 +103,8 @@
   const syncShown = $derived(hasTake && (backing !== null || takes.some((t) => t.overdub)));
   const EMPTY = new Float32Array(0);
   const timeline = $derived<Timeline>({
-    guitars: tracks.map((t) => ({ samples: t.take?.samples ?? EMPTY, level: t.level, latencyFrames: t.take ? alignOf(t.take) : 0, overdub: t.take?.overdub })),
-    backing, backingLevel,
+    guitars: tracks.map((t) => ({ samples: t.take?.samples ?? EMPTY, level: t.level, latencyFrames: t.take ? alignOf(t.take) : 0, overdub: t.take?.overdub, offsetFrames: t.offset })),
+    backing, backingLevel, backingOffset,
   });
   const lanes = $derived(laneFrames(timeline));
   const totalFrames = $derived(Math.max(lanes.backing, ...lanes.guitars));
@@ -128,7 +132,11 @@
     if (!samples || total === 0) return '';
     const points: string[] = [];
     const per = total / COLUMNS;
-    for (let x = 0; x < COLUMNS && x * per < frames; x++) {
+    // A track moved later begins after the origin, and the room in front of it
+    // is empty: without this the clamp below drew its first sample across all
+    // of that room, so a moved take looked like a take with a long flat head.
+    const first = Math.max(0, Math.ceil(-offset / per));
+    for (let x = first; x < COLUMNS && x * per < frames; x++) {
       const from = Math.max(0, Math.floor(x * per) + offset);
       const to = Math.min(samples.length, Math.floor((x + 1) * per) + offset);
       let peak = 0;
@@ -140,8 +148,11 @@
   }
   const guitarPaths = $derived(tracks.map((t, i) => lanePath(t.take?.samples ?? null, laneShift(timeline, timeline.guitars[i]!), lanes.guitars[i]!, totalFrames, 80)));
   const backingPeak = $derived.by(() => { let p = 0; if (backing) for (const v of backing) { const a = Math.abs(v); if (a > p) p = a; } return p; });
-  const backingPath = $derived(lanePath(backing, 0, lanes.backing, totalFrames, backingPeak > 0 ? 20 / backingPeak : 1));
+  const backingPath = $derived(lanePath(backing, -backingOffset, lanes.backing, totalFrames, backingPeak > 0 ? 20 / backingPeak : 1));
   const percent = (s: number) => `${duration > 0 ? Math.max(0, Math.min(100, (s / duration) * 100)) : 0}%`;
+  /* Centred on the track's start, and never half outside the lane, which clips:
+     at the very beginning the grip sits just inside it instead. */
+  const gripAt = (s: number) => `max(0px, calc(${percent(Math.max(0, s))} - 8px))`;
 
   /**
    * What the take sounds like is what the export will write. Rendered once per
@@ -159,8 +170,8 @@
 
   function persist() {
     void dbPut(STORES.state, {
-      mode, backingLevel, syncMs, armed,
-      tracks: tracks.map((t) => ({ level: t.level, fromFile: t.fromFile, latencyFrames: t.take?.latencyFrames ?? 0, overdub: t.take?.overdub === true })),
+      mode, backingLevel, syncMs, armed, backingOffset,
+      tracks: tracks.map((t) => ({ level: t.level, fromFile: t.fromFile, latencyFrames: t.take?.latencyFrames ?? 0, overdub: t.take?.overdub === true, offset: t.offset })),
     }, STATE_KEY);
   }
   function forgetRender() {
@@ -192,7 +203,8 @@
     const guitarTone = content === 'backing' || mode === 'di' ? null : tone;
     const range = selectionFrames();
     const levels = tracks.map((t) => t.level);
-    const key = [version, tracks.map((t) => t.id).join(','), backingId, content, only ?? 'all', guitarTone ? JSON.stringify(guitarTone) : 'dry', range?.join('-') ?? 'all', content === 'guitar' ? '' : backingLevel, content === 'backing' ? '' : levels.join(','), syncMs].join('|');
+    const offsets = tracks.map((t) => t.offset);
+    const key = [version, tracks.map((t) => t.id).join(','), backingId, content, only ?? 'all', guitarTone ? JSON.stringify(guitarTone) : 'dry', range?.join('-') ?? 'all', content === 'guitar' ? '' : backingLevel, content === 'backing' ? '' : levels.join(','), syncMs, offsets.join(','), backingOffset].join('|');
     if (rendered?.key === key) return rendered;
     progress = 0;
     abort = new AbortController();
@@ -200,7 +212,7 @@
       // Snapshot at the click: edits made while rendering belong to the next render.
       const snapshot = guitarTone ? await snapshotTone(rate) : null;
       const wav = await exportRecording(trackTakes(), rate, snapshot, value => { progress = value; }, abort.signal,
-        { content, only, backing, guitarLevels: levels, backingLevel, range });
+        { content, only, backing, guitarLevels: levels, guitarOffsets: offsets, backingLevel, backingOffset, range });
       if (disposed) return null;
       if (rendered) URL.revokeObjectURL(rendered.url);
       const blob = new Blob([wav], { type: 'audio/wav' });
@@ -219,15 +231,16 @@
    */
   async function renderMonitor(index: number): Promise<Blob> {
     const levels = tracks.map((t) => t.level);
+    const offsets = tracks.map((t) => t.offset);
     const guitarTone = tone.capture ? tone : null;
-    const key = [version, tracks.map((t) => t.id).join(','), index, backingId, guitarTone ? JSON.stringify(guitarTone) : 'dry', backingLevel, levels.join(','), syncMs].join('|');
+    const key = [version, tracks.map((t) => t.id).join(','), index, backingId, guitarTone ? JSON.stringify(guitarTone) : 'dry', backingLevel, levels.join(','), syncMs, offsets.join(','), backingOffset].join('|');
     if (monitor?.key === key) return monitor.blob;
     progress = 0;
     abort = new AbortController();
     try {
       const snapshot = guitarTone ? await snapshotTone(rate) : null;
       const wav = await exportRecording(trackTakes(index), rate, snapshot, value => { progress = value; }, abort.signal,
-        { content: backing ? 'mix' : 'guitar', backing, guitarLevels: levels, backingLevel });
+        { content: backing ? 'mix' : 'guitar', backing, guitarLevels: levels, guitarOffsets: offsets, backingLevel, backingOffset });
       monitor = { key, blob: new Blob([wav], { type: 'audio/wav' }) };
       return monitor.blob;
     } finally { abort = null; }
@@ -265,8 +278,11 @@
       const from = selection?.[0] ?? 0;
       // The guitar is heard where the timeline draws it against the backing track.
       const lead = laneShift(timeline, timeline.guitars[liveIndex]!) / t.sampleRate;
-      e.playFile(from + lead);
-      if (backing) e.playBacking(from);
+      // A lane moved later has not begun yet at this point in the timeline: it
+      // is started when the playhead reaches it rather than at once. Listening
+      // is monitoring — the export is what lines up to the sample (mixTimeline).
+      startAt(from + lead, (at) => e.playFile(at));
+      if (backing) startAt(from - backingStart, (at) => e.playBacking(at));
       listenFrom = from;
       live = true;
       listening = true;
@@ -274,16 +290,26 @@
     } catch (err) { if (!disposed) error = err instanceof Error ? engineMessage(err.message) : words.playbackFailed; }
     finally { working = null; }
   }
+  /** Plays a lane from `at` seconds into its own audio, waiting out a negative one. */
+  function startAt(at: number, play: (from: number) => void) {
+    if (at >= 0) { play(at); return; }
+    lateStarts.push(window.setTimeout(() => play(0), Math.round(-at * 1000)));
+  }
+  let lateStarts: number[] = [];
+
   function followLive() {
     const e = engine, t = tracks[liveIndex]?.take;
     if (!e || !live || !t) { void stopLive(); return; }
     const lead = laneShift(timeline, timeline.guitars[liveIndex]!) / t.sampleRate;
     playheadAt = Math.max(0, e.filePosition - lead);
     const end = selection?.[1];
-    if (!e.filePlaying || (end !== undefined && playheadAt >= end)) { void stopLive(); return; }
+    // A lane still waiting its turn is not a lane that has finished.
+    if ((!e.filePlaying && lateStarts.length === 0) || (end !== undefined && playheadAt >= end)) { void stopLive(); return; }
     frame = requestAnimationFrame(followLive);
   }
   async function stopLive() {
+    for (const timer of lateStarts) clearTimeout(timer);
+    lateStarts = [];
     if (!live) return;
     cancelAnimationFrame(frame);
     live = false;
@@ -406,6 +432,146 @@
     forgetRender();
   }
   function clearSelection() { selection = null; forgetRender(); }
+
+  /* --- Moving a track, and cutting a span out of the timeline ---------------
+     The two things a timeline is for. The selection above says where; these say
+     what happens there. Both are the player's own edit, so both are undoable
+     once, and both are written to the take on disk, not only to the drawing. */
+
+  /** What the timeline looked like before the last edit; one step, which is what a mistake needs. */
+  let undoable = $state<{ what: 'cut' | 'move'; tracks: Track[]; backing: Float32Array<ArrayBuffer> | null; backingOffset: number } | null>(null);
+  function remember(what: 'cut' | 'move') {
+    undoable = { what, tracks, backing, backingOffset };
+  }
+  async function undoEdit() {
+    const step = undoable;
+    if (!step || recording || busy) return;
+    undoable = null;
+    changed = true;
+    void stopLive();
+    version++;
+    forgetRender();
+    tracks = step.tracks;
+    backing = step.backing;
+    backingOffset = step.backingOffset;
+    selection = null;
+    seconds = tracks[armed]?.take ? tracks[armed]!.take!.samples.length / tracks[armed]!.take!.sampleRate : 0;
+    persist();
+    for (const [i] of tracks.entries()) await saveTrackMedia(i);
+  }
+
+  /**
+   * The selection, taken out of every lane at once (`cutTimeline`). Across all
+   * of them because the selection is a span of the timeline, not of one track:
+   * taking it out of one alone would move that one against the others by
+   * exactly what was removed.
+   */
+  async function cutSelection() {
+    if (!selection || recording || busy || working !== null || duration === 0) return;
+    const [from, to] = selectionFrames() ?? [0, 0];
+    if (to <= from) return;
+    remember('cut');
+    const cut = cutTimeline(timeline, [from, to]);
+    changed = true;
+    void stopLive();
+    version++;
+    forgetRender();
+    tracks = tracks.map((t, i) => {
+      const lane = cut.guitars[i];
+      if (!t.take || !lane) return t;
+      return { ...t, offset: lane.offsetFrames, take: { ...t.take, samples: lane.samples } };
+    });
+    backing = cut.backing;
+    backingOffset = cut.backingOffset;
+    selection = null;
+    seconds = tracks[armed]?.take ? tracks[armed]!.take!.samples.length / tracks[armed]!.take!.sampleRate : 0;
+    persist();
+    for (const [i] of tracks.entries()) await saveTrackMedia(i);
+  }
+
+  /**
+   * What a take owes the round trip: the frames of it that sit before the
+   * origin when nobody has moved it. A move is counted from there, so dragging
+   * a track all the way back lands on the alignment rather than past it —
+   * nothing is ever dragged off the front of the timeline and lost.
+   */
+  const alignmentOf = (index: number): number => {
+    const lane = timeline.guitars[index];
+    return lane ? (timeline.backing || lane.overdub ? lane.latencyFrames : 0) : 0;
+  };
+  /** Where a lane starts on the timeline, in seconds; negative while its head is before the origin. */
+  const laneStart = (index: number): number => ((tracks[index]?.offset ?? 0) - alignmentOf(index)) / rate;
+  const backingStart = $derived(backingOffset / rate);
+  /** A nudge from the keyboard: a tenth of a second, or a hundredth held finely. */
+  const NUDGE_S = 0.1, FINE_S = 0.01;
+
+  /** Puts a lane's first sample at `seconds` on the timeline. */
+  function moveLane(index: number | 'backing', seconds: number) {
+    if (index === 'backing') {
+      const frames = Math.max(0, Math.round(seconds * rate));
+      if (frames === backingOffset) return;
+      backingOffset = frames;
+    } else {
+      const frames = Math.max(0, Math.round(seconds * rate) + alignmentOf(index));
+      if (tracks[index]?.offset === frames) return;
+      tracks = tracks.map((t, i) => (i === index ? { ...t, offset: frames } : t));
+    }
+    forgetRender();
+  }
+
+  /* A grip is dragged along the timeline; the lane follows it, and nothing is
+     written until the pointer is let go — a move is one edit, not one per frame. */
+  let gripFrom: { id: number; x: number; from: number; lane: number | 'backing' } | null = null;
+  function gripStart(e: PointerEvent, lane: number | 'backing') {
+    if (recording || busy || duration === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    gripFrom = { id: e.pointerId, x: e.clientX, from: lane === 'backing' ? backingStart : laneStart(lane), lane };
+    remember('move');
+  }
+  function gripMove(e: PointerEvent) {
+    const grip = gripFrom;
+    if (!grip || grip.id !== e.pointerId) return;
+    const lanes = (e.currentTarget as HTMLElement).closest('.lanes');
+    const width = lanes?.getBoundingClientRect().width ?? 0;
+    if (width === 0) return;
+    moveLane(grip.lane, grip.from + ((e.clientX - grip.x) / width) * duration);
+  }
+  function gripEnd(e: PointerEvent) {
+    if (!gripFrom || gripFrom.id !== e.pointerId) return;
+    const moved = Math.abs(e.clientX - gripFrom.x) >= 2;
+    gripFrom = null;
+    if (!moved) { undoable = null; return; }
+    void stopLive();
+    persist();
+  }
+  function gripKey(e: KeyboardEvent, lane: number | 'backing') {
+    const step = e.shiftKey ? FINE_S : NUDGE_S;
+    const at = lane === 'backing' ? backingStart : laneStart(lane);
+    if (e.key === 'ArrowLeft') { e.preventDefault(); remember('move'); moveLane(lane, at - step); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); remember('move'); moveLane(lane, at + step); }
+    else if (e.key === 'Home') { e.preventDefault(); remember('move'); moveLane(lane, 0); }
+    else return;
+    void stopLive();
+    persist();
+  }
+  /**
+   * Delete on the timeline is the cut, as it is in every editor. On the window
+   * rather than on the lanes: the lanes are a group, not a control, and giving
+   * them the focus to catch a key would put a stop on the way to every button
+   * under them. Nothing else in the studio holds a timeline selection, so the
+   * key is unambiguous while there is one.
+   */
+  function timelineKey(e: KeyboardEvent) {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    if (!selection || recording) return;
+    const target = e.target;
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
+      || (target instanceof HTMLElement && target.isContentEditable)) return;
+    e.preventDefault();
+    void cutSelection();
+  }
 
   const isAudio = (file: File) => file.type.startsWith('audio/') || /\.(wav|mp3|ogg|oga|flac|m4a|aac|webm)$/i.test(file.name);
 
@@ -591,14 +757,15 @@
     if (menu && !(e.target instanceof Element && e.target.closest('.export-menu'))) menu = false;
   }
 
-  interface SavedTrack { level?: unknown; fromFile?: unknown; latencyFrames?: unknown; overdub?: unknown }
+  interface SavedTrack { level?: unknown; fromFile?: unknown; latencyFrames?: unknown; overdub?: unknown; offset?: unknown }
   onMount(() => {
     void (async () => {
-      const saved = await dbGet<{ mode?: unknown; guitarLevel?: unknown; backingLevel?: unknown; latencyFrames?: unknown; syncMs?: unknown; fromFile?: unknown; tracks?: unknown; armed?: unknown }>(STORES.state, STATE_KEY).catch(() => null);
+      const saved = await dbGet<{ mode?: unknown; guitarLevel?: unknown; backingLevel?: unknown; latencyFrames?: unknown; syncMs?: unknown; fromFile?: unknown; tracks?: unknown; armed?: unknown; backingOffset?: unknown }>(STORES.state, STATE_KEY).catch(() => null);
       if (disposed) return;
       if (saved?.mode === 'di' || saved?.mode === 'processed') mode = saved.mode;
       if (typeof saved?.backingLevel === 'number' && saved.backingLevel >= 0 && saved.backingLevel <= 1) backingLevel = saved.backingLevel;
       if (typeof saved?.syncMs === 'number' && saved.syncMs >= 0 && saved.syncMs <= 300) syncMs = saved.syncMs;
+      if (typeof saved?.backingOffset === 'number' && saved.backingOffset >= 0) backingOffset = Math.round(saved.backingOffset);
       // Sessions from before tracks kept one take's fields at the top level.
       const list: SavedTrack[] = Array.isArray(saved?.tracks) ? (saved.tracks as SavedTrack[]).slice(0, MAX_TRACKS)
         : [{ level: saved?.guitarLevel, fromFile: saved?.fromFile, latencyFrames: saved?.latencyFrames }];
@@ -606,9 +773,10 @@
       for (const [i, entry] of list.entries()) {
         const level = typeof entry.level === 'number' && entry.level >= 0 && entry.level <= 1 ? entry.level : 1;
         const latencyFrames = typeof entry.latencyFrames === 'number' && entry.latencyFrames >= 0 ? entry.latencyFrames : 0;
+        const offset = typeof entry.offset === 'number' && entry.offset >= 0 ? Math.round(entry.offset) : 0;
         const file = await loadMedia(mediaId(i)).catch(() => null);
         const take = file ? await decodeRecording(file).catch(() => null) : null;
-        restored.push({ ...newTrack(), level, fromFile: entry.fromFile === true,
+        restored.push({ ...newTrack(), level, offset, fromFile: entry.fromFile === true,
           take: take ? { ...take, latencyFrames, overdub: entry.overdub === true } : null });
       }
       if (disposed) return;
@@ -634,7 +802,7 @@
   });
 </script>
 
-<svelte:window onpointerdown={closeMenu} />
+<svelte:window onpointerdown={closeMenu} onkeydown={timelineKey} />
 
 <section class="recorder" aria-label={words.region}>
   <div class="record-head">
@@ -689,6 +857,13 @@
           ondrop={e => { e.preventDefault(); diOver = -1; void useDi(e.dataTransfer?.files[0], i); }}>
           {#if guitarPaths[i]}
             <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label={i === 0 ? words.recordedGuitar : words.recordedGuitarN(i + 1)}><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="var(--line)"/><polyline points={guitarPaths[i]} fill="none" stroke="var(--violet-100)" stroke-width="1" /></svg>
+            <!-- The handle the track is dragged by. A grip rather than the whole
+                 lane: dragging the lane itself is how a span is selected, and one
+                 gesture cannot be both. -->
+            <button type="button" class="lane-grip" style:left={gripAt(laneStart(i))}
+              aria-label={words.moveTrack(trackName(i))} title={words.moveTrack(trackName(i))} disabled={recording || busy}
+              onpointerdown={e => gripStart(e, i)} onpointermove={gripMove} onpointerup={gripEnd} onpointercancel={gripEnd}
+              onkeydown={e => gripKey(e, i)}><span></span></button>
           {:else}
             <button type="button" class="drop-hint" disabled={recording} onclick={() => { arm(i); diInputs[i]?.click(); }}><span>{hasTake ? words.dropOver : words.dropFirst} <u>{words.chooseFile}</u></span></button>
           {/if}
@@ -700,6 +875,10 @@
         ondrop={e => { e.preventDefault(); dragOver = false; void useBacking(e.dataTransfer?.files[0]); }}>
         {#if backingPath}
           <svg viewBox={`0 0 ${COLUMNS} 48`} preserveAspectRatio="none" aria-label={words.backingWaveform}><line x1="0" y1="24" x2={COLUMNS} y2="24" stroke="var(--line)"/><polyline points={backingPath} fill="none" stroke="var(--violet-400)" stroke-width="1" /></svg>
+          <button type="button" class="lane-grip" style:left={gripAt(backingStart)}
+            aria-label={words.moveTrack(words.backingLane)} title={words.moveTrack(words.backingLane)} disabled={recording || busy}
+            onpointerdown={e => gripStart(e, 'backing')} onpointermove={gripMove} onpointerup={gripEnd} onpointercancel={gripEnd}
+            onkeydown={e => gripKey(e, 'backing')}><span></span></button>
         {:else}
           <label class="drop-hint"><span>{words.dropSong} <u>{words.chooseFile}</u></span>
             <input type="file" accept="audio/*" aria-label={words.backingFile} onchange={e => { void useBacking(e.currentTarget.files?.[0]); e.currentTarget.value = ''; }} /></label>
@@ -712,6 +891,12 @@
 
   <!-- The tracks themselves, beside what is done with them. -->
   <div class="lane-tools">
+    {#if selection}
+      <button class="small cut" disabled={recording || busy || working !== null} onclick={() => void cutSelection()}>{words.cut}</button>
+    {/if}
+    {#if undoable}
+      <button class="small" disabled={recording || busy} onclick={() => void undoEdit()}>{undoable.what === 'cut' ? words.undoCut : words.undoMove}</button>
+    {/if}
     {#if tracks.length < MAX_TRACKS}
       <button class="small add-track" disabled={recording || busy} onclick={addTrack}><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>{words.addTrack}</button>
     {/if}
@@ -818,6 +1003,33 @@
   .armed .arm span { background: var(--ember); border-color: var(--ember); }
   .guitar-lane.armed { box-shadow: inset 0 1px 3px #000c, inset 0 0 0 1px var(--ember-line); }
   .backing-lane.over, .guitar-lane.over { box-shadow: inset 0 0 0 1px var(--accent), inset 0 0 18px #7b3fa033; }
+  /* The handle a track is dragged by: a bar at its start, on the lane's own
+     edge, drawn only as a line until it is reached for. */
+  .lane-grip {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 2;
+    width: 16px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    display: grid;
+    place-items: center;
+    cursor: ew-resize;
+    touch-action: none;
+  }
+  .lane-grip span { width: 4px; height: 70%; border-radius: 2px; background: var(--violet-300); opacity: .8; box-shadow: 0 0 0 1px #0009; transition: opacity var(--dur-quick) ease-out, width var(--dur-quick) ease-out; }
+  .lane-grip:hover:not(:disabled) span, .lane-grip:focus-visible span { width: 6px; opacity: 1; }
+  .lane-grip:focus-visible { outline: 2px solid var(--iris); outline-offset: -2px; }
+  .lane-grip:disabled { cursor: default; }
+  .lane-grip:disabled span { opacity: .25; }
+  @media (prefers-reduced-motion: reduce) { .lane-grip span { transition: none; } }
+  .cut { color: var(--ember); border-color: var(--ember-line); }
+
   .drop-hint, .drop-hint:hover:not(:disabled) { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-start; min-height: 0; padding: 0 14px; border: 0; border-radius: 0; background: none; box-shadow: none; text-align: left; line-height: 1.2; font-size: 12px; color: var(--text-3); cursor: pointer; }
   .drop-hint > span { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .drop-hint u { color: var(--text-2); text-decoration-color: var(--violet-500); text-underline-offset: 3px; }
