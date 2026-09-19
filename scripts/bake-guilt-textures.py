@@ -1,4 +1,4 @@
-"""Bakes GUILT's materials into static images: python scripts/bake-guilt-textures.py
+"""Bakes GUILT's materials into static images: python scripts/bake-guilt-textures.py [name...]
 
 CSS gradients cannot light a shape; these images are lit height maps. Every
 surface is modelled as a height field and lit head-on — a ring light in front
@@ -14,7 +14,8 @@ browser, and the page only moves opacity and transforms over these images.
   guilt-knob.webp    a knurled machined cap, lit and static: only its
                      indicator rotates, as the light on a real cap does not
   guilt-jack.webp    the input nut and the plug in it
-  guilt-brushed.webp a tileable brushed-metal grain for the control plate
+  guilt-cast.webp    a tileable cast-metal grain for the cabinet and plate,
+                     the metal the glass's tracery is cast in
 
 Needs numpy and Pillow (with WebP support).
 """
@@ -231,21 +232,25 @@ def jack():
     print('jack', W, H)
 
 
-def brushed():
-    W, H = 512, 256
-    v = blur(rng.standard_normal((H, W)), 0.6, axis=0, wrap=True)
-    v = blur(v, 45, axis=1, wrap=True)
-    v = (v - v.mean()) / v.std()
-    fine = blur(rng.standard_normal((H, W)), 3, axis=1, wrap=True)
-    v = 0.7 * v + 0.3 * fine / fine.std()
+def cast():
+    """The cabinet is cast from the same metal as the tracery it frames: a
+    fine tooth with no direction, and a slow sheen across it. Faint on
+    purpose — it is metal, not stone, and a mottle that reads at arm's
+    length reads as concrete at the size the head is drawn. An overlay, like
+    the grain it replaces; the colour stays in CSS, matched to the glass."""
+    W, H = 256, 256
+    tooth = blur(rng.standard_normal((H, W)), 0.7, wrap=True)
+    grain = blur(rng.standard_normal((H, W)), 2.4, wrap=True)
+    sheen = blur(rng.standard_normal((H, W)), 9, wrap=True)
+    norm = lambda a: (a - a.mean()) / a.std()
+    v = 0.55 * norm(tooth) + 0.35 * norm(grain) + 0.16 * norm(sheen)
     rgb = np.where(v[..., None] > 0, 1.0, 0.0) * np.ones(3)
-    alpha = np.clip(np.abs(v) * 0.032, 0, 0.09)
-    save(rgb, alpha, 'guilt-brushed.webp', quality=85, method=6)
-    print('brushed', W, H)
+    alpha = np.clip(np.abs(v) * 0.022, 0, 0.07)
+    save(rgb, alpha, 'guilt-cast.webp', quality=80, method=6)
+    print('cast', W, H)
 
 
-shell()
-box()
-knob()
-jack()
-brushed()
+import sys
+BAKES = {'shell': shell, 'box': box, 'knob': knob, 'jack': jack, 'cast': cast}
+for name in sys.argv[1:] or BAKES:
+    BAKES[name]()

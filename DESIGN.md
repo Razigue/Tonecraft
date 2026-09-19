@@ -30,7 +30,7 @@ The shell stays flat: no tolex, no chrome, no decorative screws outside the head
 | `--ember`, `--ember-line` | Recording, clipping, destruction. Nothing else. |
 | `--iris` | Focus rings only. |
 
-The tab is the only light surface: notation is read, and paper reads. Its playhead and the lit notes on the neck share one amber, the only hue the score owns.
+The studio plates stay dark; notation is read on light paper. GUILT's cabinet also catches light on its satin silver metal, confined to the amplifier object. The score's playhead and lit notes share one amber, the only hue the score owns.
 
 `--ink`, `--chalk`, `--bone`, `--graphite` and `--celadon` survive as aliases for the landing page and older rules. New code uses the names above.
 
@@ -114,7 +114,9 @@ Sentence case everywhere except the display face, which is always uppercase.
 
 ## 5. Signature element: the glass
 
-GUILT's stained glass is lit by the signal. Its glow layer's opacity follows the output RMS posted by the worklet at 30 Hz, mapped from −60 to 0 dBFS, and falls to its unlit baseline when the engine stops or the amp is off. The relief and bloom are static SVG filters, rasterised once; only opacity moves.
+GUILT's rose window, pointed arches and quatrefoils sit behind raised pewter tracery. A static product render supplies the sculpted relief. The cabinet is cast from that same metal, at the same value: a picture set in a lighter frame reads as a picture, not as a window in an amplifier. Its grain is a baked overlay (`scripts/bake-guilt-textures.py`), fine and without direction. The head is seen from slightly above, and every part obeys that one vantage: the top face is visible as the front outline pushed back, the handle stands on it, the knob caps cast their shadows downward, and the feet show only their front edge. No side face is ever visible. The knob bank shares the glass's centreline. GUILT and LUX EX SONO are inscribed directly over the glass, without a plaque. See `docs/guilt-material-study.md` for the supplied references and generation prompt.
+
+The stained glass is lit by the signal. Its glow layer's opacity follows the output RMS posted by the worklet at 30 Hz, mapped from −60 to 0 dBFS, and falls to its unlit baseline when the engine stops or the amp is off. Static SVG colour masks isolate violet, blue and burgundy glass from the neutral metal: switching off darkens the glass while the silver retains its reflections. Masks and bloom are rasterised once; only opacity moves.
 
 The glass and the two meters are the whole visualisation layer. There is no spectrum analyser, no oscilloscope, no `AnalyserNode` and no `<canvas>` anywhere in the product. Under `prefers-reduced-motion` the glass holds a steady illumination.
 

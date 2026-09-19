@@ -25,49 +25,56 @@
 
   const t = $derived(lang.ui);
   const param = (id: string): Param => PARAMS.find((p) => p.id === id)!;
+  const sculptedGlass = `${import.meta.env.BASE_URL}images/guilt-sculpted-glass.webp`;
 </script>
 
 <div class="amp-stand">
   <section class="amp-head" class:guilt={isGuilt} class:illuminated={isGuilt && ampIlluminated} class:bypassed={poweredOff} aria-label={isGuilt ? t.rig.guiltAmp : t.rig.neutralAmp}>
     {#if isGuilt}
-      <div class="guilt-handle" aria-hidden="true"><span></span></div>
+      <!-- The handle stands on the top face, halfway back, cast like the rest. -->
+      <svg class="guilt-handle" width="300" height="46" viewBox="0 0 300 46" aria-hidden="true" focusable="false">
+        <defs>
+          <linearGradient id="guilt-handle-bar" gradientUnits="userSpaceOnUse" x1="0" y1="2" x2="0" y2="40"><stop offset="0" stop-color="#f1e9e4" /><stop offset=".25" stop-color="#c3bab6" /><stop offset="1" stop-color="#6e6563" /></linearGradient>
+          <linearGradient id="guilt-handle-foot" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ece4df" /><stop offset=".3" stop-color="#b5aca8" /><stop offset=".35" stop-color="#8f8683" /><stop offset="1" stop-color="#5b5351" /></linearGradient>
+        </defs>
+        <path d="M26 38V22Q26 6 46 6H254Q274 6 274 22V38" fill="none" stroke="#3f3837" stroke-width="10" />
+        <path d="M26 38V22Q26 6 46 6H254Q274 6 274 22V38" fill="none" stroke="url(#guilt-handle-bar)" stroke-width="8" />
+        <path d="M24 30V22Q24 3.8 46 3.8H254Q276 3.8 276 22V30" fill="none" stroke="#fffaf6" stroke-opacity=".5" stroke-width="1.2" />
+        <path d="M5 46 7 38.5Q8 35 11.5 35H40.5Q44 35 45 38.5L47 46Z" fill="url(#guilt-handle-foot)" stroke="#4a4240" stroke-width=".8" />
+        <path d="M253 46 255 38.5Q256 35 259.5 35H288.5Q292 35 293 38.5L295 46Z" fill="url(#guilt-handle-foot)" stroke="#4a4240" stroke-width=".8" />
+      </svg>
       <div class="guilt-shell" aria-hidden="true"></div>
       <!-- Static image filters; only the glow layer's opacity follows the meters. -->
       <svg class="glass-filters" width="0" height="0" aria-hidden="true" focusable="false">
         <defs>
-          <filter id="guilt-glass-relief" color-interpolation-filters="sRGB">
-            <feColorMatrix type="saturate" values="0" />
-            <feGaussianBlur stdDeviation="0.45" />
-            <feConvolveMatrix order="3" kernelMatrix="-1 -1 0 -1 0 1 0 1 1" divisor="2" bias="0.5" preserveAlpha="true" result="bevel" />
-            <feBlend in="bevel" in2="SourceGraphic" mode="soft-light" />
+          <!-- Chroma isolates the glass: the silver relief keeps its studio
+               lighting when power is off. These masks are rasterised once. -->
+          <filter id="guilt-glass-shade" color-interpolation-filters="sRGB">
+            <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1.5 -3 1.5 0 0" />
           </filter>
           <filter id="guilt-glass-bloom" x="-5%" y="-10%" width="110%" height="120%" color-interpolation-filters="sRGB">
-            <feComponentTransfer>
-              <feFuncR type="linear" slope="3.2" intercept="-1.55" />
-              <feFuncG type="linear" slope="3.2" intercept="-1.55" />
-              <feFuncB type="linear" slope="3.2" intercept="-1.55" />
-            </feComponentTransfer>
-            <feGaussianBlur stdDeviation="3" result="nearGlow" />
-            <feGaussianBlur stdDeviation="8" />
-            <feBlend in2="nearGlow" mode="screen" />
+            <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  1.5 -3 1.5 0 0" />
+            <feGaussianBlur stdDeviation="5" />
           </filter>
         </defs>
       </svg>
     {/if}
     <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
     <div class="glass-window">
-      {#if isGuilt}<img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt={t.rig.glassAlt} width="2172" height="724" decoding="async" /><div class="veil" style={`opacity:${veil}`}></div>{:else}<div class="neutral-art"><span>TC</span><small>AMPLIFICATION</small></div>{/if}
+      {#if isGuilt}
+        <img src={sculptedGlass} alt={t.rig.glassAlt} width="2172" height="724" decoding="async" />
+        <img class="veil" src={sculptedGlass} alt="" aria-hidden="true" width="2172" height="724" decoding="async" style={`opacity:${veil * 0.65}`} />
+      {:else}<div class="neutral-art"><span>TC</span><small>AMPLIFICATION</small></div>{/if}
       {#if isGuilt}
         <div class="glass-bloom-power" aria-hidden="true">
           <div class="glass-glow" style={`opacity:${0.12 + light * 0.3}`}>
-            <img src={`${import.meta.env.BASE_URL}images/guilt-stained-glass.webp`} alt="" width="2172" height="724" decoding="async" />
+            <img src={sculptedGlass} alt="" width="2172" height="724" decoding="async" />
           </div>
         </div>
       {/if}
       {#if isGuilt}
         <div class="glass-walls" aria-hidden="true"></div>
-        <div class="glass-night" aria-hidden="true"></div>
-        <div class="glass-night lag" aria-hidden="true"></div>
+        <img class="glass-night" src={sculptedGlass} alt="" aria-hidden="true" width="2172" height="724" decoding="async" />
       {/if}
       <div class="amp-brand"><span class="brand-rule"></span><h1>{isGuilt ? 'GUILT' : 'TONECRAFT'}</h1><span class="brand-rule"></span><p>{isGuilt ? 'LUX EX SONO' : t.rig.neutralMotto}</p></div>
     </div>
@@ -117,9 +124,7 @@
   .amp-stand { width: var(--column); }
 
   .amp-head { position: relative; margin-top: 0; padding: 17px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-1); box-shadow: var(--shadow); --knob-accent: var(--violet-400); }
-  /* The glass is what gives way when the screen is short: everything else on
-     the head is a control. 580 px is the bands and gutters (276) and the rest
-     of the head; a tall screen gives the chain band its full knobs (+56). */
+  /* Each model keeps its natural proportions; Rig scales the whole head. */
   .glass-window { position: relative; height: 300px; overflow: hidden; background: #101010; border: 2px solid #0e0e10; box-shadow: 0 0 0 1px #55505b; }
   .glass-window img { width: 100%; height: 100%; object-fit: cover; filter: brightness(1.67); }
   .glass-window .veil { position: absolute; inset: 0; background: #000; pointer-events: none; will-change: opacity; }
@@ -167,380 +172,206 @@
   @media (prefers-reduced-motion: reduce) { .glass-window .veil { opacity: .61 !important; } }
 
 
-  /* GUILT is a cabinet seen head-on and a little from above. Its rim is a
-     lit height map baked by scripts/bake-guilt-textures.py: a rounded outer
-     edge, a satin powder coat, a softbox caught along the top, and the
-     shadow the rim casts into the recessed front. CSS cannot light a shape. */
+  /* Head-on cabinet: the rim, handle and feet share the glass's centreline. */
   .amp-head.guilt {
-    --guilt-rim: 26px;
-    --guilt-front-radius: 6px;
-    --knob-accent: #655e6b;
-    --control-label: #d3c7d8;
+    --guilt-rim: 27px;
+    --guilt-front-radius: 5px;
+    --knob-accent: #79608d;
+    --control-label: #353039;
+    --guilt-metal: #aaa7a5;
     isolation: isolate;
-    margin-top: 48px;
-    margin-right: 0;
+    margin: 48px 0 0;
     padding: var(--guilt-rim);
-    border: 0;
-    border-radius: 22px;
-    background: #231f27;
-    box-shadow: 0 16px 14px -8px #000c,0 36px 40px -16px #000d;
+    border: 1px solid #d9d0cb;
+    border-radius: 23px;
+    /* The metal of the glass's tracery, sampled from its bezel: a warm
+       silver, lighter where it faces the light, never brushed. */
+    background: url('/images/guilt-cast.webp') 0 0 / 256px 256px,linear-gradient(180deg,#bfb6b2,#b5aca8 18%,#a79e9a 70%,#8b8280);
+    box-shadow: inset 0 3px 3px #fff9,inset 0 -4px 4px #39353e,inset 2px 0 3px #ece6e477,inset -2px 0 3px #ece6e477,0 2px 0 #322e34,0 18px 16px -9px #000d,0 36px 45px -17px #000e;
   }
-  /* The top of the cabinet, foreshortened: a thin plane behind the front edge. */
+  /* The top of the cabinet, seen from a little above: the front outline
+     pushed back and narrowed by perspective, one layer per pixel of depth.
+     Being the front's own shape, it meets the rounded corners exactly. Outer
+     shadows never paint inside the box, so only the top face shows. */
   .amp-head.guilt::before {
     content: '';
     position: absolute;
     z-index: -1;
-    top: -7px;
-    left: 9px;
-    right: 9px;
-    height: 20px;
+    inset: -1px;
+    border-radius: inherit;
     pointer-events: none;
-    border-radius: 14px 14px 0 0;
-    clip-path: polygon(10px 0,calc(100% - 10px) 0,100% 100%,0 100%);
-    background: linear-gradient(#1c1920,#342e39 60%,#2a2530);
-    box-shadow: inset 0 1px 0 #ffffff1c;
+    box-shadow: 0 -1.55px 0 -0.55px #d8d0cb,0 -3.1px 0 -1.1px #d1c9c4,0 -4.65px 0 -1.65px #cac2bd,0 -6.2px 0 -2.2px #c3bab6,0 -7.75px 0 -2.75px #bdb4b0,0 -9.3px 0 -3.3px #b9b0ac,0 -10.85px 0 -3.85px #b4aba8,0 -12.4px 0 -4.4px #b0a7a4,0 -13.95px 0 -4.95px #aca3a0,0 -15.5px 0 -5.5px #a89f9c,0 -17.05px 0 -6.05px #a49b98,0 -18.6px 0 -6.6px #a09794,0 -20.15px 0 -7.15px #9c9390,0 -21.7px 0 -7.7px #534c4a;
   }
-  .guilt-handle {
-    position: absolute;
-    z-index: -2;
-    top: -27px;
-    left: calc(50% - 150px);
-    width: 300px;
-    height: 17px;
-    pointer-events: none;
-    border-bottom: 5px solid #161317;
-    filter: drop-shadow(0 3px 2px #0008);
-  }
-  .guilt-handle::before,.guilt-handle::after {
-    content: '';
-    position: absolute;
-    bottom: -4px;
-    width: 27px;
-    height: 9px;
-    border: 1px solid #0b0a0d;
-    border-radius: 4px 4px 1px 1px;
-    background: linear-gradient(#8a8390,#48434d 35%,#1e1c22 80%);
-    box-shadow: inset 0 1px 0 #ffffff40;
-  }
-  .guilt-handle::before { left: 0; }
-  .guilt-handle::after { right: 0; }
-  .guilt-handle span {
-    position: absolute;
-    inset: 0 17px 0;
-    border: 5px solid #3a3540;
-    border-bottom: 0;
-    border-radius: 50% 50% 0 0 / 14px 14px 0 0;
-    box-shadow: inset 0 1px 0 #ffffff26,0 -1px 0 #7b7482;
-    background: linear-gradient(#39353b,#201e22 65%,transparent 66%);
-  }
-  /* A 9-slice: the corners keep their shape, the top and bottom edges tile
-     (the grain keeps its scale), the sides stretch (the light falls off down
-     the whole cabinet). The inner 44 px of each slice is the rim's shadow,
-     laid over the front. */
   .guilt-shell {
     position: absolute;
     z-index: 4;
-    inset: 0;
+    inset: 12px;
+    border: 1px solid #6a605d;
+    border-radius: 12px;
+    box-shadow: 0 -1px 0 #fff8,inset 0 1px 1px #fff7,0 1px 0 #f1e7df77;
     pointer-events: none;
-    border: 70px solid transparent;
-    border-image: url("/images/guilt-shell.webp") 140 / 70px round stretch;
+  }
+  .guilt-handle {
+    position: absolute;
+    z-index: -1;
+    top: -50px;
+    left: calc(50% - 150px);
+    pointer-events: none;
+    filter: drop-shadow(0 3px 2px #0008);
   }
   .guilt .screw { display: none; }
+  .glass-filters { position: absolute; pointer-events: none; }
   .guilt .glass-window {
+    isolation: isolate;
+    height: auto;
+    aspect-ratio: 3;
     border: 0;
     border-radius: var(--guilt-front-radius) var(--guilt-front-radius) 0 0;
-    box-shadow: none;
+    background: #100a19;
+    opacity: 1;
+    box-shadow: 0 0 0 1px #4b444e,0 -1px 0 1px #2a252d;
   }
-  .glass-filters { position: absolute; pointer-events: none; }
-  .guilt .glass-window { isolation: isolate; opacity: 1; }
-  /* Dim the glass against black, never the cabinet behind it: lowering the
-     whole window's opacity let the grey shell show through the dark glass. */
-  .glass-night {
+  .guilt .glass-window img { display: block; object-fit: fill; filter: none; }
+  .guilt .glass-window .veil,.guilt .glass-window .glass-night {
     position: absolute;
     inset: 0;
-    z-index: 1;
+    background: none;
+    filter: url(#guilt-glass-shade);
     pointer-events: none;
-    background: #010104;
-    opacity: .94;
-    transition: opacity 500ms ease-out;
+    transition: opacity 650ms ease-out;
   }
-  .guilt.illuminated .glass-night { opacity: 0; animation: guilt-ignite 2300ms linear; }
-  /* The right end of the tube strikes last: a static mask, so only opacity moves. */
-  .glass-night.lag {
-    opacity: 0;
-    transition: none;
-    -webkit-mask-image: linear-gradient(90deg, transparent 50%, #000 66%);
-    mask-image: linear-gradient(90deg, transparent 50%, #000 66%);
-  }
-  .guilt.illuminated .glass-night.lag { animation: guilt-ignite-lag 2300ms linear; }
-  .guilt .glass-window .veil { transition: opacity 150ms linear; }
-  .guilt:not(.illuminated) .glass-window .veil { transition-duration: 500ms; }
-  /* A cold neon tube does not fade in: the gas fails to strike, flashes dim
-     for a few tens of ms, drops out, retries, then catches and warms up.
-     steps(1) makes each keyframe a hard cut; only the final warm-up is linear.
-     Irregular spacing on purpose: an even rhythm reads as a CSS blink. */
-  @keyframes guilt-ignite {
-    0% { opacity: .94; animation-timing-function: steps(1, end); }
-    7% { opacity: .66; animation-timing-function: steps(1, end); }
-    8.5% { opacity: .94; animation-timing-function: steps(1, end); }
-    15% { opacity: .42; animation-timing-function: steps(1, end); }
-    16.2% { opacity: .94; animation-timing-function: steps(1, end); }
-    17.4% { opacity: .55; animation-timing-function: steps(1, end); }
-    19% { opacity: .94; animation-timing-function: steps(1, end); }
-    31% { opacity: .24; animation-timing-function: steps(1, end); }
-    33% { opacity: .72; animation-timing-function: steps(1, end); }
-    34% { opacity: .18; animation-timing-function: steps(1, end); }
-    37.5% { opacity: .94; animation-timing-function: steps(1, end); }
-    45% { opacity: .34; animation-timing-function: linear; }
-    52% { opacity: .14; animation-timing-function: steps(1, end); }
-    52.6% { opacity: .62; animation-timing-function: steps(1, end); }
-    54.2% { opacity: .12; animation-timing-function: linear; }
-    63% { opacity: .07; animation-timing-function: steps(1, end); }
-    63.5% { opacity: .38; animation-timing-function: steps(1, end); }
-    65% { opacity: .06; animation-timing-function: linear; }
-    100% { opacity: 0; }
-  }
-  @keyframes guilt-ignite-lag {
-    0% { opacity: 0; animation-timing-function: steps(1, end); }
-    30% { opacity: .8; animation-timing-function: steps(1, end); }
-    58% { opacity: .1; animation-timing-function: steps(1, end); }
-    59.5% { opacity: .8; animation-timing-function: steps(1, end); }
-    68% { opacity: .3; animation-timing-function: steps(1, end); }
-    69.5% { opacity: .75; animation-timing-function: steps(1, end); }
-    71.5% { opacity: .2; animation-timing-function: linear; }
-    80% { opacity: 0; }
-    100% { opacity: 0; }
-  }
-  /* The halo only exists once the gas holds: none on the failed strikes. */
-  @keyframes guilt-bloom-ignite {
-    0% { opacity: 0; animation-timing-function: steps(1, end); }
-    31% { opacity: .25; animation-timing-function: steps(1, end); }
-    34% { opacity: .35; animation-timing-function: steps(1, end); }
-    37.5% { opacity: 0; animation-timing-function: steps(1, end); }
-    45% { opacity: .3; animation-timing-function: linear; }
-    52% { opacity: .5; animation-timing-function: steps(1, end); }
-    52.6% { opacity: .1; animation-timing-function: steps(1, end); }
-    54.2% { opacity: .55; animation-timing-function: linear; }
-    100% { opacity: 1; }
-  }
-  .guilt .glass-window>img { filter: url(#guilt-glass-relief) brightness(1.8) contrast(1.13) saturate(.9); }
-  .glass-bloom-power {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    mix-blend-mode: screen;
-    opacity: 0;
-    transition: opacity 500ms ease-out;
-  }
-  .guilt.illuminated .glass-bloom-power { opacity: 1; animation: guilt-bloom-ignite 2300ms linear; }
-  .glass-glow {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    mix-blend-mode: screen;
-    will-change: opacity;
-  }
+  .guilt .glass-window .veil { transition-duration: 150ms; }
+  .glass-night { opacity: .72; }
+  .guilt.illuminated .glass-night { opacity: 0; }
+  .glass-bloom-power { position: absolute; inset: 0; opacity: 0; pointer-events: none; mix-blend-mode: screen; transition: opacity 1100ms ease-in; }
+  .guilt.illuminated .glass-bloom-power { opacity: 1; }
+  .glass-glow { position: absolute; inset: 0; will-change: opacity; }
   .guilt .glass-glow img { filter: url(#guilt-glass-bloom); }
   .guilt .glass-window::after {
     z-index: 1;
-    border-radius: inherit;
-    box-shadow: none;
-    background: linear-gradient(0deg,#09060ea0,transparent 35%);
+    background: linear-gradient(0deg,#09060e45,transparent 18%);
+    box-shadow: inset 0 3px 6px -3px #100d1744;
   }
-  /* The glass sits at the back of a box. Its four walls are baked in
-     perspective (the top one faces away from the light, the bottom one into
-     it) together with the shadow they throw across the art: long from above,
-     short from below. A 9-slice, so the walls keep their depth whatever the
-     window's height. */
+  /* The glass sits behind the rim. Lit from above, the rim shades the top
+     of the opening and the floor of the opening catches the light; the
+     glass's own silver bezel is the only frame, so nothing is drawn over it. */
   .glass-walls {
     position: absolute;
     z-index: 2;
     inset: 0;
+    box-shadow: inset 0 0 0 1px #2a232e,inset 0 2px 3px -2px #0006,inset 0 -1px 0 #d8cdc844;
     pointer-events: none;
-    border: 33px solid transparent;
-    border-image: url("/images/guilt-box.webp") 66 / 33px stretch;
   }
-  .guilt .amp-brand { z-index: 2; bottom: 21px; }
-  .guilt .amp-brand h1 {
-    color: #e0cedf;
-    text-shadow: 0 1px 0 #f7eaf6,0 2px 0 #857087,0 3px 0 #49334e,2px 5px 3px #000,0 8px 13px #000;
+  .guilt .amp-brand {
+    z-index: 3;
+    bottom: 21px;
   }
+  .guilt .amp-brand h1 { color: #e0cedf; text-shadow: 0 1px 0 #f7eaf6,0 2px 0 #857087,0 3px 0 #49334e,0 5px 3px #000,0 8px 13px #000; }
   .guilt .amp-brand p { color: #d0b7d4; text-shadow: 0 2px 2px #000; }
-  /* The control plate: brushed, anodised metal, a shade lighter than the
-     cabinet, held by four screws. Its top edge is the lip where the glass
-     ends; everything on it is printed, only knobs and switch stand off it. */
+
+  /* Front-lit, concentric caps: only their indicators rotate. */
   .guilt .amp-panel {
     position: relative;
-    justify-content: flex-start;
-    gap: 10px;
-    padding: 20px 56px 16px 96px;
+    /* A physical plate has a fixed height, including at fractional zoom
+       where the browser rounds the labels' font metrics differently. */
+    height: 132px;
+    justify-content: center;
+    gap: 24px;
+    padding: 24px 150px 18px;
     border: 0;
     border-radius: 0 0 var(--guilt-front-radius) var(--guilt-front-radius);
     background:
-      radial-gradient(circle at 10px 10px,#bdb3c2 0 .8px,#4d4653 1.3px 2.6px,#0000 3px),
-      radial-gradient(circle at calc(100% - 10px) 10px,#bdb3c2 0 .8px,#4d4653 1.3px 2.6px,#0000 3px),
-      radial-gradient(circle at 10px calc(100% - 10px),#bdb3c2 0 .8px,#4d4653 1.3px 2.6px,#0000 3px),
-      radial-gradient(circle at calc(100% - 10px) calc(100% - 10px),#bdb3c2 0 .8px,#4d4653 1.3px 2.6px,#0000 3px),
-      url("/images/guilt-brushed.webp") 0 0 / 512px 256px,
-      linear-gradient(100deg,#ffffff00 15%,#ffffff10 40%,#ffffff04 55%,#ffffff00 75%),
-      linear-gradient(180deg,#48424e,#3a3540 40%,#322d37);
-    box-shadow:
-      inset 0 1px 0 #ffffff40,inset 0 2px 2px #ffffff10,
-      inset 0 -1px 0 #0009,inset 1px 0 0 #ffffff14,inset -1px 0 0 #0006;
+      radial-gradient(circle at 12px 14px,#413742 0 1px,#ddd2c8 1.5px 3px,#5f545e 3.5px 4px,transparent 4.5px),
+      radial-gradient(circle at calc(100% - 12px) 14px,#413742 0 1px,#ddd2c8 1.5px 3px,#5f545e 3.5px 4px,transparent 4.5px),
+      url('/images/guilt-cast.webp') 0 0 / 256px 256px,
+      linear-gradient(180deg,#bab1ad,#a9a09c 55%,#978e8b);
+    box-shadow: inset 0 1px 0 #f6e9df,inset 0 -2px 2px #4c4353,0 1px 0 #d9c8bc;
   }
-  /* The plate stands proud of the glass: from above, its top face shows as a
-     thin lit band, narrowing as it recedes, with a dark line where it meets
-     the box. */
   .guilt .amp-panel::before {
     content: '';
     position: absolute;
-    z-index: 1;
+    z-index: 3;
     left: 0;
     right: 0;
-    top: -7px;
-    height: 7px;
+    top: -3px;
+    height: 3px;
     pointer-events: none;
-    clip-path: polygon(7px 0,calc(100% - 7px) 0,100% 100%,0 100%);
-    background: linear-gradient(#1a171d,#58515f 30%,#7b7382 80%,#9c94a3);
-    box-shadow: inset 0 1px 0 #000;
+    background: linear-gradient(#3a333f,#b3a9ae 45%,#f1e7de);
   }
-  .guilt .amp-signature { order: 1; margin-left: auto; }
-  .guilt .power-indicator { order: 2; }
-  /* No rules between groups: spacing and the printed labels group the knobs. */
-  .guilt .control-group { border-left: 0; }
+  .guilt .control-group { border-left: 0; padding-left: 0; flex: none; }
   .guilt .knob-row { gap: 12px; }
-  .guilt .group-label { white-space: nowrap; color: #d9cddd; text-shadow: 0 1px 0 #0006; }
-  .guilt :global(.label) { color: #e2d7e6; text-shadow: 0 1px 0 #0007; }
-  .guilt :global(.value) { color: #a99dae; font-size: 9px; }
-  /* Knobs stand on the plate: a printed scale, a cast shadow, a machined
-     cap (baked). The powered sweep stays, inside the scale. */
+  .guilt .group-label { min-height: 36px; margin-top: -8px; margin-bottom: 1px; white-space: nowrap; color: #3e3542; font-size: 8px; font-weight: 500; text-shadow: 0 1px 0 #f6ebe555; }
+  .guilt .group-label[aria-pressed='false'] { opacity: .65; }
+  .guilt .group-label span { color: #58455f; }
+  .guilt.illuminated .group-label[aria-pressed='true'] span { color: #6d347e; }
+  .guilt .group-label:focus-visible,.guilt .power-indicator:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; border-radius: 3px; }
+  .guilt :global(.label) { color: #39313d; font-size: 9px; font-weight: 500; letter-spacing: .13em; text-shadow: 0 1px 0 #f8eee966; }
+  .guilt :global(.knob:hover .label) { color: #211629; }
+  .guilt :global(.value) { color: #403546; font-size: 9px; text-shadow: 0 1px 0 #f8eee944; }
   .guilt :global(.dial) {
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='62' height='62'%3E%3Cpath d='M12.26 49.74L9.08 52.92M4.85 39.50L1.99 40.43M3.84 26.70L0.88 26.23M8.75 14.84L6.32 13.07M18.52 6.50L17.15 3.82M31.00 4.50L31.00 0.00M43.48 6.50L44.85 3.82M53.25 14.84L55.68 13.07M58.16 26.70L61.12 26.23M57.15 39.50L60.01 40.43M49.74 49.74L52.92 52.92' stroke='%23cdbfd3' stroke-width='1.2' stroke-linecap='round' opacity='.6'/%3E%3C/svg%3E") center / 62px 62px no-repeat;
+    background: conic-gradient(from 225deg,#746573 0deg,transparent 1deg 26deg,#746573 27deg 28deg,transparent 29deg 53deg,#746573 54deg 55deg,transparent 56deg 80deg,#746573 81deg 82deg,transparent 83deg 107deg,#746573 108deg 109deg,transparent 110deg 134deg,#746573 135deg 136deg,transparent 137deg 161deg,#746573 162deg 163deg,transparent 164deg 188deg,#746573 189deg 190deg,transparent 191deg 215deg,#746573 216deg 217deg,transparent 218deg 242deg,#746573 243deg 244deg,transparent 245deg 269deg,#746573 270deg,transparent 271deg);
     box-shadow: none;
   }
-  .guilt :global(.dial::before) {
-    inset: 8px;
-    background: radial-gradient(circle,#000c 50%,#0000 72%);
-    box-shadow: none;
-    transform: translate(2px,5px);
-  }
+  .guilt :global(.dial::before) { inset: 3px; background: #aca5a6; box-shadow: none; }
   .guilt :global(.power-dial .dial-light) { inset: 5px; }
   .guilt :global(.sweep-half::before) { border-width: 2px; }
+  /* Seen from the same point above as the cabinet: the cap's side shows
+     below its face, and it rests on the plate by a soft contact shadow. */
   .guilt :global(.cap) {
-    inset: 7px;
+    inset: 8px;
     border: 0;
-    border-radius: 50%;
-    background: url("/images/guilt-knob.webp") center / 100% 100%;
-    box-shadow: none;
+    /* A knurled skirt: fine enough to read as grip, coarse enough not to
+       beat against the pixel grid the way a baked texture did at 46 px. */
+    background:
+      radial-gradient(circle,#0000 0 64%,#0007 72%,#0000 80%,#fff2 94%,#0000),
+      repeating-conic-gradient(#57505c 0 5deg,#221d26 5deg 10deg);
+    box-shadow: 0 1px 0 #6f6674,0 2px 0 #5a5160,0 3px 0 #463e4c,0 5px 4px #1d152866,0 9px 9px -3px #1d152855;
     transform: none;
   }
-  .guilt :global(.indicator) {
-    top: 8px;
-    height: 9px;
-    background: #efe6f2;
-    box-shadow: 0 0 0 .5px #0008;
-    transform-origin: 1px 16px;
-    transform: rotate(var(--angle));
-  }
-  /* The input: a nut on the plate, the plug in it, the lead in front of the cabinet. */
-  /* The input: a knurled nut and the plug in it, both baked with the rest of
-     the materials; only the lead is drawn, and it never moves. */
-  .guilt-jack {
+  /* The face: spun metal lit from the front, so its highlights sit top and
+     bottom, symmetric, whatever the value. */
+  .guilt :global(.cap::before) {
+    content: '';
     position: absolute;
-    z-index: 5;
-    left: 22px;
-    top: calc(50% - 16px);
-    width: 52px;
-    height: 56px;
-    pointer-events: none;
-    background: url("/images/guilt-jack.webp") center / 100% 100% no-repeat;
-    filter: drop-shadow(2px 4px 4px #000a);
+    inset: 5px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle,#0000 0 30%,#0000 88%,#5a525e 96%),
+      conic-gradient(#f4efeb,#a7a0a4 50deg,#d9d3cf 90deg,#a7a0a4 130deg,#f4efeb 180deg,#a7a0a4 230deg,#d9d3cf 270deg,#a7a0a4 310deg,#f4efeb);
+    box-shadow: 0 0 0 1px #1a151d,inset 0 1px 0 #fffb;
   }
+  /* A line engraved from the rim toward the centre; it turns about the
+     cap's centre (23 px), never about its own. */
+  .guilt :global(.indicator) { z-index: 1; top: 3px; left: calc(50% - 1px); width: 2px; height: 13px; border-radius: 1px; background: #4a2c5a; box-shadow: 0 0 0 1px #24182bcc; transform-origin: 1px 20px; transform: rotate(var(--angle)); }
+  .guilt .amp-signature { position: absolute; right: 76px; top: 50%; transform: translateY(-50%); min-width: 84px; color: #403341; text-shadow: 0 1px 0 #e9dcd080; }
+  .guilt .sig-symbol { color: #56455f; width: 24px; height: 24px; }
+  .guilt .amp-signature>span { font-size: 27px; }
+  .guilt .amp-signature small { font-size: 6px; letter-spacing: .22em; }
+  .guilt-jack { position: absolute; z-index: 5; left: 15px; top: calc(50% - 12px); width: 52px; height: 56px; pointer-events: none; background: url('/images/guilt-jack.webp') center / 100% 100% no-repeat; filter: drop-shadow(4px 7px 4px #291d3466); }
   .jack-cable { position: absolute; left: -301px; top: 51px; overflow: visible; }
-  .guilt .amp-signature { color: #dccfe0; text-shadow: 0 1px 0 #09070d,0 -1px 0 #ffffff22; }
-  .guilt .group-label span { position: relative; display: inline-block; }
-  .guilt .group-label span::after {
-    content: '●';
-    position: absolute;
-    inset: 0;
-    color: #d7bedf;
-    text-shadow: 0 0 5px #d6b6e399;
-    opacity: 0;
-    transition: opacity 400ms ease-out;
-  }
-  .guilt.illuminated .group-label[aria-pressed=true] span::after { opacity: 1; transition: opacity 900ms ease-in 120ms; }
-  .guilt .power-indicator { gap: 11px; padding: 8px 4px; min-width: 48px; }
-  .guilt .power-indicator>span.power-rocker {
-    position: relative;
-    display: block;
-    width: 36px;
-    height: 58px;
-    padding: 3px;
-    border: 1px solid;
-    border-color: #645b68 #39313e #84758b #4d4355;
-    border-radius: 5px;
-    background: #0b080f;
-    perspective: 180px;
-    box-shadow: 0 0 0 2px #121016,0 3px 5px #000b,inset 0 2px 4px #000;
-  }
-  .rocker-face {
-    position: absolute;
-    inset: 4px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: space-around;
-    border: 1px solid #544c5c;
-    border-radius: 3px;
-    background: linear-gradient(#4c4553,#29232f 48%,#17121e 52%,#211b28);
-    transform: rotateX(-13deg);
-    box-shadow: 0 -3px 0 #211a29,0 -4px 1px #73677c,inset 0 1px 1px #b2a0bd33;
-    color: #9a8dA3;
-    font: 10px var(--mono);
-    text-shadow: 0 1px 1px #000;
-  }
-  .rocker-on { color: #7d7187; }
-  .rocker-off { color: #ddd1e2; }
-  .rocker-lamp { position: relative; width: 15px; height: 3px; border-radius: 2px; background: #312236; box-shadow: inset 0 1px 2px #000; }
-  .rocker-lamp::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: #eac0fc;
-    box-shadow: 0 0 4px #eccbff,0 0 12px #c875efaa,inset 0 1px 0 #fff8;
-    opacity: 0;
-    transition: opacity 400ms ease-out;
-  }
-  .power-rocker.lit .rocker-face {
-    transform: rotateX(13deg);
-    background: linear-gradient(#201a29,#302637 48%,#494050 52%,#332b3e);
-    box-shadow: 0 3px 0 #18111f,0 4px 1px #5b4b67,inset 0 1px 3px #0008;
-  }
-  .power-rocker.lit .rocker-on { color: #f1e1f7; }
-  .power-rocker.lit .rocker-off { color: #85728f; }
-  .power-rocker.lit .rocker-lamp::after { opacity: 1; transition: opacity 650ms ease-in; }
-  .guilt .power-indicator:hover:not(:disabled) .power-rocker { border-color: #a091aa; }
-  .guilt .power-indicator:active:not(:disabled) .rocker-face { transform: rotateX(0deg) translateZ(-1px); }
-  /* Rubber feet, tapered, lit from the left like the cabinet above them. */
-  .guilt + .amp-foot { position: relative; margin: -2px 70px 0; }
-  .guilt + .amp-foot::before {
-    content: '';
-    position: absolute;
-    z-index: -1;
-    left: -90px;
-    right: -90px;
-    top: -18px;
-    height: 44px;
-    pointer-events: none;
-    background: radial-gradient(closest-side,#000000d0,#0000);
-  }
-  .guilt + .amp-foot span { width: 70px; height: 20px; clip-path: polygon(0 0,100% 0,88% 100%,12% 100%); background: linear-gradient(90deg,#0a090c 12%,#34303a 30%,#1c1a20 60%,#0b0a0d 88%); box-shadow: inset 0 6px 5px -2px #000; }
+  .guilt .power-indicator { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); gap: 12px; min-width: 42px; padding: 8px 4px; }
+  .guilt .power-indicator small { color: #403341; }
+  .guilt .power-indicator>span.power-rocker { position: relative; display: block; width: 30px; height: 51px; padding: 3px; border: 1px solid #746576; border-radius: 4px; background: #18121e; perspective: 180px; box-shadow: 0 0 0 2px #d7cbc477,3px 5px 5px #30203766,inset 0 2px 4px #000; }
+  .rocker-face { position: absolute; inset: 3px; display: flex; flex-direction: column; align-items: center; justify-content: space-around; border: 1px solid #665270; border-radius: 2px; background: linear-gradient(#6b5278,#32223f 48%,#22172b 52%,#3b2b45); transform: rotateX(-13deg); box-shadow: 0 -2px 0 #24172f,0 -3px 1px #9985a3; color: #c5accf; font: 9px var(--mono); text-shadow: 0 1px 1px #000; }
+  .rocker-on { color: #a58ab3; }
+  .rocker-off { color: #f3e4f6; }
+  .rocker-lamp { position: relative; width: 14px; height: 7px; border-radius: 1px; background: #3b2445; box-shadow: inset 0 1px 2px #000; }
+  .rocker-lamp::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: #e9b6fc; box-shadow: 0 0 5px #eac4ff,0 0 15px #c06decaa,inset 0 1px 0 #fff9; opacity: 0; transition: opacity 550ms ease-in; }
+  .power-rocker.lit .rocker-face { transform: rotateX(13deg); background: linear-gradient(#35213f,#533360 48%,#8a5996 52%,#573966); box-shadow: 0 3px 0 #291a35,0 4px 1px #b499bd,inset 0 1px 3px #0008; }
+  .power-rocker.lit .rocker-on { color: #fff0ff; }
+  .power-rocker.lit .rocker-off { color: #b591bf; }
+  .power-rocker.lit .rocker-lamp::after { opacity: 1; }
+  .guilt .power-indicator:hover:not(:disabled) .power-rocker { border-color: #e1c8ef; }
+  .guilt .power-indicator:active:not(:disabled) .rocker-face { transform: rotateX(0deg); }
+  /* Seen from above, the feet are only their front edge under the cabinet,
+     in its shadow, with the floor's contact shadow beneath. */
+  .guilt + .amp-foot { position: relative; margin: -2px 58px 0; padding-bottom: 12px; }
+  .guilt + .amp-foot::before { content: ''; position: absolute; z-index: -1; inset: -6px -40px 2px; pointer-events: none; border-radius: 50%; background: radial-gradient(closest-side,#000d,#0006 60%,transparent); }
+  .guilt + .amp-foot span { width: 62px; height: 14px; border-radius: 0 0 7px 7px; background: linear-gradient(90deg,#141116,#3a343d 30%,#4a444c 50%,#3a343d 70%,#141116); box-shadow: inset 0 4px 3px -1px #000d,inset 0 -1px 0 #6a626c,0 2px 2px #000a; }
   @media(prefers-reduced-motion:reduce) {
-    .glass-night,.glass-bloom-power { animation: none !important; transition: none; }
-    .glass-night.lag { display: none; }
-    .glass-bloom-power,.guilt .glass-window .veil,.guilt .group-label span::after,.rocker-lamp::after { transition: none !important; }
-    .glass-glow { will-change: auto; }
-    .guilt.illuminated .glass-glow { opacity: .22 !important; }
+    .guilt .glass-window .veil { opacity: .26 !important; }
+    .guilt .glass-window .glass-night,.glass-bloom-power,.guilt .glass-window .veil,.rocker-lamp::after { transition: none; }
+    .glass-glow { opacity: .22 !important; will-change: auto; }
   }
+
 </style>

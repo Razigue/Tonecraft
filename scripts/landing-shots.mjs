@@ -70,7 +70,7 @@ try {
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: path.join(out, 'overview.png'), animations: 'disabled' });
   console.log('  overview.png');
-  await shot('amp', page.locator('.amp-head'));
+  await shot('amp', page.locator('.amp-stand'));
   await shot('controls', page.locator('.global-controls'));
   await shot('panel', page.locator('.amp-panel'));
   // The transport is the studio's DAW: its row holds the looper and the tab.
