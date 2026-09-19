@@ -220,6 +220,17 @@
     for (const layer of element.parentElement?.querySelectorAll<HTMLElement>(':scope > .at-cursors') ?? []) layer.style.width = width;
   }
 
+  /* In one horizontal line, a system is as tall as the tallest bar of the
+     whole score, and for a long score that is mostly blank reserved above the
+     staff. Left at the top of it, the lectern showed that blank and the staff
+     fell below the fold. The bar's visual bounds are the staff itself — the
+     whitespace is exactly what they leave out — so the paper is parked on it. */
+  function centreStaff(reader: AlphaTabApi) {
+    const staff = reader.boundsLookup?.findMasterBarByIndex(0)?.visualBounds;
+    if (!viewport || !staff) return;
+    viewport.scrollTop = Math.max(0, staff.y + staff.h / 2 - viewport.clientHeight / 2);
+  }
+
   /** The engine, the notation fonts and the soundfont: fetched at the first file opened, never before. */
   function library() {
     loading ??= import('@coderline/alphatab').catch(e => { loading = null; throw e; });
@@ -319,6 +330,7 @@
       if (api === created && editing) { if (redraw) { redraw = false; void renderDraft(); } else { placeCursor(); soundWritten(); } }
       if (!viewport || !surface) return;
       fitSurface(created);
+      centreStaff(created);
       layout++;
       tail = 0;
       const width = surface.scrollWidth;
@@ -1087,10 +1099,17 @@
      and a 120 px neck. */
   @container lectern (max-height: 480px) {
     .stage > :global(.neck), .scale-bar { display: none; }
-    /* Alone, the paper is a whole sheet: no dark band above and below a line. */
-    .score-viewport.has-score { flex: 1 0 auto; }
+    /* Alone, the paper is a whole sheet: no dark band above and below a line —
+       and it takes the stage's height, never more: at `0 auto` a tall system
+       overflowed a stage that clips, and the tab lost its top and bottom. */
+    .score-viewport.has-score { flex: 1 1 auto; }
   }
-  .score-viewport { position: relative; flex: 0 0 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-color: var(--violet-400) #e9e3d7; }
+  /* The paper takes what it needs and gives back the rest: a system alphaTab
+     lays out taller than the lectern — a header, a tempo mark and a section
+     name above one staff — used to push the neck out of the stage, which
+     clips, so the neck was drawn below it, cut in half. It keeps a readable
+     floor and scrolls inside itself instead. */
+  .score-viewport { position: relative; flex: 0 1 auto; min-width: 0; min-height: 140px; overflow-x: auto; overflow-y: auto; scrollbar-color: var(--violet-400) #e9e3d7; }
   .has-score {
     display: flex;
     align-items: stretch;

@@ -127,12 +127,15 @@
 
 <style>
   /* The neck sits on the lectern's paper, framed like it. */
-  /* The neck is what gives way on a short screen: the tab above it never does. */
-  /* The plate is the drawing's own size, not whatever height is left over: the
-     svg keeps its viewBox's shape and the paper hugs it. Given the leftover
-     instead, a neck on a tall page was a thin line adrift in a cream field. */
-  .neck{flex:0 1 auto;min-height:0;display:flex;padding:14px 16px 10px;border-radius:var(--radius);background:radial-gradient(ellipse 80% 140% at 50% 0%,#fffdf8,#f3eee4 70%,#ebe4d6);box-shadow:var(--shadow),0 0 0 1px #000}
-  svg{width:100%;height:auto;max-height:300px;margin:auto}
+  /* The neck is what gives way on a short screen: the tab above it never does.
+     It gives way by being scaled down whole, never by being crushed — the
+     plate is the drawing's height while there is room for it, and never a
+     thin line adrift in a cream field. */
+  .neck{flex:0 1 auto;min-height:96px;display:flex;overflow:hidden;padding:14px 16px 10px;border-radius:var(--radius);background:radial-gradient(ellipse 80% 140% at 50% 0%,#fffdf8,#f3eee4 70%,#ebe4d6);box-shadow:var(--shadow),0 0 0 1px #000}
+  /* The drawing fits the room it is given, in both directions: at `height:auto`
+     it kept its full height inside a box the tab had squeezed, and hung out of
+     the stage. `meet` scales it down whole and keeps it centred. */
+  svg{width:100%;height:100%;min-height:0;max-height:300px;margin:auto}
   .fret{stroke:#cec8bb;stroke-width:1}
   .nut{stroke:#6f6962;stroke-width:3}
   .capo{stroke:#a37320;stroke-width:3;opacity:.55}
@@ -155,5 +158,7 @@
   .pick:hover{fill:#a3732018}
   @keyframes strike{from{opacity:0;transform:scale(.55)}to{opacity:1;transform:scale(1)}}
   @media(prefers-reduced-motion:reduce){.halo,.core{animation:none}}
-  @media(max-width:760px){.neck{padding:10px 8px 14px;min-height:110px}.number{display:none}.degree{display:none}}
+  /* On a phone the page scrolls: nothing is squeezed there, so the neck keeps
+     its own height and the drawing is never scaled down. */
+  @media(max-width:760px){.neck{flex:none;padding:10px 8px 14px;min-height:110px}svg{height:auto}.number{display:none}.degree{display:none}}
 </style>

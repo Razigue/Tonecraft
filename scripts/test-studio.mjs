@@ -413,12 +413,23 @@ try {
     const el = document.querySelector('.score-viewport');
     const view = el.getBoundingClientRect();
     const cursor = document.querySelector('.at-cursor-beat')?.getBoundingClientRect();
-    return { off: cursor ? Math.round(cursor.left + cursor.width / 2 - view.left - view.width / 2) : null, scrolled: Math.round(el.scrollLeft), down: Math.round(el.scrollTop), height: el.scrollHeight - el.clientHeight };
+    const stage = document.querySelector('.stage').getBoundingClientRect();
+    const neck = document.querySelector('.neck svg')?.getBoundingClientRect();
+    return { off: cursor ? Math.round(cursor.left + cursor.width / 2 - view.left - view.width / 2) : null, scrolled: Math.round(el.scrollLeft), down: Math.round(el.scrollTop), height: el.scrollHeight - el.clientHeight,
+      inStage: Math.round(view.top) >= Math.round(stage.top) - 1 && Math.round(view.bottom) <= Math.round(stage.bottom) + 1,
+      neckInStage: !neck || (Math.round(neck.top) >= Math.round(stage.top) - 1 && Math.round(neck.bottom) <= Math.round(stage.bottom) + 1) };
   });
   const centred = await read();
   assert(centred.scrolled > 0, 'the score has slid under the playhead');
   assert(Math.abs(centred.off) < 40, `the playhead stays in the middle of the window (off by ${centred.off}px)`);
-  assert.equal(centred.height, 0, 'one line: there is nothing to scroll vertically');
+  // One line, however tall alphaTab makes it: in this layout a system is as
+  // tall as the tallest bar of the whole score, which on a long one is mostly
+  // blank above the staff. Nothing may leave the stage, which clips — that is
+  // what cut the neck in half under the tab — and when the system is taller
+  // than the lectern, the paper is parked on the staff, not on the blank.
+  assert(centred.inStage, 'the paper stays inside the stage');
+  assert(centred.neckInStage, 'the neck is drawn inside the stage, whole');
+  if (centred.height > 0) assert(centred.down > 0, 'a system taller than the lectern is parked on its staff');
   // Smoothly: the scroll is animated over the cursor's own transition, so it
   // moves between beats rather than jumping from one bar to the next.
   await page.waitForTimeout(400);
