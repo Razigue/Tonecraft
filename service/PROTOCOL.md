@@ -70,7 +70,10 @@ program using it, so the engine never rewrites it unasked) and elsewhere the
 it is the player's call, when the dropout count says so), the first two inputs, the first two outputs. The two
 input channels become the chain's left and right, where the page's channel
 choice (left, right, both, follow) applies as it does in the browser. The
-chain's mono output is written to both output channels.
+chain's left ear goes to the first output channel and its right ear to the
+second — the same samples while the doubler is off. With one output channel
+chosen, it plays the left ear. A chain that predates the doubler has no right
+ear (`tc_output_right_ptr`), and its one output is written to both.
 
 Calls made before `opened` are answered with an error: the chain is created by
 `open` and dropped by `close`, and the page pushes its whole state after each

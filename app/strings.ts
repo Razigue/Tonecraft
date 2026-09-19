@@ -17,6 +17,7 @@ const en = {
     in_trim: 'Input', gate_threshold: 'Gate', out_master: 'Output',
     tone_bass: 'Bass', tone_mid: 'Mid', tone_treble: 'Treble', tone_presence: 'Presence',
     pitch_shift: 'Shift', pitch_mix: 'Mix', drive_gain: 'Gain', drive_tone: 'Color', reverb_mix: 'Mix',
+    doubler_spread: 'Doubler',
   } as Record<string, string>,
 
   rig: {
@@ -44,6 +45,9 @@ const en = {
     gateEnabled: 'Gate enabled',
     gateOn: 'Gate on',
     gateOff: 'Gate off',
+    doublerEnabled: 'Doubler enabled',
+    doublerOn: 'Doubler on: a second take in the right ear, up to this many milliseconds behind',
+    doublerOff: 'Doubler off: the same guitar in both ears',
     amplifier: 'Amplifier',
     cabinet: 'Cabinet',
     capture: 'Capture',
@@ -407,6 +411,7 @@ const fr: Ui = {
     in_trim: 'Entrée', gate_threshold: 'Gate', out_master: 'Sortie',
     tone_bass: 'Graves', tone_mid: 'Médiums', tone_treble: 'Aigus', tone_presence: 'Présence',
     pitch_shift: 'Transpo', pitch_mix: 'Mix', drive_gain: 'Gain', drive_tone: 'Couleur', reverb_mix: 'Mix',
+    doubler_spread: 'Doubleur',
   },
 
   rig: {
@@ -434,6 +439,9 @@ const fr: Ui = {
     gateEnabled: 'Gate activé',
     gateOn: 'Gate activé',
     gateOff: 'Gate désactivé',
+    doublerEnabled: 'Doubleur activé',
+    doublerOn: 'Doubleur activé : une deuxième prise dans l’oreille droite, en retard d’au plus ce nombre de millisecondes',
+    doublerOff: 'Doubleur désactivé : la même guitare dans les deux oreilles',
     amplifier: 'Ampli',
     cabinet: 'Baffle',
     capture: 'Capture',

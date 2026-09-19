@@ -87,6 +87,7 @@ pub fn main(args: &[String]) -> Result<(), String> {
         .collect();
     let frames = samples.len() / channels;
     let mut out = Vec::with_capacity(frames * 4);
+    let mut right = Vec::with_capacity(frames * 4);
     let mut times = Vec::with_capacity(frames / block + 1);
     let mut at = 0;
     while at < frames {
@@ -104,12 +105,17 @@ pub fn main(args: &[String]) -> Result<(), String> {
         for v in &chain.output()[..n] {
             out.extend_from_slice(&v.to_le_bytes());
         }
+        for v in &chain.output_right()[..n] {
+            right.extend_from_slice(&v.to_le_bytes());
+        }
         at += n;
     }
     if chain.dead() {
         return Err("the chain trapped".into());
     }
     let path = output.as_ref().ok_or("--output is required")?;
+    // Planar, as the input is: the left ear's frames, then the right ear's.
+    out.extend_from_slice(&right);
     std::fs::write(path, out).map_err(|e| format!("{}: {e}", path.display()))?;
 
     // The first blocks carry one-off costs (page faults, first calls); the

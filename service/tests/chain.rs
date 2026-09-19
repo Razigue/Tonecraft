@@ -77,3 +77,37 @@ fn refuses_what_it_cannot_call() {
         "a wrong argument count is refused"
     );
 }
+
+#[test]
+fn doubler_right_ear() {
+    let both = |c: &mut Chain, x: &[f32]| -> (Vec<f32>, Vec<f32>) {
+        let (mut l, mut r) = (Vec::with_capacity(x.len()), Vec::with_capacity(x.len()));
+        for block in x.chunks(BLOCK) {
+            c.inputs_mut().0[..block.len()].copy_from_slice(block);
+            c.process(block.len(), 1);
+            l.extend_from_slice(&c.output()[..block.len()]);
+            r.extend_from_slice(&c.output_right()[..block.len()]);
+        }
+        (l, r)
+    };
+    let mut c = chain();
+    // Neutral as above, and a unit cabinet so something reaches the output.
+    for (index, value) in [(0.0, 0.0), (2.0, 1.0), (6.0, 1.0), (16.0, 1.0), (17.0, 0.0)] {
+        call(&mut c, "tc_set_param", &[index, value], None);
+    }
+    call(&mut c, "tc_set_ir", &[0.0], Some(&mut 1.0f32.to_le_bytes()[..]));
+    let x: Vec<f32> = (0..RATE as usize)
+        .map(|i| 0.1 * (i as f32 * 0.05).sin() * (i as f32 * 0.0007).sin())
+        .collect();
+
+    // Off by default: the right ear is the left one, to the bit.
+    let (l, r) = both(&mut c, &x);
+    assert!(l.iter().zip(&r).all(|(a, b)| a.to_bits() == b.to_bits()));
+
+    // On (doubler_bypass, wire index 28): the right ear is a late copy.
+    call(&mut c, "tc_set_param", &[28.0, 0.0], None);
+    let (l, r) = both(&mut c, &x);
+    assert!(l.iter().zip(&r).any(|(a, b)| (a - b).abs() > 1e-3));
+    assert!(r.iter().all(|v| v.is_finite()));
+    assert!(!c.dead());
+}

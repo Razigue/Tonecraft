@@ -207,7 +207,8 @@ export class WebHost implements ChainHost {
     const node = new AudioWorkletNode(context, 'chain', {
       numberOfInputs: 1,
       numberOfOutputs: 2,
-      outputChannelCount: [1, 1],
+      // Two ears: the chain is mono up to the doubler, and stereo from it on.
+      outputChannelCount: [2, 1],
       // Without these the node applies the 'speakers' mixing rules, which fold
       // a two-channel capture down before the chain sees it — and a Scarlett
       // Solo's XLR and instrument jack are two inputs, not a stereo pair.

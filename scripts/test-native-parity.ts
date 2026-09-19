@@ -46,10 +46,14 @@ const catalog = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/models/index.
 const capture = catalog.models[0]!;
 const bytes = (a: Float32Array<ArrayBuffer>): Uint8Array<ArrayBuffer> => new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
 
-/* What engine.ts sends on start, in its order. */
+/* What engine.ts sends on start, in its order — with the doubler on, which
+   the default preset leaves off: its random wander is the one part of the
+   chain whose sameness across hosts is not obvious, and it is the only stage
+   that writes the right ear. */
+const DOUBLER = PARAMS.findIndex((p) => p.id === 'doubler_bypass');
 const calls: Call[] = [
   { fn: 'tc_set_input_channel', args: [CHANNEL_CODES.follow], data: null },
-  ...PARAMS.flatMap((p, i) => (p.deprecated === true ? [] : [{ fn: 'tc_set_param', args: [i, p.default], data: null }])),
+  ...PARAMS.flatMap((p, i) => (p.deprecated === true ? [] : [{ fn: 'tc_set_param', args: [i, i === DOUBLER ? 0 : p.default], data: null }])),
   { fn: 'tc_set_powered', args: [1], data: null },
   { fn: 'tc_set_live_input', args: [1], data: null },
   { fn: 'tc_set_ir', args: [IR_SLOTS.cab], data: bytes(cabIR(SR, DEFAULT_CAB)) },
@@ -69,11 +73,13 @@ for (let i = 0; i < input.length; i++) {
 const core = await instantiateChain(fs.readFileSync(WASM));
 core.init(SR, BLOCK);
 for (const c of calls) core.call(c.fn, c.args, c.data);
-const web = new Float32Array(input.length);
+// Planar, as the native render writes it: the left ear, then the right.
+const web = new Float32Array(input.length * 2);
 for (let at = 0; at < input.length; at += BLOCK) {
   core.inputs[0]!.set(input.subarray(at, at + BLOCK));
   core.process(BLOCK, 1);
   web.set(core.output!.subarray(0, BLOCK), at);
+  web.set(core.outputRight!.subarray(0, BLOCK), input.length + at);
 }
 
 // The native engine's.

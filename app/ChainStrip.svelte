@@ -1,7 +1,7 @@
 <script lang="ts">
   // The chain band: what stays within reach whatever the stage shows — the
-  // level in, the gate, which amp and cabinet, the preset, the level out. In
-  // signal order, on one 80 px row.
+  // level in, the gate, which amp and cabinet, the preset, the doubler, the
+  // level out. In signal order, on one 80 px row.
   import Knob from './Knob.svelte';
   import Meter from './Meter.svelte';
   import { PARAMS, type Param } from '../schema/params.ts';
@@ -121,14 +121,20 @@
   </div>
   {#if power}
     <div class="power-control">
-      <button class="power" type="button" aria-label={t.rig.amplifierPower} aria-pressed={power.on} aria-busy={power.busy} disabled={power.disabled} onclick={power.onpress}>
-        <span class="lamp" class:lit={power.on}></span>{t.rig.power}
+      <button class="power" type="button" aria-label={t.rig.amplifierPower} title={t.rig.amplifierPower} aria-pressed={power.on} aria-busy={power.busy} disabled={power.disabled} onclick={power.onpress}>
+        <span class="lamp" class:lit={power.on}></span><span class="power-word">{t.rig.power}</span>
       </button>
     </div>
   {/if}
+  <div class="out-group">
+  <div class="doubler-control">
+    <Knob compact={!roomy} param={param('doubler_spread')} value={values.doubler_spread!} resetValue={resetValues.doubler_spread} onchange={v => onparam('doubler_spread', v)} label={t.params.doubler_spread} />
+    <button class="enable" aria-label={t.rig.doublerEnabled} title={values.doubler_bypass === 1 ? t.rig.doublerOff : t.rig.doublerOn} aria-pressed={values.doubler_bypass !== 1} onclick={() => onparam('doubler_bypass', values.doubler_bypass === 1 ? 0 : 1)}>{#if !roomy}<b>{t.params.doubler_spread}</b>{/if}<span></span></button>
+  </div>
   <div class="io-control output-control">
     <Knob compact={!roomy} param={param('out_master')} value={values.out_master!} resetValue={resetValues.out_master} onchange={v => onparam('out_master', v)} label={t.params.out_master} />
     <Meter level={outputRms} {travel} label={roomy ? t.rig.meterOut : undefined} />
+  </div>
   </div>
 </section>
 
@@ -144,7 +150,7 @@
   /* Full knobs: the band the original studio had over the head. */
   .roomy { height: 136px; gap: 32px; padding: 0 32px; }
   .roomy > * + * { padding-left: 32px; }
-  .roomy .io-control, .roomy .gate-control { gap: 16px; }
+  .roomy .io-control, .roomy .gate-control, .roomy .doubler-control { gap: 16px; }
   .roomy .rig-selectors { flex-direction: column; gap: 12px; }
   .roomy .selector { gap: 8px; }
   .roomy .tone-selector { align-items: center; gap: 14px; }
@@ -154,10 +160,26 @@
   .roomy .gate-control { position: relative; }
   .roomy .enable { position: absolute; top: -8px; left: calc(50% + 30px); }
   .global-controls > * + * { padding-left: 24px; border-left: 1px solid var(--line); }
-  .io-control, .gate-control { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-  .output-control { margin-left: auto; }
-  .power-control + .output-control { margin-left: 0; }
-  .power-control { margin-left: auto; }
+  .io-control, .gate-control, .doubler-control { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+  /* The doubler is the last stage before the output and sits against it, one
+     group with no seam between them, which wraps as one. The power, when it is
+     here, and that group close the row, pushed to its end. */
+  .out-group { display: flex; align-items: center; gap: inherit; flex-shrink: 0; }
+  .out-group, .power-control { margin-left: auto; }
+  .power-control + .out-group { margin-left: 0; }
+  /* Compact, the row has no room for a name beside the dial and a lamp beside
+     that: the selectors are what would pay for them. So the name is the switch,
+     over the dial, as a block's name is on the head ("PITCH ●"), and the dial
+     keeps only its value. The knob still carries its name for a screen reader. */
+  .roomy .doubler-control { position: relative; }
+  .roomy .doubler-control .enable { left: calc(50% + 48px); }
+  .global-controls:not(.roomy) .doubler-control { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .global-controls:not(.roomy) .doubler-control .enable { order: -1; display: flex; gap: 7px; width: auto; height: 16px; }
+  .global-controls:not(.roomy) .doubler-control :global(.compact .label) { display: none; }
+  /* Its value is all the dial has left: it stays when the other knobs drop theirs. */
+  .global-controls:not(.roomy) .doubler-control :global(.compact .value) { display: block; grid-row: 1 / 3; align-self: center; }
+  .enable b { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-2); }
+  .enable:hover b { color: var(--text); }
   .power { transition: color var(--dur-quick) ease-out, border-color var(--dur-quick) ease-out; }
   .power { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-2); color: var(--text-2); font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.2em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
   .power:hover:not(:disabled) { border-color: var(--violet-500); color: var(--text); }
@@ -169,7 +191,7 @@
   .lamp.lit { background: #eac0fc; }
   .lamp.lit::after { opacity: 1; }
   @media (prefers-reduced-motion: reduce) { .lamp, .lamp::after, .enable span { transition: none; } }
-  /* The gate's switch is a lamp beside its dial, as the amp's blocks have. */
+  /* The gate's and the doubler's switches are lamps by their dials, as the amp's blocks have. */
   .enable { display: grid; flex-shrink: 0; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; }
   .enable span { width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--violet-600); box-sizing: border-box; transition: background-color var(--dur-settle) var(--ease-out), border-color var(--dur-settle) var(--ease-out); }
   .enable[aria-pressed='true'] span { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 5px #d6b6e399; }
@@ -182,9 +204,11 @@
     text-transform: uppercase;
     color: var(--text-2);
   }
-  .rig-selectors { display: flex; flex: 1 1 360px; gap: 16px; min-width: 0; }
+  /* The selectors name what is playing and the preset only which tone it
+     started from: the preset gives up its width first. */
+  .rig-selectors { display: flex; flex: 1 1 360px; gap: 16px; min-width: 190px; }
   .selector { display: flex; flex: 1; flex-direction: column; gap: 7px; min-width: 0; }
-  .tone-selector { display: flex; flex: 0 1 260px; flex-direction: column; gap: 7px; min-width: 200px; }
+  .tone-selector { display: flex; flex: 0 4 260px; flex-direction: column; gap: 7px; min-width: 170px; }
   .preset-picker { display: flex; align-items: center; gap: 4px; }
   select {
     width: 100%;
@@ -234,10 +258,21 @@
   .preset-picker .confirm:disabled { opacity: .5; cursor: default; }
   .roomy .preset-picker input { min-height: 44px; font-size: 16px; }
 
-  /* Narrower, the knobs keep their dials and lose their words first. */
-  @media (max-width: 1240px) {
+  /* Until the band reaches its full column (1180 px, from a 1360 px window),
+     the seams tighten before the selectors are made to give anything up. */
+  @media (max-width: 1359px) {
     .global-controls, .global-controls > * + * { gap: 14px; padding-left: 14px; }
     .global-controls { padding-right: 14px; }
+  }
+  /* In Play the power joins the row, which then has no room for its word
+     until the band is 1260 px wide: the lamp alone is the switch, as on the
+     head, and the word stays in its name and its tooltip. */
+  @media (max-width: 1439px) {
+    .power-word { display: none; }
+    .power { padding: 0 13px; }
+  }
+  /* Narrower, the knobs keep their dials and lose their words first. */
+  @media (max-width: 1240px) {
     .global-controls :global(.compact .value) { display: none; }
   }
   /* A tablet: the row runs out of width before the studio runs out of height,
@@ -246,7 +281,7 @@
      the levels and the gate keep the first line, the selectors and the preset
      take the width they need on the next. The seams go with it; a border left
      hanging at the start of a wrapped line reads as a stray rule. */
-  @media (max-width: 1099px) {
+  @media (max-width: 1279px) {
     .global-controls {
       flex-wrap: wrap;
       height: auto;
@@ -256,10 +291,10 @@
       row-gap: 12px;
     }
     .global-controls > * + * { padding-left: 0; border-left: 0; }
-    .rig-selectors { flex: 1 1 280px; }
+    .rig-selectors { flex: 1 1 280px; min-width: 0; }
     .tone-selector { flex: 1 1 220px; min-width: 0; }
     /* Wrapped, `margin-left: auto` would push the output onto a line of its
        own; it sits at the end of whichever line it lands on. */
-    .output-control, .power-control { margin-left: 0; }
+    .out-group, .power-control { margin-left: 0; }
   }
 </style>

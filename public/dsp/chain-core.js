@@ -79,6 +79,7 @@ export class ChainCore {
     this.maxFrames = 0;
     this.inputs = [];
     this.output = null;
+    this.outputRight = null;
     this.tuner = null;
     this.meters = null;
   }
@@ -107,6 +108,7 @@ export class ChainCore {
       new Float32Array(buffer, e.tc_input_ptr(1), n),
     ];
     this.output = new Float32Array(buffer, e.tc_output_ptr(), n);
+    this.outputRight = new Float32Array(buffer, e.tc_output_right_ptr(), n);
     this.tuner = new Float32Array(buffer, e.tc_tuner_ptr(), n);
     this.meters = new Float32Array(buffer, e.tc_meters_ptr(), e.tc_meters_len());
   }

@@ -33,6 +33,7 @@ class ChainProcessor extends AudioWorkletProcessor {
     this.frames = 0;
     this.buffer = null;
     this.outView = null;
+    this.outRightView = null;
     this.tunerView = null;
 
     this.port.onmessage = (event) => this.onMessage(event.data);
@@ -77,6 +78,7 @@ class ChainProcessor extends AudioWorkletProcessor {
 
   process(inputs, outputs) {
     const out = outputs[0][0];
+    const outRight = outputs[0][1];
     const tuner = outputs[1] && outputs[1][0];
     const n = out.length;
 
@@ -88,6 +90,7 @@ class ChainProcessor extends AudioWorkletProcessor {
     const core = this.core;
     if (core === null || n > MAX_FRAMES) {
       out.fill(0);
+      if (outRight) outRight.fill(0);
       if (tuner) tuner.fill(0);
       return true;
     }
@@ -104,9 +107,11 @@ class ChainProcessor extends AudioWorkletProcessor {
       this.buffer = core.buffer;
       this.frames = n;
       this.outView = core.output.subarray(0, n);
+      this.outRightView = core.outputRight.subarray(0, n);
       this.tunerView = core.tuner.subarray(0, n);
     }
     out.set(this.outView);
+    if (outRight) outRight.set(this.outRightView);
     if (tuner) tuner.set(this.tunerView);
 
     if (ready) {

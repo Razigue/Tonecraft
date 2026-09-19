@@ -706,15 +706,20 @@ impl OutputState {
             let out = if self.chain.dead() {
                 None
             } else {
-                Some(self.chain.output())
+                Some((self.chain.output(), self.chain.output_right()))
             };
             for i in 0..n {
                 self.gain += self.gain_step * (target - self.gain);
-                let v = out.map_or(0.0, |o| o[i]) * self.gain;
+                let l = out.map_or(0.0, |(o, _)| o[i]) * self.gain;
+                let r = out.map_or(0.0, |(_, o)| o[i]) * self.gain;
                 let frame = &mut data[(off + i) * self.total..(off + i + 1) * self.total];
                 for (c, s) in frame.iter_mut().enumerate() {
-                    *s = if c == self.pair[0] || c == self.pair[1] {
-                        T::from_sample(v)
+                    // One output channel chosen: `pair` holds it twice, and it
+                    // plays the left ear, the rig undelayed.
+                    *s = if c == self.pair[0] {
+                        T::from_sample(l)
+                    } else if c == self.pair[1] {
+                        T::from_sample(r)
                     } else {
                         T::EQUILIBRIUM
                     };

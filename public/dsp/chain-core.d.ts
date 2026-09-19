@@ -18,6 +18,8 @@ export declare class ChainCore {
   /** Where the host writes each input channel before process(). */
   readonly inputs: Float32Array[];
   readonly output: Float32Array | null;
+  /** The right ear: the left one, to the bit, while the doubler is off. */
+  readonly outputRight: Float32Array | null;
   readonly tuner: Float32Array | null;
   readonly meters: Float32Array | null;
   init(sampleRate: number, maxFrames: number): void;

@@ -63,6 +63,7 @@ export type StageId =
   | 'cab'
   | 'tone'
   | 'reverb'
+  | 'doubler'
   | 'output';
 
 export interface Stage {
@@ -111,6 +112,10 @@ export const STAGES: readonly Stage[] = [
   // the cab it would be fighting a 25 dB shelf that has not happened yet.
   { id: 'tone',   label: 'Tone',   meterSlot: 7, bypassParam: 'tone_bypass',   oversampled: false },
   { id: 'reverb', label: 'Reverb', meterSlot: 5, bypassParam: 'reverb_bypass', oversampled: false },
+  // The one stage with two outputs: everything before it is mono, and it is
+  // what makes the output stereo. Last before the master, so it doubles the
+  // reverb and the looper's playback along with the guitar — see dsp/doubler.h.
+  { id: 'doubler', label: 'Doubler', meterSlot: 9, bypassParam: 'doubler_bypass', oversampled: false },
   // The limiter lives inside the output stage and is deliberately absent from
   // this table: it has no parameter, no bypass and no UI control, in any mode,
   // on any path (FR-18). A digital feedback loop in headphones can injure.
@@ -266,5 +271,22 @@ export const PARAMS: readonly Param[] = [
   // dsp/pitch.cpp), and a rig that adds milliseconds to everyone's round trip
   // for an effect they did not ask for is not a default.
   { id: 'pitch_bypass', stage: 'pitch', label: 'Bypass', unit: 'bool',
+    min: 0, max: 1, default: 1, taper: 'switch' },
+
+  // --- Doubler -----------------------------------------------------------
+  // A double-tracked rhythm without playing it twice: the left ear gets the
+  // rig, the right ear the same rig a few milliseconds later, the offset
+  // wandering at random inside the range this sets. 3 to 20 ms is the range
+  // where the ear still fuses the two into one wide guitar (the precedence
+  // effect) instead of hearing an echo; it is also the range Neural DSP's
+  // Archetype: Tim Henson X gives its doubler's Spread.
+  //
+  // The upper bound of the wander, not a fixed delay: a fixed copy is a comb
+  // filter that sounds like a room, a moving one sounds like a second take.
+  { id: 'doubler_spread', stage: 'doubler', label: 'Spread', unit: 'ms',
+    min: 3, max: 20, default: 12, taper: 'linear' },
+  // Bypassed by default: headphones and a mono speaker are both common, and a
+  // doubled guitar summed to mono is a comb filter nobody asked for.
+  { id: 'doubler_bypass', stage: 'doubler', label: 'Bypass', unit: 'bool',
     min: 0, max: 1, default: 1, taper: 'switch' },
 ] as const;

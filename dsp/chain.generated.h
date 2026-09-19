@@ -33,20 +33,22 @@ enum TcParam {
   TC_P_PITCH_SHIFT = 24,
   TC_P_PITCH_MIX = 25,
   TC_P_PITCH_BYPASS = 26,
-  TC_PARAM_COUNT = 27
+  TC_P_DOUBLER_SPREAD = 27,
+  TC_P_DOUBLER_BYPASS = 28,
+  TC_PARAM_COUNT = 29
 };
 
 static const float TC_PARAM_DEFAULT[TC_PARAM_COUNT] = {
-  11.4f, -58.0f, 0.0f, 25.0f, 6011.0f, 0.0f, 0.0f, 27.0f, 0.0f, 1.0f, 0.0f, -7.0f, 0.0f, 1.0f, 0.0f, 0.3f, 0.0f, -12.4f, 0.0f, -1.7f, 3.4f, 1.7f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f
+  11.4f, -58.0f, 0.0f, 25.0f, 6011.0f, 0.0f, 0.0f, 27.0f, 0.0f, 1.0f, 0.0f, -7.0f, 0.0f, 1.0f, 0.0f, 0.3f, 0.0f, -12.4f, 0.0f, -1.7f, 3.4f, 1.7f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 12.0f, 1.0f
 };
 static const float TC_PARAM_MIN[TC_PARAM_COUNT] = {
-  -6.0f, -95.0f, 0.0f, 0.0f, 1820.0f, -24.0f, 0.0f, 0.0f, -12.0f, -12.0f, -12.0f, -24.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -40.0f, 0.0f, -14.0f, -14.0f, -14.0f, -10.0f, 0.0f, -12.0f, 0.0f, 0.0f
+  -6.0f, -95.0f, 0.0f, 0.0f, 1820.0f, -24.0f, 0.0f, 0.0f, -12.0f, -12.0f, -12.0f, -24.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -40.0f, 0.0f, -14.0f, -14.0f, -14.0f, -10.0f, 0.0f, -12.0f, 0.0f, 0.0f, 3.0f, 0.0f
 };
 static const float TC_PARAM_MAX[TC_PARAM_COUNT] = {
-  24.0f, -30.0f, 1.0f, 28.0f, 7150.0f, 12.0f, 1.0f, 40.0f, 12.0f, 12.0f, 12.0f, 12.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 6.0f, 1.0f, 14.0f, 14.0f, 14.0f, 10.0f, 1.0f, 12.0f, 1.0f, 1.0f
+  24.0f, -30.0f, 1.0f, 28.0f, 7150.0f, 12.0f, 1.0f, 40.0f, 12.0f, 12.0f, 12.0f, 12.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 6.0f, 1.0f, 14.0f, 14.0f, 14.0f, 10.0f, 1.0f, 12.0f, 1.0f, 1.0f, 20.0f, 1.0f
 };
 static const unsigned char TC_PARAM_DEPRECATED[TC_PARAM_COUNT] = {
-  0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+  0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
 /* Meter slots, one per stage, by stable id (AD-21). */
@@ -59,8 +61,9 @@ enum TcSlot {
   TC_SLOT_CAB = 4,
   TC_SLOT_TONE = 7,
   TC_SLOT_REVERB = 5,
+  TC_SLOT_DOUBLER = 9,
   TC_SLOT_OUTPUT = 6,
-  TC_SLOT_COUNT = 9
+  TC_SLOT_COUNT = 10
 };
 
 /* The meter frame, in order (AD-12). */
@@ -85,7 +88,7 @@ enum TcMeter {
   TC_M_FILE_REQUEST = 17,
   TC_M_BACKING_REQUEST = 18,
   TC_M_STAGE_RMS = 19,
-  TC_METER_COUNT = 28
+  TC_METER_COUNT = 29
 };
 
 enum TcIrSlot { TC_IR_CAB = 0, TC_IR_REVERB = 1 };

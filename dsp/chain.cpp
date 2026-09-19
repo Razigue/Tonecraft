@@ -23,10 +23,15 @@
        cab        synthesised minimum-phase IR, zero-latency convolution
        tone       four-band correction: the Web Audio biquads, exactly
        reverb     in parallel, computed only while audible
-       master
        looper     records what leaves the rig, plays it back under the playing
-       limiter    always on, no control anywhere (FR-18)
+       doubler    the only stereo stage: left is the rig, right a wandering copy
+       master
+       limiter    always on, no control anywhere (FR-18), one per ear
        click      the native metronome, after the meters, before the ceiling
+
+   Everything up to the doubler is mono. The output is two channels, left at
+   tc_output_ptr and right at tc_output_right_ptr; while the doubler is off
+   the right one is a copy of the left, to the bit.
 
    Calling convention for the hosts: every export takes i32 and f32 only. An
    export that takes a payload takes (pointer, bytes, ...) first; the host
@@ -54,6 +59,7 @@
 #include "chain.generated.h"
 #include "click.h"
 #include "convolver.h"
+#include "doubler.h"
 #include "frontend.h"
 #include "limiter.h"
 #include "looper.h"
@@ -97,7 +103,7 @@ struct Chain {
   double sr = 48000.0;
   int maxFrames = 0;
   std::vector<float> in[2];
-  std::vector<float> out;
+  std::vector<float> out, outRight;
   std::vector<float> tuner;
   float meters[TC_METER_COUNT] = {};
   float param[TC_PARAM_COUNT] = {};
@@ -117,7 +123,10 @@ struct Chain {
   tc::Convolver reverb;
   tc::Biquad bass, mid, treble, presence, lowcut;
   double designed[4] = {NAN, NAN, NAN, NAN};
-  tc::Limiter limiter;
+  tc::Doubler doubler;
+  /* One per ear. Linking them would pull the dry side down whenever the copy
+     peaks; they are waveshapers, not compressors, so there is nothing to link. */
+  tc::Limiter limiter, limiterRight;
   tc::Player player;
   tc::Recorder recorder;
   tc::Click click;
@@ -177,6 +186,8 @@ void apply(Chain& c) {
   c.pitch.setShift(semitones);
   const bool shifting = on(TC_P_PITCH_BYPASS) && (semitones > 0.005 || semitones < -0.005);
   c.pitch.setWet(shifting ? p[TC_P_PITCH_MIX] : 0.0);
+
+  c.doubler.set(on(TC_P_DOUBLER_BYPASS), p[TC_P_DOUBLER_SPREAD]);
 
   const double mix = on(TC_P_REVERB_BYPASS) ? p[TC_P_REVERB_MIX] : 0.0;
   c.reverbWanted = mix > 0.0;
@@ -303,6 +314,8 @@ int processBlock(Chain& c, int off, int n, int inChannels) {
 
   const int backingChannels = c.backing.playing() ? c.backing.render(c.backingA, c.backingB, n) : 0;
   float* out = c.out.data() + off;
+  float* outRight = c.outRight.data() + off;
+  double doubledSum = 0.0;
   for (int i = 0; i < n; i++) {
     const float d = static_cast<float>(c.dry.tick());
     const float w = static_cast<float>(c.wet.tick());
@@ -317,23 +330,46 @@ int processBlock(Chain& c, int off, int n, int inChannels) {
        the limiter apply to both, and the metronome, added after the limiter,
        is never printed into a loop. The backing track joins after the
        master, at its own level: heard, limited, never recorded. */
-    const float rig = c.chained[i] * d + c.wetted[i] * w + tunerTap[i] * dg;
+    const float direct = tunerTap[i] * dg;
+    const float rig = c.chained[i] * d + c.wetted[i] * w + direct;
     const float backingLevel = static_cast<float>(c.backingGain.tick());
     const float backingSample = backingChannels == 0 ? 0.0f
         : backingLevel * (backingChannels > 1 ? 0.5f * (c.backingA[i] + c.backingB[i]) : c.backingA[i]);
-    const float mixed = (rig + c.looper.tick(rig)) * mg + backingSample;
-    const float y = c.limiter.tick(mixed);
+    const float played = rig + c.looper.tick(rig);
+    const float y = c.limiter.tick(played * mg + backingSample);
 
-    const double ay = y < 0 ? -y : y;
+    /* The doubler takes the rig and the loop's playback, so a loop is doubled
+       as it is heard now rather than as it was when it was recorded, mono. It
+       leaves out the A/B's direct path — that answers "what does the rig do
+       to my guitar", and the doubler is part of the rig — and the backing
+       track, which is somebody else's mix. */
+    float yRight = y;
+    if (!c.doubler.idle()) {
+      const float right = c.doubler.tick(played - direct) + direct;
+      doubledSum += static_cast<double>(right) * right;
+      yRight = c.limiterRight.tick(right * mg + backingSample);
+    } else {
+      // Keeps the second limiter's anti-aliasing state where it would be, so
+      // switching the doubler on does not start it from a stale sample.
+      c.limiterRight = c.limiter;
+      doubledSum += static_cast<double>(played) * played;
+    }
+
+    const double ay = std::fmax(y < 0 ? -y : y, yRight < 0 ? -yRight : yRight);
     if (ay > c.outPeak) c.outPeak = ay;
-    c.outSum += static_cast<double>(y) * y;
+    // The mean of both ears: the same figure as before while they are equal.
+    c.outSum += 0.5 * (static_cast<double>(y) * y + static_cast<double>(yRight) * yRight);
 
-    float z = y;
+    float z = y, zRight = yRight;
     if (!c.click.idle()) {
-      z += c.click.tick();
+      const float k = c.click.tick();
+      z += k;
       z = z > 1.0f ? 1.0f : z < -1.0f ? -1.0f : z;
+      zRight += k;
+      zRight = zRight > 1.0f ? 1.0f : zRight < -1.0f ? -1.0f : zRight;
     }
     out[i] = z;
+    outRight[i] = zRight;
   }
 
   c.stageSum[TC_SLOT_INPUT] += sumSquares(tunerTap, n);
@@ -354,7 +390,8 @@ int processBlock(Chain& c, int off, int n, int inChannels) {
   c.stageSum[TC_SLOT_CAB] += sumSquares(c.cabbed, n);
   c.stageSum[TC_SLOT_TONE] += sumSquares(c.toned, n);
   c.stageSum[TC_SLOT_REVERB] += sumSquares(c.wetted, n);
-  c.stageSum[TC_SLOT_OUTPUT] += sumSquares(out, n);
+  c.stageSum[TC_SLOT_DOUBLER] += doubledSum;
+  c.stageSum[TC_SLOT_OUTPUT] += 0.5 * (sumSquares(out, n) + sumSquares(outRight, n));
 
   c.meterFrames += n;
   if (c.meterFrames >= c.sr / 30.0) {
@@ -389,12 +426,14 @@ TC_EXPORT int tc_init(float sampleRate, int maxFrames) {
   c.maxFrames = maxFrames > 0 ? maxFrames : BLOCK;
   for (auto& ch : c.in) ch.assign(static_cast<size_t>(c.maxFrames), 0.0f);
   c.out.assign(static_cast<size_t>(c.maxFrames), 0.0f);
+  c.outRight.assign(static_cast<size_t>(c.maxFrames), 0.0f);
   c.tuner.assign(static_cast<size_t>(c.maxFrames), 0.0f);
 
   c.frontend.init(c.sr);
   c.pitch.init(c.sr);
   c.click.init(c.sr);
   c.looper.init(c.sr);
+  c.doubler.init(c.sr);
   c.backing.setLoop(false);
   // Post-cabinet correction: the classic four-band layout, fixed frequencies,
   // only the gains move.
@@ -424,14 +463,19 @@ TC_EXPORT int tc_init(float sampleRate, int maxFrames) {
 TC_EXPORT float* tc_input_ptr(int channel) {
   return g != nullptr && (channel == 0 || channel == 1) ? g->in[channel].data() : nullptr;
 }
+/* The left ear, and the whole output for a host that plays one channel.
+   Added after ABI 1 shipped, the right ear is a new export rather than a
+   changed one: an engine built before it keeps working, and plays the left
+   channel on both sides — everything but the doubler. */
 TC_EXPORT float* tc_output_ptr() { return g != nullptr ? g->out.data() : nullptr; }
+TC_EXPORT float* tc_output_right_ptr() { return g != nullptr ? g->outRight.data() : nullptr; }
 TC_EXPORT float* tc_tuner_ptr() { return g != nullptr ? g->tuner.data() : nullptr; }
 TC_EXPORT float* tc_meters_ptr() { return g != nullptr ? g->meters : nullptr; }
 TC_EXPORT int tc_meters_len() { return TC_METER_COUNT; }
 TC_EXPORT int tc_max_frames() { return g != nullptr ? g->maxFrames : 0; }
 
 /* The host has written `frames` samples per channel at tc_input_ptr. The chain
-   writes as many to tc_output_ptr and tc_tuner_ptr. Returns 1 when a new meter
+   writes as many to tc_output_ptr, tc_output_right_ptr and tc_tuner_ptr. Returns 1 when a new meter
    frame is waiting at tc_meters_ptr. */
 TC_EXPORT int tc_process(int frames, int inChannels) {
   if (g == nullptr) return 0;
@@ -471,6 +515,8 @@ TC_EXPORT void tc_set_param(int index, float value) {
     case TC_P_PITCH_SHIFT:
     case TC_P_PITCH_MIX:
     case TC_P_PITCH_BYPASS:
+    case TC_P_DOUBLER_SPREAD:
+    case TC_P_DOUBLER_BYPASS:
       g->param[index] = static_cast<float>(clampd(value, TC_PARAM_MIN[index], TC_PARAM_MAX[index]));
       apply(*g);
       break;

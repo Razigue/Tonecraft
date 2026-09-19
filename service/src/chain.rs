@@ -201,6 +201,7 @@ pub struct Chain {
     exports: Vec<Export>,
     inputs: [usize; 2],
     output: usize,
+    output_right: usize,
     tuner: usize,
     meters: usize,
     meters_len: usize,
@@ -264,6 +265,12 @@ impl Chain {
             input_ptr.call(&mut store, 1).map_err(err)? as u32 as usize,
         ];
         let output = ptr0(&mut store, "tc_output_ptr")?;
+        // A chain built before the doubler has one output: both ears play it.
+        let output_right = if instance.get_func(&mut store, "tc_output_right_ptr").is_some() {
+            ptr0(&mut store, "tc_output_right_ptr")?
+        } else {
+            output
+        };
         let tuner = ptr0(&mut store, "tc_tuner_ptr")?;
         let meters = ptr0(&mut store, "tc_meters_ptr")?;
         let meters_len = ptr0(&mut store, "tc_meters_len")?;
@@ -324,6 +331,7 @@ impl Chain {
             exports,
             inputs,
             output,
+            output_right,
             tuner,
             meters,
             meters_len,
@@ -468,6 +476,11 @@ impl Chain {
 
     pub fn output(&self) -> &[f32] {
         self.view(self.output, self.max_frames)
+    }
+
+    /// The right ear. The same samples as `output` while the doubler is off.
+    pub fn output_right(&self) -> &[f32] {
+        self.view(self.output_right, self.max_frames)
     }
 
     pub fn tuner(&self) -> &[f32] {

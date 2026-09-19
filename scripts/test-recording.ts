@@ -70,6 +70,23 @@ assert(rms(verb.samples.subarray(samples.length, samples.length + 12000)) > 1e-6
 console.log('ok processed WAV uses the amp and current controls, preserves DI and includes reverb decay');
 
 {
+  // The doubler, off in the preset, leaves the export mono; on, it makes it
+  // stereo, with the left ear exactly the undoubled render.
+  assert.equal(wet.right, undefined, 'An undoubled render is mono');
+  const doubled = await renderRecording({ samples, sampleRate: 48000 }, { ...tone, values: { ...values, doubler_bypass: 0 } }, wasm, model);
+  assert(doubled.right !== undefined, 'A doubled render has a right ear');
+  assert.equal(doubled.right.length, doubled.samples.length);
+  assert.deepEqual(doubled.samples.subarray(0, samples.length), wet.samples, 'The left ear is the undoubled render');
+  assert(doubled.right.some((v, i) => Math.abs(v - doubled.samples[i]!) > 0.01), 'The right ear is not the left one');
+  const file = encodeWav(doubled);
+  const view = new DataView(file);
+  assert.equal(view.getUint16(22, true), 2, 'A doubled export is a stereo file');
+  assert.equal(view.getUint32(52, true), doubled.samples.length * 8);
+  assert.equal(view.getFloat32(60 + 8 * 1000, true), doubled.right[1000], 'Interleaved: the right ear is the second channel');
+  console.log('ok the doubler makes the export stereo and leaves the left ear untouched');
+}
+
+{
   // The backing track, in the chain. No cabinet is loaded, so the rig itself is
   // silent at the output and what comes out is the backing track alone.
   const rate = 48000;

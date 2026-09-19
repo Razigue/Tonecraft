@@ -384,5 +384,61 @@ console.log('\nThe chain — from Node, through chain-core.js\n');
   check('a loop too short to be one is dropped', core.meters![meterIndex('loop_state')] === 0);
 }
 
+{
+  /* The doubler: the one stage with two outputs. Off, it must not exist — the
+     right ear is the left one to the bit, so every figure above still holds
+     for both. On, the left ear must be untouched (no latency, nothing added),
+     and the right one a copy whose offset stays inside 3 ms..Spread, moves,
+     and never moves faster than the pitch bound in dsp/doubler.h allows. */
+  const both = (core: ChainCore, x: Float32Array): [Float32Array, Float32Array] => {
+    const l = new Float32Array(x.length), r = new Float32Array(x.length);
+    for (let at = 0; at < x.length; at += 128) {
+      core.inputs[0]!.set(x.subarray(at, at + 128));
+      core.process(128, 1);
+      l.set(core.output!.subarray(0, 128), at);
+      r.set(core.outputRight!.subarray(0, 128), at);
+    }
+    return [l, r];
+  };
+  const same = (a: Float32Array, b: Float32Array): boolean => a.every((v, i) => Object.is(v, b[i]));
+  const x = noise(SR * 20, 0.2, 777);
+
+  const off = await fresh();
+  neutral(off, { reverb_bypass: 0, reverb_mix: 0.3 });
+  const [offL, offR] = both(off, x);
+  check('doubler off: the right ear is the left one, to the bit', same(offL, offR));
+
+  const spread = 12;
+  const on = await fresh();
+  neutral(on, { reverb_bypass: 0, reverb_mix: 0.3, doubler_spread: spread, doubler_bypass: 0 });
+  const [onL, onR] = both(on, x);
+  check('doubler on: the left ear is exactly what it was with the doubler off', same(onL, offL));
+
+  // Where the right ear's copy sits, window by window, by cross-correlation.
+  const W = 1024, lagMax = Math.ceil(0.025 * SR);
+  const lags: number[] = [];
+  for (let at = lagMax; at + W < x.length; at += W) {
+    let best = -Infinity, bestLag = 0;
+    for (let lag = 0; lag <= lagMax; lag++) {
+      let s = 0;
+      for (let i = 0; i < W; i++) s += onR[at + i]! * onL[at + i - lag]!;
+      if (s > best) { best = s; bestLag = lag; }
+    }
+    lags.push(bestLag);
+  }
+  const lo = Math.min(...lags) / SR * 1e3, hi = Math.max(...lags) / SR * 1e3;
+  check('doubler on: the copy stays between 3 ms and the Spread', lo >= 3 - 0.05 && hi <= spread + 0.05,
+    `${lo.toFixed(2)}..${hi.toFixed(2)} ms for a Spread of ${spread} ms`);
+  check('doubler on: the offset wanders rather than sitting still', hi - lo > 1, `${(hi - lo).toFixed(2)} ms of travel in 20 s`);
+  const steepest = Math.max(...lags.slice(1).map((v, i) => Math.abs(v - lags[i]!)));
+  check('doubler on: the offset never moves faster than 0.002 sample per sample (3.5 cents)',
+    steepest <= Math.ceil(0.002 * W) + 1, `${steepest} samples between windows ${W} apart`);
+
+  on.call('tc_set_param', [wire('doubler_bypass'), 1]);
+  both(on, new Float32Array(128 * 200));
+  const [backL, backR] = both(on, x.subarray(0, SR));
+  check('doubler switched off again: the right ear rejoins the left, to the bit', same(backL, backR));
+}
+
 console.log(failures === 0 ? '\nAll checks passed.\n' : `\n${failures} check(s) failed.\n`);
 process.exit(failures === 0 ? 0 : 1);

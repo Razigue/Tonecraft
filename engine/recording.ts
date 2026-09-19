@@ -2,6 +2,8 @@ import type { Capture } from './catalog.ts';
 
 export interface Recording {
   samples: Float32Array<ArrayBuffer>;
+  /** The right ear, when it differs from `samples`: a render with the doubler on. A DI never has one. */
+  right?: Float32Array<ArrayBuffer>;
   sampleRate: number;
   /** The round trip it was recorded with, in frames: how late the guitar reached the DI behind a backing track it was played to. */
   latencyFrames?: number;
@@ -35,24 +37,30 @@ export async function decodeRecording(file: Blob): Promise<Recording> {
   return { samples, sampleRate: view.getUint32(24, true) };
 }
 
-/** IEEE float WAV: preserves the DI samples exactly, with no gain or clipping. */
+/** IEEE float WAV: preserves the DI samples exactly, with no gain or clipping. Stereo when the take has a right ear. */
 export function encodeWav(take: Recording): ArrayBuffer {
-  const { samples, sampleRate } = take;
-  if (!Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 384000 || !samples.length) {
+  const { samples, sampleRate, right } = take;
+  if (!Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 384000 || !samples.length
+    || (right !== undefined && right.length !== samples.length)) {
     throw new Error('Invalid recording.');
   }
-  const bytes = new ArrayBuffer(56 + samples.length * 4);
+  const channels = right === undefined ? 1 : 2;
+  const frameBytes = 4 * channels;
+  const bytes = new ArrayBuffer(56 + samples.length * frameBytes);
   const view = new DataView(bytes);
   const tag = (offset: number, value: string) => { for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i)); };
   tag(0, 'RIFF'); view.setUint32(4, bytes.byteLength - 8, true); tag(8, 'WAVE');
   tag(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 3, true);
-  view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 4, true); view.setUint16(32, 4, true); view.setUint16(34, 32, true);
+  view.setUint16(22, channels, true); view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * frameBytes, true); view.setUint16(32, frameBytes, true); view.setUint16(34, 32, true);
   tag(36, 'fact'); view.setUint32(40, 4, true); view.setUint32(44, samples.length, true);
-  tag(48, 'data'); view.setUint32(52, samples.length * 4, true);
+  tag(48, 'data'); view.setUint32(52, samples.length * frameBytes, true);
   for (let i = 0; i < samples.length; i++) {
-    if (!Number.isFinite(samples[i])) throw new Error('The recording contains invalid samples.');
-    view.setFloat32(56 + i * 4, samples[i]!, true);
+    if (!Number.isFinite(samples[i]) || (right !== undefined && !Number.isFinite(right[i]))) {
+      throw new Error('The recording contains invalid samples.');
+    }
+    view.setFloat32(56 + i * frameBytes, samples[i]!, true);
+    if (right !== undefined) view.setFloat32(60 + i * frameBytes, right[i]!, true);
   }
   return bytes;
 }

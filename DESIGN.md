@@ -68,11 +68,13 @@ Sentence case everywhere except the display face, which is always uppercase.
 
 **Plates in a room.** The chain and the transport are plates of the faceplate material, floating with a `--gutter` of room around them, as the head does. In Tone they are exactly the head's column wide, so band, head and transport read as one object in the middle of a dark room; a static violet light behind the head brightens with the output, by opacity only. In Play they open to the full width with the tab. On a screen at least 900 px tall, the chain band in Tone takes full-size knobs, names above and values below; otherwise, and always in Play, it is the compact 80 px row.
 
+**The doubler closes the band, against the output.** It is the last stage before the output, so the two share one group with no seam between them. Full size, it is a knob with its lamp beside its name, as the gate is. Compact, the row has no room for a name, a value and a lamp side by side, and the selectors are what would pay for them: the name becomes the switch, over the dial — `DOUBLER ●`, as a block's name is on the head — and the dial keeps only its value in milliseconds, which it shows even where the other knobs drop theirs. In Play, where the power joins the row, it keeps only its lamp below a 1440 px window, for the same reason; its word stays in its name and its tooltip.
+
 ```
 +--------------------------------------------------------------------------+
 | TONECRAFT              [ TONE ]  PLAY                   12.4 ms   ⚙      |  bar, 56 px
 +--------------------------------------------------------------------------+
-| IN ▮ ◯   GATE ◯ ●   AMP [GUILT · Lead ▾]  CAB [...▾]   ‹ PRESET ›   ◯ ▮ OUT |  chain, 80 px
+| IN ▮ ◯  GATE ◯ ●  AMP [GUILT ▾] CAB [...▾]  ‹ PRESET ›  DOUBLER ● ◯  ◯ ▮ OUT |  chain, 80 px
 +--------------------------------------------------------------------------+
 |                                                                          |
 |                 +--------------------------------------+                 |
@@ -104,7 +106,7 @@ Sentence case everywhere except the display face, which is always uppercase.
 
 **Width.** The studio is a desktop instrument; playing is not supported on a phone (`CLAUDE.md` §7). What is on a phone still has to be whole. Three thresholds, and nothing else changes:
 
-- **Under 1100 px**, or under 900 px of height, the chain band drops its full knobs for its compact ones, and under 1100 px it wraps: the levels and the gate on one line, the two selectors and the preset on the next. Squeezed onto one line instead, the selectors collapse to their chevrons and their names print over each other.
+- **Under 1100 px**, or under 900 px of height, the chain band drops its full knobs for its compact ones, and **under 1280 px** it wraps onto two lines. Squeezed onto one line instead, the selectors collapse to their chevrons and their names print over each other. The threshold was 1100 px until the doubler joined the band: its hundred pixels are what the selectors lost between the two. On one line, the preset gives up its width before the selectors do — they name what is playing, it names only where the tone started.
 - **Under 760 px wide, or under 560 px high**, the studio stops being an instrument and becomes a page: the bands stack, the window scrolls, the corner tools come in out of the side room the page no longer keeps, and the last plate ends above them.
 - **The head is never one of these thresholds.** It is one object at one size, scaled whole (`zoom`) to whichever of width and height runs out first — a phone gets the same amplifier seen from further away. The figure it is scaled by is the room divided by the head's own width, and that width is `--column`, declared, never measured: inside a scaled box the room reads as `room / scale` in the head's own units, so a measured width hands the scale back its own value and the head stays at its desktop size. That is how a phone came to be handed a 1180 px head, cut off at both edges. The head inside its slot, and no band wider than the window, are asserted from 360x740 up by `npm run test:studio`.
 

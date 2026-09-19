@@ -28,6 +28,7 @@
     param.unit === 'semitones' ? `${value > 0 ? '+' : ''}${Math.round(value)} st`
     : param.unit === 'ratio' ? `${Math.round(value * 100)}%`
     : param.unit === 'Hz' ? `${(value / 1000).toFixed(1)} kHz`
+    : param.unit === 'ms' ? `${Math.round(value)} ms`
     : `${value.toFixed(1)}${param.unit === 'dB' ? ' dB' : ''}`);
 
   let dragging = false;
