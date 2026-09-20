@@ -191,30 +191,65 @@
    * stopped 84 px from the playhead it is read under. The event cannot say
    * where the cursor is, so the cursor is asked.
    */
+  /**
+   * Where alphaTab's beat cursor stands, in the paper's own pixels.
+   *
+   * The last one, not the first: a layout can leave a cursor layer behind it —
+   * `fitSurface` already has to size every `.at-cursors` it finds — and a
+   * stale one still reports a box.
+   */
   function cursorX(): number | null {
-    const mark = surface?.parentElement?.querySelector<HTMLElement>('.at-cursor-beat');
-    if (!mark || !viewport) return null;
-    return mark.getBoundingClientRect().left - viewport.getBoundingClientRect().left + viewport.scrollLeft;
+    const marks = surface?.parentElement?.querySelectorAll<HTMLElement>('.at-cursor-beat');
+    if (!marks || !viewport) return null;
+    for (let i = marks.length - 1; i >= 0; i--) {
+      const box = marks[i]!.getBoundingClientRect();
+      if (box.width > 0 || box.height > 0) return box.left - viewport.getBoundingClientRect().left + viewport.scrollLeft;
+    }
+    return null;
   }
-   /**
+  /**
+   * Puts the paper under the cursor, once the cursor has stopped moving.
+   *
    * The re-pin does not land in one frame — alphaTab moves the cursor again
    * after the state change — so this waits for two frames that read the same
-   * place and only then moves the paper, once. Following it every frame while
+   * place and only then moves the line, once. Following it every frame while
    * it was still moving sent the line 29 px past where it belonged and back.
-   * It only ever runs while paused, and gives up after eight frames.
    */
   function settleOnCursor(previous: number | null = null, frames = 8) {
+    cancelAnimationFrame(settling);
     const x = cursorX();
-    if (x !== null && (x === previous || frames <= 0)) { slid = -1; follow(x, 0); }
-    else if (x !== null && frames > 0) { requestAnimationFrame(() => settleOnCursor(x, frames - 1)); return; }
-    pausing = false;
+    if (x === null) return;
+    if (x === previous || frames <= 0) { slid = -1; follow(x, 0); return; }
+    settling = requestAnimationFrame(() => settleOnCursor(x, frames - 1));
   }
-  /** Set between a pause and the paper settling under the frozen cursor. */
+  let settling = 0;
+  /**
+   * Set at a pause and held until the score plays again: while it is up, every
+   * scroll alphaTab asks for is answered from the cursor instead.
+   *
+   * Three different things ask for one on a pause — a zero-duration cursor
+   * re-pin, a `forceScrollTo`, and a seek reported at the same moment — and
+   * all three carry the start of the beat, or worse. alphaTab's synthesiser
+   * runs ahead of the beat it is drawing, and the pause re-synchronises the
+   * position to where the *sound* had reached: on a long score that arrives as
+   * a seek a good many bars past the cursor, and late — after any window of a
+   * few frames one could wait out. So the flag is not a window. It stays up
+   * until the score plays again, and while it is up the answer to "scroll
+   * here" is always the cursor, wherever alphaTab has ended up putting it.
+   * That is what a paused reader is for: the line under the mark.
+   */
   let pausing = false;
   function showBar(index: number) {
     const bounds = api?.boundsLookup?.findMasterBarByIndex(index);
     if (bounds) { slid = -1; follow(bounds.realBounds.x, 0); }
   }
+  /**
+   * The bar being read. `activeBeatsChanged` knows it exactly; before a note
+   * has sounded there is nothing to ask, and the tick is the best that is
+   * left — which is right on every score without a repeat in it.
+   */
+  let currentBar = $state(-1);
+  function readBar() { return currentBar >= 0 ? currentBar : barAt(currentTick); }
   function barAt(tick: number) {
     const bars = score?.masterBars ?? [];
     let low = 0, high = bars.length - 1, found = 0;
@@ -226,11 +261,15 @@
   }
   function goToTrack() {
     if (!api || selected.first < 0) return;
+    pausing = false;
     api.tickPosition = selected.start;
     showBar(selected.first);
   }
   function seek(ms: number) {
     if (!api) return;
+    // Asked for by hand, so the pause's own scroll is over and the line should
+    // move with the scrubber rather than wait for the cursor to hold still.
+    pausing = false;
     position = ms;
     api.timePosition = ms;
   }
@@ -350,19 +389,16 @@
     // alphaTab's own handler for this layout parks the cursor on the left edge.
     api.customScrollHandler = {
       [Symbol.dispose]() {},
-      // A pause asks for this too, with the beat's own notes — the beat the
-      // cursor was part way across, so its start. `settleOnCursor` places that
-      // one, from the cursor rather than from the beat.
-      forceScrollTo: beat => { if (pausing) return; slid = -1; follow(beat.onNotesX, 0); },
+      // Paused, this carries the beat's own notes — the start of the beat the
+      // cursor is part way across, or of one the synthesiser had already run
+      // to. Answered from the cursor instead.
+      forceScrollTo: beat => { if (pausing) { settleOnCursor(); return; } slid = -1; follow(beat.onNotesX, 0); },
       onBeatCursorUpdating: (_start, _end, _mode, fromX, toX, ms) => {
         if (toX === slid && ms > 0) return;
         slid = ms > 0 ? toX : -1;
-        // A pause re-pins the cursor with a duration of zero and this beat's
-        // *start*, which is not where the cursor stopped. Following it threw
-        // the paper back 78 px; `settleOnCursor` does this one instead, from
-        // where the cursor actually is. Every other zero-duration update — a
-        // seek, a click on a note — still lands here.
-        if (ms <= 0 && pausing) return;
+        // Same again: paused, `fromX` is this beat's *start*, not where the
+        // cursor stopped. Following it threw the paper back 78 px.
+        if (ms <= 0 && pausing) { settleOnCursor(); return; }
         follow(fromX, 0);
         if (ms > 0) follow(toX, ms);
       },
@@ -392,8 +428,8 @@
       // The slide of the beat that was being crossed is stopped with it: the
       // paper holds where the cursor held, and `settleOnCursor` makes up the
       // difference once alphaTab has finished re-pinning it.
-      if (was && !playing) { onsyncstop?.(); pausing = true; cancelAnimationFrame(sliding); requestAnimationFrame(() => settleOnCursor()); }
-      if (playing) { stringCursor = null; pausing = false; }
+      if (was && !playing) { onsyncstop?.(); pausing = true; cancelAnimationFrame(sliding); settleOnCursor(); }
+      if (playing) { stringCursor = null; pausing = false; cancelAnimationFrame(settling); }
       // Only a pause moves the cursor to where playback stopped: every new
       // layout reloads the player, which reports "stopped" at tick 0, and
       // typing fast sent the cursor back to the first beat mid-chord.
@@ -406,15 +442,23 @@
       // a stray position update from the pause that preceded it consumed the
       // flag, and the seek that followed then scrolled nowhere. Writing, the
       // cursor scrolls itself, to the beat rather than to its bar.
-      // A pause reports a seek of its own, to the bar the cursor stopped in:
-      // following it put the line back at that bar's first note. `pausing`
-      // holds it off; `settleOnCursor` places the paper instead.
-      if (e.isSeek && !editing && !pausing) { if (playing) lit = []; showBar(barAt(e.currentTick)); }
+      // A pause reports a seek of its own — to the bar the cursor stopped in,
+      // or to the one the sound had reached, which is further on. Either way
+      // the cursor is the truth while paused, and a seek the player asked for
+      // has moved the cursor too, so answering from it is right in both cases.
+      if (e.isSeek && !editing) { if (playing) { lit = []; showBar(readBar()); } else if (pausing) settleOnCursor(); else showBar(readBar()); }
     });
     api.beatMouseDown.on(beat => { if (editing && !playing) cursorAtTick(beat.absolutePlaybackStart); });
     // What is sounding, replaced whole on every beat: the previous position
     // goes out as the next comes in, which is the whole point of the neck.
     api.activeBeatsChanged.on(e => {
+      // The bar that is actually being read, from the beat alphaTab is
+      // drawing. Not from the tick: `barAt` searches the written bars by their
+      // start, and the player's ticks run over the *expanded* timeline, so
+      // after a repeated section of eleven bars the tick says bar 90 while the
+      // cursor is on 79. This is the number the cursor agrees with.
+      const first = e.activeBeats[0];
+      if (first) currentBar = first.voice.bar.index;
       if (!playing) return;
       const held: { string: number; fret: number }[] = [];
       for (const beat of e.activeBeats) {
@@ -455,7 +499,7 @@
         const first = parsed.tracks[track]?.staves[0]?.bars[0];
         if (first) scaleRoot = keyOfSignature(first.keySignature, first.keySignatureType === 1);
       }
-      mutedTracks = new Set(); soloed = new Set(); trackVolumes = new Map(); stringCursor = null; looping = false; selection = false; position = 0; duration = 0; lit = [];
+      mutedTracks = new Set(); soloed = new Set(); trackVolumes = new Map(); stringCursor = null; looping = false; selection = false; position = 0; duration = 0; lit = []; pausing = false; currentBar = -1;
       const fresh = await reader(alpha);
       fresh.renderScore(parsed, [track]);
       applySpeed(fresh);
@@ -542,7 +586,7 @@
     deck.position = position; deck.duration = duration; deck.looping = looping; deck.selection = selection;
     deck.title = score ? (score.title || filename) : '';
     deck.bars = score?.masterBars.length ?? 0;
-    deck.bar = score ? barAt(currentTick) + 1 : 0;
+    deck.bar = score ? readBar() + 1 : 0;
     deck.bpm = score ? (syncBpm ?? Math.round(score.tempo * deck.speed / 100)) : 0;
   });
   $effect(() => { const level = deck.volume / 100; if (api) api.masterVolume = level; });
@@ -550,7 +594,7 @@
     deck.open = file => void open(file);
     deck.write = () => { if (!editing) void startEditing(); };
     deck.toggle = () => void togglePlay();
-    deck.stop = () => { const cued = cueing; cancelCue(); api?.stop(); if (cued) onsyncstop?.(); };
+    deck.stop = () => { const cued = cueing; cancelCue(); pausing = false; api?.stop(); if (cued) onsyncstop?.(); };
     deck.seek = seek;
     deck.loop = toggleLoop;
     deck.clearSelection = () => { if (api) api.playbackRange = null; };
@@ -770,7 +814,7 @@
     editing = false;
     clearTimeout(drawTimer);
     api?.destroy(); api = null;
-    score = null; ready = false; playing = false; stringCursor = null; lit = []; tail = 0;
+    score = null; ready = false; playing = false; pausing = false; stringCursor = null; lit = []; tail = 0; currentBar = -1;
     const file = await loadMedia('last-score');
     if (file && !disposed && !editing && !score) void open(file, false);
   }
@@ -938,7 +982,7 @@
     });
     void loadMedia('last-score').then(file => { if (file && !disposed && !busy && !score) void open(file, false); });
   });
-  onDestroy(() => { disposed = true; cancelCue(); signature.disconnect(); api?.destroy(); });
+  onDestroy(() => { disposed = true; cancelCue(); cancelAnimationFrame(settling); signature.disconnect(); api?.destroy(); });
 </script>
 
 <section class="reader" role="application" aria-label={words.region} tabindex="-1"

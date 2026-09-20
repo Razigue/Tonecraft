@@ -437,7 +437,17 @@ try {
   assert(later.scrolled > centred.scrolled, 'the score keeps sliding');
   assert(Math.abs(later.off) < 40, `and the playhead stays put (off by ${later.off}px)`);
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
-  console.log('ok the score slides horizontally under a centred playhead');
+  // Pausing leaves the line under the mark. Three separate things ask to
+  // scroll on a pause and all of them carry somewhere else: the start of the
+  // beat the cursor is part way across, or — because the synthesiser runs
+  // ahead of the beat it draws — the bar the sound had already reached, which
+  // on a long score arrives as a seek many bars further on, and late. Read
+  // after two seconds for that reason: a window of a few frames was what let
+  // it through the first time.
+  await page.waitForTimeout(2000);
+  const stopped = await read();
+  assert(Math.abs(stopped.off) < 40, `pausing leaves the playhead on the cursor (off by ${stopped.off}px)`);
+  console.log('ok the score slides horizontally under a centred playhead, and stops under it');
 
   // Zoomed, the line ends where the score ends. alphaTab kept its surface at
   // the unscaled width: zoomed out, blank paper ran on after the last bar;
