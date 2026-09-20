@@ -41,7 +41,9 @@ The studio plates stay dark; notation is read on light paper. GUILT's cabinet al
 Four faces, self-hosted, subset, `woff2`, `font-display: swap`.
 
 - **Display: Anybody**, width 125, uppercase, tracked. The wordmark, eyebrows, band and group labels.
-- **Body: Inter Tight**, 400 and 500. Names, buttons, help, dialogs.
+- **Body: Onest**, one variable file, weight axis 400 and 500. Names, buttons, help, dialogs.
+  It sets wider than the Inter Tight it replaced, so the page carries `--body-tracking: -0.015em`:
+  a line reads at the density the studio was drawn at, and anything already tracked keeps its own.
 - **Utility: IBM Plex Mono**, tabular figures. Every number: dB, cents, ms, BPM, bars, time. Fixed-width digits do not jitter at 30 fps.
 - **Inscription: Cormorant Garamond**, GUILT's face and only GUILT's.
 
@@ -66,15 +68,19 @@ Sentence case everywhere except the display face, which is always uppercase.
 
 **An instrument, not a page.** One window, `100dvh`, four bands. The document never scrolls; the only thing that does is the tab.
 
+**The room is a place, in Tone.** Behind everything, `public/images/bg-guilt.webp`: the nave the head is photographed in, blurred to the depth of field a lens would give it at that distance, so it reads as a place and never competes with the object in front of it. It is fixed to the window, under a scrim that keeps the bar and the transport on their dark surface, and it is Tone's alone — in Play the tab opens edge to edge and a cathedral under a score is noise. Static, 23 kB, decoded once; the only thing that moves over it is the violet light below.
+
 **Plates in a room.** The chain and the transport are plates of the faceplate material, floating with a `--gutter` of room around them, as the head does. In Tone they are exactly the head's column wide, so band, head and transport read as one object in the middle of a dark room; a static violet light behind the head brightens with the output, by opacity only. In Play they open to the full width with the tab. On a screen at least 900 px tall, the chain band in Tone takes full-size knobs, names above and values below; otherwise, and always in Play, it is the compact 80 px row.
 
-**The doubler closes the band, against the output.** It is the last stage before the output, so the two share one group with no seam between them. Full size, it is a knob with its lamp beside its name, as the gate is. Compact, the row has no room for a name, a value and a lamp side by side, and the selectors are what would pay for them: the name becomes the switch, over the dial — `DOUBLER ●`, as a block's name is on the head — and the dial keeps only its value in milliseconds, which it shows even where the other knobs drop theirs. In Play, where the power joins the row, it keeps only its lamp below a 1440 px window, for the same reason; its word stays in its name and its tooltip.
+**One key in the band holds the pedals.** The amplifier's plate is a map of seven engraved names and a lever, and three live stages — the transposer, the screamer's colour, the reverb — have no place on it. Drawing them onto a faceplate that was never engraved for them would be a lie about the object, and the band is full to the pixel. They open from one key instead, grouped as what they are in the chain: pedals. The boost keeps a switch in both places, because in Play the head is off screen and a stage must stay reachable from the band.
+
+**The doubler closes the band, against the output.** It is the last stage before the output, so the two share one group with no seam between them. Full size, it is a knob with its lamp beside its name, as the gate is. Compact, the row has no room for a name, a value and a lamp side by side, and the selectors are what would pay for them: the name becomes the switch, over the dial — `DOUBLER ●`, as a pedal's name is in the pedals panel — and the dial keeps only its value in milliseconds, which it shows even where the other knobs drop theirs. In Play, where the power joins the row, it keeps only its lamp below a 1440 px window, for the same reason; its word stays in its name and its tooltip.
 
 ```
 +--------------------------------------------------------------------------+
 | TONECRAFT              [ TONE ]  PLAY                   12.4 ms   ⚙      |  bar, 56 px
 +--------------------------------------------------------------------------+
-| IN ▮ ◯  GATE ◯ ●  AMP [GUILT ▾] CAB [...▾]  ‹ PRESET ›  DOUBLER ● ◯  ◯ ▮ OUT |  chain, 80 px
+| IN ▮ ◯  GATE ◯ ●  AMP [GUILT ▾] CAB [...▾]  ‹ PRESET › [⚙] DOUBLER ● ◯  ◯ ▮ OUT |  chain, 80 px
 +--------------------------------------------------------------------------+
 |                                                                          |
 |                 +--------------------------------------+                 |
@@ -114,11 +120,13 @@ Sentence case everywhere except the display face, which is always uppercase.
 
 ## 5. Signature element: the glass
 
-GUILT's rose window, pointed arches and quatrefoils sit behind raised pewter tracery. A static product render supplies the sculpted relief. The cabinet is cast from that same metal, at the same value: a picture set in a lighter frame reads as a picture, not as a window in an amplifier. Its grain is a baked overlay (`scripts/bake-guilt-textures.py`), fine and without direction. The head is seen from slightly above, and every part obeys that one vantage: the top face is visible as the front outline pushed back, the handle stands on it, the knob caps cast their shadows downward, and the feet show only their front edge. No side face is ever visible. The knob bank shares the glass's centreline. GUILT and LUX EX SONO are inscribed directly over the glass, without a plaque. See `docs/guilt-material-study.md` for the supplied references and generation prompt.
+GUILT's rose window, pointed arches and quatrefoils sit behind raised tracery, and the head is **one photograph** of a cast object, not a drawing of one: `public/images/guilt.webp` carries the cabinet, the handle, the tracery, the control plate with its engraved names, the signature and the lead that falls off the front. Building the same object out of CSS gradients took several hundred lines, and it never read as cast metal; the image does it in 210 kB, decoded once, off the audio path. Everything the DOM adds over it is something that has to move: seven indices turning on their own caps, the boost lever, the power rocker, and the two light layers below. The head is seen from slightly above, and every part obeys that one vantage — the top face shows, the handle stands on it, the feet show only their front edge, no side face is ever visible. The plate is the map: a control exists on the head only where the picture has a place engraved for it. See `docs/guilt-material-study.md` for the references and the prompt.
 
-The stained glass is lit by the signal. Its glow layer's opacity follows the output RMS posted by the worklet at 30 Hz, mapped from −60 to 0 dBFS, and falls to its unlit baseline when the engine stops or the amp is off. Static SVG colour masks isolate violet, blue and burgundy glass from the neutral metal: switching off darkens the glass while the silver retains its reflections. Masks and bloom are rasterised once; only opacity moves.
+The stained glass is lit by the signal. Its glow layer's opacity follows the output RMS posted by the worklet at 30 Hz, mapped from −60 to 0 dBFS, and falls to its unlit baseline when the engine stops or the amp is off. The glass in the photograph is already lit, so switching the amplifier off lays black **over the glass alone**: two layers chroma-keyed out of the picture at build (`scripts/make-guilt-layers.mjs`), one black wherever the picture is violet, one the violet alone, blurred, screened back on. The silver keeps its studio lighting in both. The key ran as an SVG filter at first — a filter that never changes has no business running in the browser, so it runs once, at build, and ships as two small images. Only opacity moves.
 
-The cabinet and control faceplate share the glass bezel's patinated silver finish: darker metal flats, narrow polished edges and subtle cast grain. The outer moulding is plain; stained-glass motifs and coloured enamel stay confined to the original window. Knobs have a broad polished silver bevel, a shallow dished face and a fine fluted skirt, with a dark engraved index. Their lighting stays fixed as the index rotates. The power rocker shares the same patinated metal, with a small violet status lamp and mechanically distinct on/off positions. Cabinet dimensions, centred viewpoint and control positions are preserved. Materials use static CSS gradients and the existing cast-metal grain; there is no additional ornamental image.
+The controls are placed in the picture's own pixels, so the plate and what sits on it cannot drift apart at any scale. A knob contributes one engraved index turning on a cap the picture already draws; the boost switch is its own pair of photographs, up and down, aligned on the escutcheon they share (`scripts/make-boost-switch.mjs`) and cross-faded, so the lever moves and the metal it is bolted to does not; the power rocker is the one control the picture has no place drawn for, and is built in its own bezel past the signature, with a small violet lamp.
+
+**Nothing on the head writes its value or its state.** A photograph of an amplifier has neither, and the plate is engraved with names already. Name and value come back only while a control is under the hand or under focus, in one tooltip (`.tc-tip` in `app/tokens.css`) shared by the knobs and both switches. A screen reader is told the same through `aria-label` and `aria-valuetext`, always.
 
 The glass and the two meters are the whole visualisation layer. There is no spectrum analyser, no oscilloscope, no `AnalyserNode` and no `<canvas>` anywhere in the product. Under `prefers-reduced-motion` the glass holds a steady illumination.
 

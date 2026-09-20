@@ -114,11 +114,10 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
         {
           title: 'The amp',
           body: [
-            '[Tone](tone) shapes the sound: bass, mids, treble and presence.',
-            '[Pitch](pitch) transposes: the guitar sounds lower or higher than its real tuning, without touching the strings. Shift sets the interval in semitones, Mix blends in the transposed sound.',
-            '[Boost](boost) drives the amp harder for more saturation; its Color sets the brightness.',
-            '[Reverb](reverb) adds echo, as if you were playing in a large room. Mix sets how much.',
-            'Click a [block’s name](blocks) to switch it on or off. [Power](power) turns the whole chain off, to hear the dry guitar.',
+            'The [plate](tone) is the amp itself: Gain sets how hard the guitar hits it, Bass, Middle, Treble and Presence shape what comes out, Master the volume in your headphones, Level how hard the boost pushes. Drag a knob up or down, double-click it to put it back.',
+            'The little [lever](boost) engages the boost: the amp is driven harder and saturates more.',
+            '[Pedals](pedals) holds what the plate has no room for — Pitch, which transposes without retuning, the boost’s Color, and Reverb, which gives the sound a room. Each has a switch that turns it on or off.',
+            '[Power](power) turns the whole chain off, to hear the dry guitar.',
           ],
         },
         {
@@ -200,11 +199,10 @@ export const MESSAGES: Readonly<Record<Locale, Messages>> = {
         {
           title: 'L’ampli',
           body: [
-            '[Timbre](tone) façonne le timbre : graves, médiums, aigus et présence.',
-            '[Hauteur](pitch) transpose : la guitare sonne plus grave ou plus aiguë que son accordage réel, sans toucher aux cordes. Transpo règle l’écart en demi-tons, Mix dose le son transposé.',
-            '[Boost](boost) pousse l’ampli plus fort pour obtenir davantage de saturation ; son réglage Couleur règle la brillance.',
-            '[Réverb](reverb) ajoute de l’écho, comme si vous jouiez dans une grande pièce. Mix règle la quantité d’écho.',
-            'Cliquez sur le [nom d’un bloc](blocks) pour l’allumer ou l’éteindre. [Marche](power) coupe toute la chaîne pour entendre la guitare brute.',
+            'La [plaque](tone) est l’ampli lui-même : Gain règle la force avec laquelle la guitare l’attaque, Bass, Middle, Treble et Presence façonnent ce qui en sort, Master le volume au casque, Level la poussée du boost. Tirez un bouton vers le haut ou le bas, double-cliquez pour le remettre.',
+            'Le petit [levier](boost) enclenche le boost : l’ampli est poussé plus fort et sature davantage.',
+            '[Pédales](pedals) contient ce que la plaque n’a pas la place de porter — Hauteur, qui transpose sans toucher aux cordes, la Couleur du boost, et Réverb, qui donne une pièce au son. Chacune a un interrupteur pour l’allumer ou l’éteindre.',
+            '[Marche](power) coupe toute la chaîne pour entendre la guitare brute.',
           ],
         },
         {

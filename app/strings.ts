@@ -78,6 +78,12 @@ const en = {
     captureSeries: 'CAPTURE SERIES',
     groups: { tone: 'Tone', pitch: 'Pitch', boost: 'Boost', reverb: 'Reverb' },
     groupEnabled: { tone: 'Tone enabled', pitch: 'Pitch enabled', boost: 'Boost enabled', reverb: 'Reverb enabled' },
+    /* What a switch says about itself in its tooltip; the state is nowhere on
+       the plate, because an engraved plate never says it either. */
+    /* The stages the amplifier's plate has no place engraved for. */
+    pedals: 'Pedals',
+    on: 'On',
+    off: 'Off',
     power: 'Power',
     amplifierPower: 'Amplifier power',
     captureSilent: 'This capture is not running: you are hearing your dry guitar. Reload the page.',
@@ -472,6 +478,9 @@ const fr: Ui = {
     captureSeries: 'SÉRIE CAPTURE',
     groups: { tone: 'Timbre', pitch: 'Hauteur', boost: 'Boost', reverb: 'Réverb' },
     groupEnabled: { tone: 'Timbre activé', pitch: 'Hauteur activée', boost: 'Boost activé', reverb: 'Réverb activée' },
+    pedals: 'Pédales',
+    on: 'Activé',
+    off: 'Désactivé',
     power: 'Marche',
     amplifierPower: 'Mise en marche de l’ampli',
     captureSilent: 'Cette capture ne tourne pas : vous entendez votre guitare sans ampli. Rechargez la page.',

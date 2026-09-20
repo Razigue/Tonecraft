@@ -8,6 +8,7 @@
     resetValue = param.default,
     powered,
     compact = false,
+    skin = false,
   }: {
     param: Param;
     value: number;
@@ -18,6 +19,12 @@
     powered?: boolean;
     /** The chain band's size: a smaller dial with its name and value beside it. */
     compact?: boolean;
+    /**
+     * The knob is already drawn — it is part of the amplifier's own image, and
+     * only the engraved index turns over it. Name and value leave the plate
+     * with it: a photograph of a head has neither, so they move to the tooltip.
+     */
+    skin?: boolean;
   } = $props();
 
   const logarithmic = $derived(param.taper === 'logarithmic' && param.min > 0);
@@ -31,7 +38,9 @@
     : param.unit === 'ms' ? `${Math.round(value)} ms`
     : `${value.toFixed(1)}${param.unit === 'dB' ? ' dB' : ''}`);
 
-  let dragging = false;
+  /* Reactive because the tooltip stays up for the whole drag: the pointer
+     leaves the cap long before the value is where it is wanted. */
+  let dragging = $state(false);
   let originY = 0;
   let originPosition = 0;
 
@@ -67,7 +76,7 @@
     }
   }
 </script>
-<label class="knob" class:compact>
+<label class="knob" class:compact class:skin class:tc-tip-host={skin} class:tipped={skin && dragging}>
   <span class="label">{label}</span>
   <span class="dial" class:power-dial={powered !== undefined} class:powered={powered === true} style={`--angle:${-135 + position * 270}deg;--progress:${position * 270}deg`}>
     {#if powered !== undefined}
@@ -90,7 +99,7 @@
       ondblclick={(event) => { event.preventDefault(); onchange(resetValue); }}
     />
   </span>
-  <span class="value">{shown}</span>
+  {#if skin}<span class="tc-tip" aria-hidden="true"><b>{label}</b>{shown}</span>{:else}<span class="value">{shown}</span>{/if}
 </label>
 <style>
   /* One knob family for the whole studio: a dark well, a ring that fills in
@@ -198,4 +207,43 @@
   @media(prefers-reduced-motion:reduce) {
     .power-dial .dial-light,.sweep-half::before,.power-dial .indicator::after { transition: none !important; }
   }
+
+  /* Skinned. The cap, its ring and its engraved name are already in the
+     amplifier's own image, so the knob contributes two things and no size:
+     the index that turns over the cap, and the input that turns it. Its box
+     is placed and scaled by the head, in the image's own coordinates. */
+  .skin { position: absolute; inset: 0; display: block; gap: 0; min-width: 0; }
+  .skin .label,.skin .value { display: none; }
+  .skin .dial { position: absolute; inset: 0; width: auto; height: auto; background: none; box-shadow: none; }
+  .skin .dial::before { display: none; }
+  .skin .cap { inset: 0; border: 0; background: none; box-shadow: none; transform: none; }
+  /* A full-width box that turns about the cap's own centre; the line is drawn
+     at its top. Rotating the line itself would need an origin outside it. */
+  .skin .indicator {
+    inset: 0;
+    top: 0;
+    left: 0;
+    width: auto;
+    height: auto;
+    border-radius: 0;
+    background: none;
+    transform: rotate(var(--angle));
+  }
+  /* Engraved, not printed: a dark groove with the light catching its far lip. */
+  .skin .indicator::after {
+    content: '';
+    position: absolute;
+    top: 11%;
+    left: 50%;
+    width: 3.2%;
+    height: 31%;
+    margin-left: -1.6%;
+    inset-inline-end: auto;
+    border-radius: 40% / 5%;
+    background: linear-gradient(#514a57, #6c6572);
+    box-shadow: 0.5px 0 0 #ffffffcc;
+    opacity: 1;
+    transition: none;
+  }
+  .skin .dial:focus-within { border-radius: 50%; outline-offset: 2px; }
 </style>

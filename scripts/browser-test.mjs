@@ -205,14 +205,15 @@ const levels = await page.evaluate(async () => {
   const bar = (sel) => document.querySelector(`${sel} .meter rect:last-child`);
   const until = performance.now() + 20_000;
   while (performance.now() < until) {
-    /* The glass is lit by lifting a black veil off the art rather than by
-       filtering the art itself, so illumination is the veil's absence. The
-       veil carries brightness b = (1 - opacity) * 1.67, and the lighting that
-       produced it is (b - 0.42) / 1.25. */
-    const glass = document.querySelector('.glass-window .veil');
+    /* The head is a photograph whose glass is already lit, so the signal is
+       read off the bloom layer screened over it: its opacity is
+       0.12 + light * 0.3, and the lighting that produced it is the inverse.
+       The neutral head has no such layer, so a missing one reads as no
+       measurement rather than as darkness. */
+    const glass = document.querySelector('.skin-bloom img');
     if (glass !== null) {
-      const opacity = Number(glass.style.opacity === '' ? 1 : glass.style.opacity);
-      cord = Math.max(cord, ((1 - opacity) * 1.67 - 0.42) / 1.25);
+      const opacity = Number(glass.style.opacity === '' ? 0.12 : glass.style.opacity);
+      cord = Math.max(cord, (opacity - 0.12) / 0.3);
     }
     input = Math.max(input, Number(bar('.global-controls > .io-control:first-child')?.getAttribute('height') ?? 0));
     output = Math.max(output, Number(bar('.output-control')?.getAttribute('height') ?? 0));
@@ -304,14 +305,14 @@ check('the outside toggle resumes the stored tempo',
   await page.getByRole('button', { name: 'Pause metronome' }).getAttribute('aria-pressed') === 'true');
 await page.getByRole('button', { name: 'Pause metronome' }).click();
 
-await page.locator('button.power-indicator').click();
+await page.locator('button.rocker, button.power-indicator').click();
 // Past the reverb tail, which is 1.3 s and legitimately still ringing.
 await page.waitForTimeout(2500);
 const mutedIn = await meterPeak('in', 2500);
 const mutedOut = await meterPeak('out', 2500);
 check('switching the simulation off closes the live input',
   mutedIn === 0 && mutedOut === 0, `in ${mutedIn}, out ${mutedOut}, of 96`);
-await page.locator('button.power-indicator').click();
+await page.locator('button.rocker, button.power-indicator').click();
 await page.waitForTimeout(1200);
 const backIn = await page.evaluate(async () => {
   let peak = 0;
@@ -467,12 +468,25 @@ async function peakOver(ms) {
   }, ms);
 }
 
+/**
+ * One knob, by its name, wherever the studio puts it. GAIN and MASTER are
+ * engraved on the head's plate and are also the band's In and Out: one
+ * parameter behind two controls, on purpose, so a label can match twice. The
+ * band's is taken when there is one, because the band is there in both modes
+ * and behind either amplifier.
+ */
+function fader(label) {
+  const band = page.locator(`.global-controls input[type=range][aria-label="${label}"]`);
+  const head = page.locator(`.amp-head input[type=range][aria-label="${label}"]`);
+  return band.or(head).first();
+}
+
 /** Native range Home sets a knob to its minimum. */
 async function press(label, key) {
-  const fader = page.locator(`input[type=range][aria-label="${label}"]`);
-  await fader.scrollIntoViewIfNeeded();
-  await fader.focus();
-  await fader.press(key);
+  const knob = fader(label);
+  await knob.scrollIntoViewIfNeeded();
+  await knob.focus();
+  await knob.press(key);
   await page.waitForTimeout(600);
 }
 
@@ -482,9 +496,9 @@ async function press(label, key) {
  * measurement running at +6 dB of master and +14 dB of bass.
  */
 async function reset(label) {
-  const fader = page.locator(`input[type=range][aria-label="${label}"]`);
-  await fader.scrollIntoViewIfNeeded();
-  await fader.dblclick();
+  const knob = fader(label);
+  await knob.scrollIntoViewIfNeeded();
+  await knob.dblclick();
   await page.waitForTimeout(600);
 }
 
@@ -584,7 +598,7 @@ const integrate = (ms) => page.evaluate(async (d) => {
  * reads what the button says it is and flips it only if it has to.
  */
 async function monitor(want) {
-  const button = page.locator('button.power-indicator');
+  const button = page.locator('button.rocker, button.power-indicator');
   const on = (await button.getAttribute('aria-pressed')) === 'true';
   if (on !== (want === 'Amp')) await button.click();
 }
@@ -643,14 +657,16 @@ check('and the rig keeps a place for it whether or not there is one',
   (await page.locator('.stage .notice').count()) === 1);
 
 // FR-18: the limiter has no control anywhere, in any mode, on any path.
-const bypasses = await page.locator('.amp-panel button[aria-pressed]').allTextContents();
+// Every switch the amp offers: the head's own lever, and the three stages
+// behind the band's pedals key. None of them is the limiter.
+const bypasses = await page.locator('.amp-head button[aria-pressed], .pedals button[aria-pressed]').allTextContents();
 // The same A/B from the keyboard, which is what makes it usable more than twice.
 await monitor('Amp');
-const beforeKey = await page.locator('button.power-indicator').getAttribute('aria-pressed');
+const beforeKey = await page.locator('button.rocker, button.power-indicator').getAttribute('aria-pressed');
 await page.locator('body').click({ position: { x: 5, y: 5 } });
 await page.keyboard.press('b');
 await page.waitForTimeout(300);
-const afterKey = await page.locator('button.power-indicator').getAttribute('aria-pressed');
+const afterKey = await page.locator('button.rocker, button.power-indicator').getAttribute('aria-pressed');
 check('B flips the chain from the keyboard', beforeKey !== afterKey,
   `${beforeKey} then ${afterKey}`);
 await monitor('Amp');
@@ -777,9 +793,9 @@ check('French reaches the whole studio, not only the tutorial',
   await demoPage.evaluate(() => {
     const text = (selector) => document.querySelector(selector)?.textContent?.trim() ?? '';
     return text('.global-controls .io-control .label') === 'Entrée'
-      && text('.amp-panel .tone-group .group-label').startsWith('TIMBRE')
+      && text('.pedals .pedal:first-child .enable b') === 'Hauteur'
       && text('.reader .eyebrow') === 'Lecteur de tablatures'
-      && document.querySelector('.power-indicator')?.getAttribute('aria-label') === 'Mise en marche de l’ampli';
+      && document.querySelector('.rocker, .power-indicator')?.getAttribute('aria-label') === 'Mise en marche de l’ampli';
   }));
 await demoPage.getByRole('button', { name: 'Tutoriel', exact: true }).click();
 await demoPage.locator('.tour-card').waitFor();
@@ -823,7 +839,7 @@ check('and the take is loaded and waiting, not playing at you',
   (await demoPage.locator('.demo-panel button.start').innerText()) === 'Play');
 // The chain is what you hear first; turning it off is the deliberate act.
 check('and the chain is on by default',
-  (await demoPage.locator('button.power-indicator').getAttribute('aria-pressed')) === 'true');
+  (await demoPage.locator('button.rocker, button.power-indicator').getAttribute('aria-pressed')) === 'true');
 await demoPage.locator('.demo-panel button.start').click();
 await demoPage.waitForTimeout(1200);
 check('and plays when asked', (await demoPage.locator('.demo-panel button.start').innerText()) === 'Pause');

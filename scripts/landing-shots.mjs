@@ -72,7 +72,12 @@ try {
   console.log('  overview.png');
   await shot('amp', page.locator('.amp-stand'));
   await shot('controls', page.locator('.global-controls'));
-  await shot('panel', page.locator('.amp-panel'));
+  // The stages the head's plate has no place engraved for, behind the band's
+  // one key. The panel is a popover: it has to be opened to be shot.
+  await page.getByRole('button', { name: 'Pedals', exact: true }).click();
+  await page.locator('.pedals:popover-open').waitFor({ timeout: 5000 });
+  await shot('panel', page.locator('.pedals'));
+  await page.keyboard.press('Escape');
   // The transport is the studio's DAW: its row holds the looper and the tab.
   await shot('session', page.locator('.transport-row'));
   // A take, so the recorder shows a waveform rather than its empty state.

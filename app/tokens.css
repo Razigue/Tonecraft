@@ -9,16 +9,12 @@
   font-stretch: 50% 150%;
   font-display: swap;
 }
+/* Onest carries its weight axis: one file for the 400 of a help line and the
+   500 of a name, where two static cuts were two downloads. */
 @font-face {
-  font-family: "Inter Tight";
-  src: url("/fonts/inter-tight-latin-400.woff2") format("woff2");
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Inter Tight";
-  src: url("/fonts/inter-tight-latin-500.woff2") format("woff2");
-  font-weight: 500;
+  font-family: "Onest";
+  src: url("/fonts/onest-latin-wght.woff2") format("woff2");
+  font-weight: 100 900;
   font-display: swap;
 }
 @font-face {
@@ -123,7 +119,11 @@
   --type-title: 15px;
 
   --display: "Anybody", "Arial Narrow", "Helvetica Neue", system-ui, sans-serif;
-  --body: "Inter Tight", "Helvetica Neue", system-ui, sans-serif;
+  --body: "Onest", "Helvetica Neue", system-ui, sans-serif;
+  /* Onest sets wider than the Inter Tight it replaces. Applied once on
+     the page, this brings a line of it back to the density the studio
+     was drawn at; anything with tracking of its own keeps it. */
+  --body-tracking: -0.015em;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --inscription: "Cormorant Garamond", "Iowan Old Style", serif;
 
@@ -158,6 +158,48 @@
   border-radius: var(--radius);
   box-shadow: var(--shadow), inset 0 1px 0 #ffffff08;
 }
+
+/* What a control says about itself when the control itself cannot say it.
+   On the amplifier's own image there is no room for a name and a value: the
+   plate is engraved and a photograph of a head carries neither. They come
+   back here, over the head, while the control is under the hand or focused. */
+.tc-tip {
+  position: absolute;
+  z-index: 3;
+  bottom: 108%;
+  left: 50%;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-0);
+  box-shadow: 0 6px 16px #0009;
+  color: var(--text);
+  font: 11px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-50%);
+  transition: opacity var(--dur-quick) ease-out;
+}
+.tc-tip b {
+  font: 400 9px/1 var(--display);
+  font-stretch: 125%;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--violet-300);
+}
+/* It shows while the control is pointed at, while it is being turned, and on
+   a keyboard focus — never on the focus a click leaves behind, which would
+   pin it to the plate after the hand has gone. */
+.tc-tip-host:hover > .tc-tip,
+.tc-tip-host.tipped > .tc-tip,
+.tc-tip-host:focus-visible > .tc-tip,
+.tc-tip-host:has(:focus-visible) > .tc-tip { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .tc-tip { transition: none; } }
 
 /* A group of controls in the transport: its name above, its controls below. */
 .tc-group { display: flex; flex-direction: column; justify-content: center; gap: 10px; min-width: 0; }
@@ -330,3 +372,368 @@
   .tc-close { top: 10px; right: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { .tc-dialog[open] { animation: none; } }
+
+/* --- GUILT's shell ------------------------------------------------------ *
+ *
+ * The amplifier owns its head and nothing else (DESIGN.md): the shell is
+ * Tonecraft's, neutral, and the same under every amp. That holds for the
+ * material — no tolex, no chrome — but not for the light. GUILT is
+ * photographed in a nave, and the room behind the head is on screen; three
+ * grey plates floating in front of it read as three grey plates, not as the
+ * same place. So the bands take the room's own light instead: violet-black
+ * glass, lit from above, with the nave showing through them.
+ *
+ * Everything below is a theme, keyed on the amplifier the rig is playing. The
+ * neutral head's studio is untouched — it has no room behind it to show
+ * through, and a blurred black rectangle is worth nothing there.
+ */
+[data-amp='guilt'] {
+  /* Violet-tinted black, not the shell's neutral #15131a. */
+  --panel-fill: #15101c;
+  --panel-alpha: .85;
+  /* Lit from the top, as the head is. */
+  --panel-sheen: linear-gradient(#ffffff0e, #ffffff00 46%, #0000003d);
+  /* The cabinet's own corner. The cast silver turns through about 37 px at
+     the head's full width; a band is a tenth of its height, so it takes the
+     corner and not the radius, at the size a band can carry one. */
+  --panel-radius: 18px;
+  --panel-edge: #ffffff17;   /* the 1px top inner highlight, and the only edge */
+  --panel-shadow: 0 16px 38px #00000080;
+
+  /* Sunk into the panel: a groove, not a box. */
+  --well-fill: linear-gradient(#08050d, #100b18);
+  --well-shadow: inset 0 2px 6px #000000c4, inset 0 0 0 1px #00000073;
+
+  /* Every lamp in the shell is the one on the amplifier's power rocker. */
+  --led: #c9a6de;
+  --led-glow: #a56bb3;
+  /* Recording is the one thing that is not violet, and it is not orange
+     either: deep burgundy, the darkest thing the panel carries. */
+  --rec: #4f1b27;
+  --rec-line: #7a2a3a;
+  --rec-lit: #b64a60;
+  --ivory: #efe9e0;
+  --pearl: #cdb6e0;
+  --knob-cap: url('/images/guilt-cap.webp');
+}
+/* The bar is not one of them, and stays what it was: bare, no material, the
+   name and the two modes standing straight on the room. A plate there closed
+   the top of the screen and turned the studio into a window. */
+
+/* Two classes, and they are not the same thing. `.tc-panel` is the material:
+   every plate in the studio wears it, the tab reader's included, so the room
+   holds one kind of surface and not two. `.tc-band` is the chain band and the
+   transport — the shell's own controls — and only they get the controls below.
+   The reader is full of selects that belong to a score on white paper, and
+   sinking those into a violet groove would be theming somebody else's page.
+
+   The band itself. One surface: no border, a highlight along its top lip, a
+   violet thread around it, and the nave blurred behind it. */
+[data-amp='guilt'] .tc-panel {
+  /* Transparent, not removed: the plate it replaces is border-box with a 1 px
+     border, and taking the border away hands its contents 2 px they were not
+     laid out in — enough to change where the tab reader parks its staff. */
+  border: 1px solid transparent;
+  border-radius: var(--panel-radius);
+  background:
+    var(--panel-sheen),
+    color-mix(in srgb, var(--panel-fill) calc(var(--panel-alpha) * 100%), transparent);
+  /* One light along the top lip and the shadow it casts, and nothing else.
+     A line all the way round, however faint, drew the band as a box; the
+     band is a surface the room is lit across. */
+  box-shadow: inset 0 1px 0 var(--panel-edge), var(--panel-shadow);
+}
+/* The blur costs a compositor pass per band and only earns it where there is
+   something behind to blur: the nave is drawn in Tone and hidden in Play. */
+[data-view='tone'][data-amp='guilt'] .tc-panel {
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+}
+/* Except while the tutorial runs. It lifts the one window it is explaining
+   above its shade by z-index alone, and a filtered panel is a stacking
+   context: anything inside one stays under the shade whatever its z-index,
+   which put the reader and the transport's own controls in the dark on the
+   steps that name them. Behind a shade at 85 % black the blur is not seen
+   anyway, so it is dropped for as long as the shade is up. */
+[data-view='tone'][data-amp='guilt'].touring .tc-panel {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Wells — the tab display, the recorder's lanes and its segmented mode, the
+   fields and the selects. Cut into the panel rather than drawn on it: no
+   border at all, a shadow falling in from the top edge, a darker fill. */
+[data-amp='guilt'] .tc-band :is(.display, .lane, .mode) {
+  border-color: transparent;
+  background: var(--well-fill);
+  box-shadow: var(--well-shadow);
+}
+/* A select keeps its chevron, which is a background layer of its own: it has
+   to be written in the same declaration as the fill, so a select cannot share
+   a rule with anything else here — a shared one would either drop the chevron
+   or out-specify the rule that draws it. */
+/* Typed-in fields only: a range input is a groove already, and filling it
+   would paint a well over the rail. */
+[data-amp='guilt'] .tc-band :is(input[type='text'], input:not([type])) {
+  border-color: transparent;
+  background: var(--well-fill);
+  box-shadow: var(--well-shadow);
+}
+[data-amp='guilt'] .tc-band select {
+  border-color: transparent;
+  background: var(--chevron) no-repeat right 11px center, var(--well-fill);
+  box-shadow: var(--well-shadow);
+}
+[data-amp='guilt'] .tc-band :is(select, input[type='text']):hover {
+  box-shadow: var(--well-shadow), inset 0 0 0 1px #7a54a84d;
+}
+/* Two corners in the studio: the band takes the cabinet's, everything inside
+   it takes 8. The shell's single 4 px read as a form field. */
+[data-amp='guilt'] .tc-band :is(.display, .lane, .mode, select, input[type='text'], input:not([type])) { border-radius: 8px; }
+/* A select is also a key elsewhere in the row (the tab's speed). It is the
+   same groove as the others and carries its chevron over it — the chevron is
+   a background layer, so it cannot be inherited from the rule below. */
+[data-amp='guilt'] .tc-band select.tc-button {
+  border-color: transparent;
+  border-radius: 8px;
+  background: var(--chevron) no-repeat right 11px center, var(--well-fill);
+  box-shadow: var(--well-shadow);
+  color: var(--ivory);
+}
+[data-amp='guilt'] .tc-band select.tc-button:hover:not(:disabled) { box-shadow: var(--well-shadow), inset 0 0 0 1px #a56bb366; }
+
+/* The keys. There is one secondary key in this studio and it is the groove:
+   the same violet-black the lanes and the fields are cut into, no border at
+   all, ivory lettering, and a violet thread that appears under the hand or on
+   a focus ring. The shell's raised grey film read as a web form on this
+   surface, and a studio whose buttons stand out of the panel and whose wells
+   sink into it is two studios. Every key in the two bands is listed here
+   rather than reached for by element, so what is deliberately not a key —
+   the arming dot, the lane's grip, the empty lane's invitation, the export
+   menu's items — keeps being what it is.
+
+   `.tc-panel` is not enough of a guard here: the tab reader is one too, and
+   its keys belong to a score on white paper. */
+[data-amp='guilt'] .tc-band :is(.tc-button, .power),
+[data-amp='guilt'] .tc-band .recorder :is(.actions, .lane-tools, .record-tools) > button,
+[data-amp='guilt'] .tc-band .recorder .export-menu > button {
+  border-color: transparent;
+  border-radius: 8px;
+  background: var(--well-fill);
+  box-shadow: var(--well-shadow);
+  color: var(--ivory);
+}
+[data-amp='guilt'] .tc-band :is(.tc-button, .power):is(:hover, :focus-visible):not(:disabled),
+[data-amp='guilt'] .tc-band .recorder :is(.actions, .lane-tools, .record-tools) > button:is(:hover, :focus-visible):not(:disabled),
+[data-amp='guilt'] .tc-band .recorder .export-menu > button:is(:hover, :focus-visible):not(:disabled) {
+  background: var(--well-fill);
+  box-shadow: var(--well-shadow), inset 0 0 0 1px #a56bb366;
+  color: var(--ivory);
+}
+/* Pressed: further into the panel, not a different colour. */
+[data-amp='guilt'] .tc-band :is(.tc-button, .power):active:not(:disabled),
+[data-amp='guilt'] .tc-band .recorder :is(.actions, .lane-tools, .record-tools) > button:active:not(:disabled),
+[data-amp='guilt'] .tc-band .recorder .export-menu > button:active:not(:disabled) {
+  box-shadow: inset 0 3px 7px #000000cc, inset 0 0 0 1px #7a54a833;
+}
+[data-amp='guilt'] .tc-band :is(.tc-button, .power):disabled,
+[data-amp='guilt'] .tc-band .recorder :is(.actions, .lane-tools, .record-tools) > button:disabled,
+[data-amp='guilt'] .tc-band .recorder .export-menu > button:disabled {
+  background: var(--well-fill);
+  box-shadow: var(--well-shadow);
+  color: var(--text-3);
+}
+/* A key that is on keeps the groove and gets the lamp's own thread. */
+[data-amp='guilt'] .tc-band :is(.tc-button[aria-pressed='true'], .tc-button[aria-expanded='true'], .tc-button.on) {
+  background: linear-gradient(#a56bb324, #7a54a80f), var(--well-fill);
+  box-shadow: var(--well-shadow), inset 0 0 0 1px #c9a6de66;
+  color: var(--ivory);
+}
+/* Round keys stay round, and the one filled key stays violet: play is not a
+   secondary key, it is the one thing the transport is for. */
+[data-amp='guilt'] .tc-band .tc-button.round { border-radius: 50%; }
+[data-amp='guilt'] .tc-band :is(.tc-button.primary, .recorder .primary) {
+  border-color: transparent;
+  background: radial-gradient(circle at 50% 28%, var(--violet-400), var(--violet-600) 72%);
+  box-shadow: inset 0 1px 0 #ffffff3d, inset 0 0 0 1px #c2a9c84d, 0 2px 6px #0009;
+  color: var(--violet-50);
+}
+[data-amp='guilt'] .tc-band :is(.tc-button.primary, .recorder .primary):is(:hover, :focus-visible):not(:disabled) {
+  background: radial-gradient(circle at 50% 28%, var(--violet-300), var(--violet-500) 72%);
+  box-shadow: inset 0 1px 0 #ffffff4d, inset 0 0 0 1px #d8c2dd73, 0 2px 8px #000000a6;
+  color: #fff;
+}
+/* Quiet keys stay quiet: stop, clearing a selection, and deleting — which is
+   only allowed to look like a key once it has asked to be confirmed. */
+[data-amp='guilt'] .tc-band :is(.tc-button.quiet, .recorder .delete-track:not(.confirm)),
+[data-amp='guilt'] .tc-band :is(.tc-button.quiet, .recorder .delete-track:not(.confirm)):hover:not(:disabled) {
+  border-color: transparent;
+  background: none;
+  box-shadow: none;
+}
+[data-amp='guilt'] .tc-band .tc-button.quiet:hover:not(:disabled) { color: var(--ivory); }
+[data-amp='guilt'] .tc-band .recorder .delete-track:hover:not(:disabled) { border-color: var(--rec-line); color: var(--rec-lit); }
+
+/* Lamps. Every one of them is the rocker's violet, lit the way it is lit. */
+[data-amp='guilt'] .tc-band :is(
+  .enable[aria-pressed='true'] span,
+  .lamp.lit,
+  .mode .on .dot,
+  .loop-status[data-state='playing'] .loop-dot,
+  .arm span
+) {
+  background: var(--led);
+  border-color: var(--led);
+  box-shadow: 0 0 5px var(--led-glow);
+}
+/* Armed is a lamp waiting, not a lamp lit. */
+[data-amp='guilt'] .tc-band .lane-head:not(.armed) .arm span { background: none; border-color: var(--violet-700); box-shadow: none; }
+[data-amp='guilt'] .tc-band .lamp.lit::after { background: radial-gradient(circle, #a56bb3aa, transparent 70%); }
+/* The bar has no plate, but it is the same room, and it is read together with
+   the panel at the other end of the screen: it takes the bands' own inner
+   padding, and its navigation sits on the module step (11 px, 0.24 em) that
+   every name inside the panels is set on. Two scales at the two ends of one
+   window read as two designs. Its one light is the same lamp as the rest:
+   ivory over the rocker's violet. */
+[data-amp='guilt'] .bar { padding: 0 24px 0 20px; }
+[data-amp='guilt'] .bar .modes button { font-size: 11px; letter-spacing: 0.24em; }
+[data-amp='guilt'] .bar .mode-light::before { background: var(--ivory); box-shadow: 0 0 10px 1px #c9a6de80, 0 -4px 14px #a56bb340; }
+
+/* Recording, everywhere it shows: burgundy, never orange. Scoped to the
+   panels — the amp's own head and the meters' clip mark keep `--ember`. */
+[data-amp='guilt'] .tc-band {
+  --ember: var(--rec-lit);
+  --ember-line: var(--rec-line);
+}
+/* The record key is the one filled key that is not violet. */
+[data-amp='guilt'] .tc-band .take-record {
+  border-color: var(--rec-line);
+  background: radial-gradient(circle at 50% 30%, #6d2635, var(--rec) 70%);
+  box-shadow: 0 2px 6px #0009, inset 0 1px 0 #ffffff1a;
+}
+/* The lamp in it is burgundy too, down to its highlight: the shell's own is
+   lit salmon, which on a violet-black panel is the one warm thing on screen. */
+[data-amp='guilt'] .tc-band .take-lamp {
+  background: radial-gradient(circle at 40% 35%, #d295a0, var(--rec-lit) 70%);
+  box-shadow: 0 0 0 2px #00000059, 0 0 8px #b64a6055;
+}
+/* Taking: the same key, lit. The lamp inside it is what breathes; this is
+   only the difference between a dark bulb and one with current in it. */
+[data-amp='guilt'] .tc-band .take-record.recording {
+  border-color: var(--rec-lit);
+  background: radial-gradient(circle at 50% 30%, #8e3244, #601f2d 70%);
+  box-shadow: 0 2px 6px #0009, 0 0 14px #b64a6047, inset 0 1px 0 #ffffff26;
+}
+[data-amp='guilt'] .tc-band .take-record:disabled { background: var(--well-fill); border-color: #ffffff0d; box-shadow: none; }
+[data-amp='guilt'] .tc-band .primary.recording { background: var(--rec); border-color: var(--rec-line); color: #edccd3; }
+/* Burgundy has to survive the pointer: the keys' own hover is one step more
+   specific than these, so each says what it does under the hand. */
+[data-amp='guilt'] .tc-band .take-record:hover:not(:disabled) {
+  border-color: var(--rec-lit);
+  background: radial-gradient(circle at 50% 30%, #7f2d3e, #5b2130 70%);
+  box-shadow: 0 2px 6px #0009, inset 0 1px 0 #ffffff26;
+  color: var(--ivory);
+}
+[data-amp='guilt'] .tc-band .primary.recording:hover:not(:disabled) { background: #5f222f; border-color: var(--rec-lit); box-shadow: inset 0 1px 0 #ffffff26, 0 2px 6px #0009; color: #f4dde1; }
+
+/* Knobs in the bands wear the amplifier's own cap, cut from its photograph
+   (`scripts/make-guilt-cap.mjs`), under the head's engraved index: one ivory
+   knob in the studio, not two that disagree about where the light is.
+
+   The cap does not turn. It is a photograph: it carries the studio's light
+   baked into it and a shadow under it, and turning it turns both — the
+   highlight walks around the rim and the drop shadow ends up on top. So the
+   head's arrangement is taken whole: the cap is still and only the index
+   turns over it, in a box the size of the cap so it pivots on its centre. */
+[data-amp='guilt'] .tc-band .cap {
+  border-color: transparent;
+  background: var(--knob-cap) center / cover no-repeat;
+  box-shadow: 0 2px 4px #000000a6, 0 0 0 1px #0000004d;
+  transform: none;
+}
+[data-amp='guilt'] .tc-band .indicator {
+  inset: 0;
+  top: 0;
+  left: 0;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  transform: rotate(var(--angle));
+}
+/* Engraved, not printed: a dark groove with the light catching its far lip —
+   the same one the plate has, at the size the band's dial is. */
+[data-amp='guilt'] .tc-band .indicator::after {
+  content: '';
+  position: absolute;
+  top: 9%;
+  left: 50%;
+  width: 6%;
+  height: 27%;
+  margin-left: -3%;
+  border-radius: 40% / 5%;
+  background: linear-gradient(#514a57, #6c6572);
+  box-shadow: 0.5px 0 0 #ffffffcc;
+}
+[data-amp='guilt'] .tc-band .dial::before { background: radial-gradient(circle at 40% 32%, #241d2c, #0c0812 75%); }
+
+/* One face for values — the mono the clock and the counters already use — and
+   one for labels: small, spaced, uppercase, as the plate is engraved. */
+[data-amp='guilt'] .tc-band :is(.loop-status, .backing-name, .selection-info, .level output, .latency) {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+[data-amp='guilt'] .tc-band :is(.mode button, .level) {
+  font: 400 10px/1 var(--display);
+  font-stretch: 125%;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+[data-amp='guilt'] .tc-band .level output { letter-spacing: 0; text-transform: none; }
+
+/* The band's seams. The shell draws them as a border on whichever child
+   follows another, so each is as tall as that child — 120 px beside the
+   selectors, 40 px beside the pedals key — and a pearl at each end of a
+   40 px line is a colon, not a seam. So the theme draws the seam itself, at
+   one height for the whole band, with its two pearls in the same gradient:
+   one line, whatever stands either side of it.
+
+   A short inline rule gets no pearls at all. The one between the clock, the
+   bar and the tempo is 30 px of hairline inside a readout, and beading it
+   punctuated the numbers instead of separating them. */
+[data-amp='guilt'].page .global-controls > * + * { position: relative; border-left-color: transparent; }
+[data-amp='guilt'].page .global-controls > * + *::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 50%;
+  width: 1px;
+  height: 56px;
+  margin-top: -28px;
+  background: linear-gradient(#cdb6e000, #cdb6e040 16%, #cdb6e040 84%, #cdb6e000);
+  pointer-events: none;
+}
+/* The two pearls, one at each end of that line, as one painted layer. */
+[data-amp='guilt'].page .global-controls > * + *::after {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: 50%;
+  width: 3px;
+  height: 56px;
+  margin-top: -28px;
+  background:
+    radial-gradient(circle 1.5px at 50% 1.5px, var(--pearl), #cdb6e000 100%),
+    radial-gradient(circle 1.5px at 50% calc(100% - 1.5px), var(--pearl), #cdb6e000 100%);
+  pointer-events: none;
+}
+/* Full size the band is 136 px tall and a 56 px seam floats in it. */
+[data-amp='guilt'].page .global-controls.roomy > * + *::before,
+[data-amp='guilt'].page .global-controls.roomy > * + *::after { height: 96px; margin-top: -48px; }
+/* Below this the band wraps and drops its seams; the beading goes with them,
+   or it hangs at the start of a line with no rule under it. */
+@media (max-width: 1279px) {
+  [data-amp='guilt'].page .global-controls > * + *::before,
+  [data-amp='guilt'].page .global-controls > * + *::after { display: none; }
+}

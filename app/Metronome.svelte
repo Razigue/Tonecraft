@@ -101,6 +101,8 @@
     background: transparent;
     color: var(--accent);
     font: 300 64px/1 var(--display);
+    /* The page's tracking is for a line of text, not for a numeral this big. */
+    letter-spacing: normal;
     font-variant-numeric: tabular-nums;
     text-align: center;
     appearance: textfield;

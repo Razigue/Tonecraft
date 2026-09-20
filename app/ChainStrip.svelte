@@ -42,6 +42,18 @@
 
   const t = $derived(lang.ui);
   const param = (id: string): Param => PARAMS.find((p) => p.id === id)!;
+  /**
+   * The stages the amplifier's plate has no place for. They are pedals in the
+   * chain either way — a transposer and a screamer in front, a reverb behind —
+   * so they are grouped as pedals rather than squeezed onto a faceplate that
+   * was never engraved for them. Boost keeps its switch on the head too: in
+   * Play the head is off screen, and a stage must stay reachable from the band.
+   */
+  const PEDALS = [
+    { stage: 'pitch', bypass: 'pitch_bypass', knobs: ['pitch_shift', 'pitch_mix'] },
+    { stage: 'boost', bypass: 'drive_bypass', knobs: ['drive_tone'] },
+    { stage: 'reverb', bypass: 'reverb_bypass', knobs: ['reverb_mix'] },
+  ] as const;
   /** A select value that is an action, not a cabinet. */
   const LOAD_CAB = 'load-ir';
   /** Rail length: the compact dial's height, or the full knob's label to value. */
@@ -80,7 +92,7 @@
   }
 </script>
 
-<section class="global-controls tc-plate" class:roomy aria-label={t.rig.globalControls}>
+<section class="global-controls tc-plate tc-panel tc-band" class:roomy aria-label={t.rig.globalControls}>
   <div class="io-control">
     <Meter level={inputPeak} kind="peak" {travel} label={roomy ? t.rig.meterIn : undefined} />
     <Knob compact={!roomy} param={param('in_trim')} value={values.in_trim!} resetValue={resetValues.in_trim} onchange={v => onparam('in_trim', v)} label={t.params.in_trim} />
@@ -119,6 +131,15 @@
       </div>
     {/if}
   </div>
+  <!-- What the head has no place engraved for. Its plate is a map of seven
+       controls and a lever; these three stages are real and have to be
+       reachable, so they live here, behind one key, rather than being drawn
+       onto an amplifier that does not have them. -->
+  <div class="pedals-control">
+    <button class="tc-button icon pedals-button" type="button" popovertarget="chain-pedals" aria-label={t.rig.pedals} title={t.rig.pedals}>
+      <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="2.2" y="2.2" width="11.6" height="11.6" rx="1.6" /><circle cx="8" cy="6.2" r="1.9" /><path d="M4.6 11.4h6.8" stroke-linecap="round" /></svg>
+    </button>
+  </div>
   {#if power}
     <div class="power-control">
       <button class="power" type="button" aria-label={t.rig.amplifierPower} title={t.rig.amplifierPower} aria-pressed={power.on} aria-busy={power.busy} disabled={power.disabled} onclick={power.onpress}>
@@ -136,11 +157,26 @@
     <Meter level={outputRms} {travel} label={roomy ? t.rig.meterOut : undefined} />
   </div>
   </div>
+
+  <div id="chain-pedals" class="pedals tc-popover" popover aria-label={t.rig.pedals}>
+    {#each PEDALS as pedal (pedal.stage)}
+      <div class="pedal">
+        <button class="enable" aria-label={t.rig.groupEnabled[pedal.stage]} aria-pressed={values[pedal.bypass] !== 1}
+          onclick={() => onparam(pedal.bypass, values[pedal.bypass] === 1 ? 0 : 1)}><b>{t.rig.groups[pedal.stage]}</b><span></span></button>
+        <div class="pedal-knobs">
+          {#each pedal.knobs as id (id)}
+            <Knob param={param(id)} value={values[id]!} resetValue={resetValues[id]} onchange={(v) => onparam(id, v)} label={t.params[id]} />
+          {/each}
+        </div>
+      </div>
+    {/each}
+  </div>
 </section>
 
 <style>
   /* One row, in signal order, seams between the stages. */
   .global-controls {
+    anchor-name: --chain-band;
     display: flex;
     align-items: center;
     gap: 24px;
@@ -148,8 +184,11 @@
     padding: 0 24px;
   }
   /* Full knobs: the band the original studio had over the head. */
-  .roomy { height: 136px; gap: 32px; padding: 0 32px; }
-  .roomy > * + * { padding-left: 32px; }
+  /* Full size, the row carries one more stage than it used to — the pedals'
+     key — and 32 px seams no longer leave the meters their names. The seam is
+     the compact row's, which is the same band at the same rhythm. */
+  .roomy { height: 136px; gap: 24px; padding: 0 24px; }
+  .roomy > * + * { padding-left: 24px; }
   .roomy .io-control, .roomy .gate-control, .roomy .doubler-control { gap: 16px; }
   .roomy .rig-selectors { flex-direction: column; gap: 12px; }
   .roomy .selector { gap: 8px; }
@@ -158,7 +197,9 @@
   .roomy .preset-picker select { min-height: 44px; font-size: 16px; }
   /* Beside its name, as the head's blocks carry theirs. */
   .roomy .gate-control { position: relative; }
-  .roomy .enable { position: absolute; top: -8px; left: calc(50% + 30px); }
+  /* The band's own two lamps, and only those: the pedals' panel is a child of
+     this section too, and its switches must stay in their own flow. */
+  .roomy .gate-control .enable,.roomy .doubler-control .enable { position: absolute; top: -8px; left: calc(50% + 30px); }
   .global-controls > * + * { padding-left: 24px; border-left: 1px solid var(--line); }
   .io-control, .gate-control, .doubler-control { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
   /* The doubler is the last stage before the output and sits against it, one
@@ -172,7 +213,9 @@
      over the dial, as a block's name is on the head ("PITCH ●"), and the dial
      keeps only its value. The knob still carries its name for a screen reader. */
   .roomy .doubler-control { position: relative; }
-  .roomy .doubler-control .enable { left: calc(50% + 48px); }
+  /* No offset of its own: it takes the gate's, above. Its own was 48 px, which
+     put the lamp past the knob's box and into the output's name beside it —
+     the two groups are 24 px apart and the lamp is 24 px wide. */
   .global-controls:not(.roomy) .doubler-control { flex-direction: column; align-items: flex-start; gap: 4px; }
   .global-controls:not(.roomy) .doubler-control .enable { order: -1; display: flex; gap: 7px; width: auto; height: 16px; }
   .global-controls:not(.roomy) .doubler-control :global(.compact .label) { display: none; }
@@ -196,6 +239,26 @@
   .enable span { width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--violet-600); box-sizing: border-box; transition: background-color var(--dur-settle) var(--ease-out), border-color var(--dur-settle) var(--ease-out); }
   .enable[aria-pressed='true'] span { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 5px #d6b6e399; }
   .enable:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
+
+  /* One key in the row, and three stages behind it, each with its switch as
+     its name — the same shape the gate and the doubler use in the band. */
+  .pedals-control { flex-shrink: 0; }
+  /* A key, not a word: the row is full at both sizes, and a named key here is
+     paid for by the preset's own width. It names itself in its tooltip, in the
+     panel it opens, and in the tutorial, which rings it. */
+  .pedals-button { anchor-name: --chain-pedals; }
+  /* It hangs from the band's own bottom edge, not from the key's: the key sits
+     inside a 136 px plate, and a panel opening under it would cover the stages
+     beside it. Where anchors are not supported yet, it is simply centred. */
+  .pedals { position: fixed; inset: 50% auto auto 50%; translate: -50% -50%; padding: 20px 24px; }
+  .pedals:popover-open { display: flex; align-items: flex-start; gap: 28px; }
+  @supports (position-anchor: --a) {
+    .pedals { position-anchor: --chain-pedals; inset: auto; top: anchor(--chain-band bottom); left: anchor(center); translate: -50% 0; margin-top: 12px; position-try-fallbacks: flip-block; }
+  }
+  .pedal { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .pedal + .pedal { padding-left: 28px; border-left: 1px solid var(--line); }
+  .pedal .enable { display: flex; gap: 8px; width: auto; height: 16px; }
+  .pedal-knobs { display: flex; gap: 20px; }
 
   .eyebrow, .selector > span {
     font: 400 10px/1 var(--display);

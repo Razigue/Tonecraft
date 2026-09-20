@@ -489,12 +489,10 @@
     cab: '.rig-selectors .selector:nth-child(2)',
     preset: '.tone-selector',
     output: '.output-control',
-    tone: '.amp-panel > .tone-group',
-    pitch: '.amp-panel > .control-group:nth-child(3)',
-    boost: '.amp-panel > .control-group:nth-child(4)',
-    reverb: '.amp-panel > .control-group:nth-child(5)',
-    blocks: '.amp-panel .group-label',
-    power: '.power-indicator',
+    tone: '.amp-head .cap-slot, .amp-panel .knob-row',
+    boost: '.boost-lever, .boost-toggle',
+    pedals: '.pedals-control',
+    power: '.rocker, .power-indicator',
     demo: '.demo-launch, .demo-panel .file',
     wave: '.demo-panel .wave',
     loop: '.demo-panel .check',
@@ -1326,7 +1324,7 @@
      nothing scrolling. A tester arrived with no guitar to try any of it with, so
      they get a page to read: the same bar, the same chain, the same head, the
      demo and the reader under it, scrolling as a page does (CLAUDE.md §4). -->
-<div class="page" class:tester class:touring data-view={tester ? 'tone' : view} style:--dock={`${dockHeight}px`} bind:clientWidth={pageWidth}>
+<div class="page" class:tester class:touring data-amp={isGuilt ? "guilt" : "neutral"} data-view={tester ? "tone" : view} style:--dock={`${dockHeight}px`} bind:clientWidth={pageWidth}>
   <StudioBar view={tester ? 'tone' : view} onview={chooseView} {latencyMs} {latencyDetail} {touring} showTour={tester} showModes={!tester} settingsDisabled={engineState === 'starting'}
     ontour={() => (touring = true)} onsettings={openSettings} />
 
@@ -1368,8 +1366,8 @@
       <!-- The demo and the reader, one under the other, each on its own plate:
            there is no transport to hold them, and nothing here is played by
            hand — the tab keeps the transport's own row above it. -->
-      <section class="demo-panel tc-plate" aria-label={t.rig.demo}>{@render demoPanel()}</section>
-      <section class="tab-column tc-plate" class:reading={deck.loaded}>
+      <section class="demo-panel tc-plate tc-panel" aria-label={t.rig.demo}>{@render demoPanel()}</section>
+      <section class="tab-column tc-plate tc-panel" class:reading={deck.loaded}>
         <!-- Only once a score is open: with none, the reader's own header is
              already where a tab is opened, and two invitations is one too many. -->
         {#if deck.loaded}<div class="tab-row"><TabTransport {deck} view="play" syncBpm={metronomeSync ? metronomeBpm : null} /></div>{/if}
@@ -1380,7 +1378,7 @@
     {:else}
       <!-- Mounted in both views, and only stowed in Tone: a song keeps playing
            under a tone being dialled, and alphaTab keeps a width to lay out in. -->
-      <div class="tab-stage tc-plate" class:stowed={view !== 'play'} inert={view !== 'play'}>
+      <div class="tab-stage tc-plate tc-panel" class:stowed={view !== 'play'} inert={view !== 'play'}>
         <TabReader {deck} ontempo={takeScoreTempo} onopen={() => chooseView('play')} syncBpm={metronomeSync ? metronomeBpm : null} onsyncstart={syncTabStart} onsyncstop={syncTabStop} onwrite={() => { if (touring) wroteNote = true; }} />
       </div>
     {/if}
@@ -1545,6 +1543,7 @@
       var(--surface-0);
     color: var(--text);
     font-family: var(--body);
+    letter-spacing: var(--body-tracking);
   }
   :global(select option) { background: var(--surface-2); color: var(--text); }
   :global(button:focus-visible) { outline: 2px solid var(--iris); outline-offset: 4px; }
@@ -1559,6 +1558,10 @@
     /* The room at each side of the bands: the gutter, and the floating tuner
        and metronome standing in it. The bar spans it; nothing else does. */
     --side: calc(var(--gutter) + 74px);
+    /* Its own stacking context, so the room below (`::before`) stays inside
+       the page. Without it the layer goes behind the canvas, whose background
+       is opaque, and is never seen at all. */
+    isolation: isolate;
     display: grid;
     grid-template-rows: var(--bar-height) auto minmax(0, 1fr) auto;
     /* One column no wider than the window: a laid-out score is kilometres of
@@ -1706,6 +1709,28 @@
      settles. */
   .amp-frame { position: relative; display: flex; justify-content: center; width: max-content; }
   .amp-frame > :global(.amp-stand) { position: relative; flex: none; }
+  /* The room itself, behind everything: the nave the head is photographed in,
+     blurred to the depth of field a lens would give it at that distance, so it
+     reads as a place and never competes with the object in front of it. Tone
+     only — in Play the tab is edge to edge and a cathedral under a score is
+     noise. A scrim keeps the bar and the transport on their dark surface; the
+     plates are opaque, so what is seen of the room is what stands around them.
+     Static: one image, decoded once, 23 kB. Only `.room-light` above it moves. */
+  .page::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      linear-gradient(#09080bb3, #09080b73 38%, #09080bdb),
+      url('/images/bg-guilt.webp') center / cover no-repeat;
+    opacity: 0;
+    transition: opacity var(--dur-settle) var(--ease-out);
+  }
+  [data-view='tone']::before { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .page::before { transition: none; } }
+
   .room-light {
     position: absolute;
     inset: -16px calc(-1 * var(--gutter));

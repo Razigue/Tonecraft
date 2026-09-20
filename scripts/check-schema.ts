@@ -40,6 +40,13 @@ const onFaders = [
   ...[...rig.matchAll(/<Knob\s+(?:compact(?:=\{[^}]*\})?\s+)?param=\{param\('([^']+)'\)\}/g)].map(m => m[1]!),
   ...[...rig.matchAll(/\{#each \[([^\]]+)\] as id\}<Knob/g)]
     .flatMap(m => [...m[1]!.matchAll(/'([^']+)'/g)].map(x => x[1]!)),
+  // The GUILT head is a photograph with the controls placed on it, so what it
+  // shows is a table of ids and coordinates rather than seven tags; the pedals
+  // behind the band's one key are a table for the same reason. Both are still
+  // the source that renders, so reading them keeps this check honest.
+  ...[...rig.matchAll(/\{ id: '([^']+)', x: [\d.]+ \}/g)].map(m => m[1]!),
+  ...[...rig.matchAll(/knobs: \[([^\]]+)\]/g)]
+    .flatMap(m => [...m[1]!.matchAll(/'([^']+)'/g)].map(x => x[1]!)),
 ];
 
 /**

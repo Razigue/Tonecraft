@@ -53,7 +53,7 @@
   {/if}
 {/snippet}
 
-<footer class="transport tc-plate" class:roomy={view === 'play'} class:with-tracks={!!tracks} aria-label={t.transport} bind:clientHeight={height}>
+<footer class="transport tc-plate tc-panel tc-band" class:roomy={view === 'play'} class:with-tracks={!!tracks} aria-label={t.transport} bind:clientHeight={height}>
   <div class="transport-row">
     <TabTransport {deck} {view} {syncBpm} keys={musician ? takeKey : undefined} status={musician ? takeStatus : undefined} />
 
