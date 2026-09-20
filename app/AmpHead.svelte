@@ -38,6 +38,8 @@
   const bloom = `${import.meta.env.BASE_URL}images/guilt-glass-bloom.webp`;
   const boostOn = `${import.meta.env.BASE_URL}images/guilt-boost-on.webp`;
   const boostOff = `${import.meta.env.BASE_URL}images/guilt-boost-off.webp`;
+  const powerOn = `${import.meta.env.BASE_URL}images/guilt-power-on.webp`;
+  const powerOff = `${import.meta.env.BASE_URL}images/guilt-power-off.webp`;
 
   /**
    * The head's own image, in its own pixels. Every control below is placed in
@@ -70,7 +72,14 @@
   const GLASS = { x: 95, y: 174, w: 1486, h: 477 };
   /** Under the engraved BOOST, and past the signature. Same coordinates. */
   const BOOST = { x: 707, y: 731, w: 39, h: 62.5 };
-  const ROCKER = { x: 1508, y: 729, w: 56, h: 78 };
+  /**
+   * The rocker owns the end of the plate, on the knob row's own centreline and
+   * about as tall as a cap is wide, so it reads as another object bolted to the
+   * same piece of metal. Its aspect is its bezel's, 608 by 875 in the render.
+   * The signature was moved out of this space and centred in the gap it leaves
+   * (`scripts/make-guilt-head.mjs`): the two used to overlap.
+   */
+  const ROCKER = { x: 1502, y: 731, w: 64, h: (64 * 875) / 608 };
 
   const px = (v: number, total: number): string => `${(v / total) * 100}%`;
   const slot = (x: number, y: number, w: number, h: number): string =>
@@ -113,7 +122,13 @@
 
       <button class="rocker tc-tip-host" type="button" style={slot(ROCKER.x, ROCKER.y, ROCKER.w, ROCKER.h)}
         aria-label={t.rig.amplifierPower} aria-pressed={ampIlluminated} aria-busy={powerBusy} disabled={powerDisabled} onclick={onpower}>
-        <span class="rocker-well" aria-hidden="true"><span class="rocker-face" class:lit={ampIlluminated}><span class="rocker-lamp"></span></span></span>
+        <!-- Two photographs of one switch, on and off, sharing their bezel to
+             the pixel (`scripts/make-power-switch.mjs`). Only which one is
+             opaque changes, so the rocker tips and the lamp warms while the
+             metal they are bolted to stays put. It replaces a bezel that was
+             built in CSS and never sat on the same surface as the plate. -->
+        <img class="lever lamp" class:shown={ampIlluminated} src={powerOn} alt="" aria-hidden="true" width="240" height="345" decoding="async" />
+        <img class="lever lamp" class:shown={!ampIlluminated} src={powerOff} alt="" aria-hidden="true" width="240" height="345" decoding="async" />
         <span class="tc-tip"><b>{t.rig.power}</b>{ampIlluminated ? t.rig.on : t.rig.off}</span>
       </button>
     </section>
@@ -185,55 +200,16 @@
   .lever.shown { opacity: 1; }
   .boost-lever:focus-visible,.rocker:focus-visible { outline: 2px solid var(--iris); outline-offset: 3px; border-radius: var(--radius); }
 
-  /* The rocker is the one control the raster has no place drawn for: it sits
-     in its own bezel, cut into the plate past the signature. */
-  .rocker-well {
-    position: absolute;
-    inset: 0;
-    display: block;
-    padding: 3px;
-    border: 1px solid #8e8883;
-    border-radius: 5px;
-    background: #6d6763;
-    perspective: 190px;
-    box-shadow: 0 -1px 0 2px #f2efe9,0 1px 0 2px #b3aca6,0 3px 0 2px #8b8580,0 6px 6px #2b262633,inset 0 2px 5px #3a3633;
-  }
-  .rocker-face {
-    position: absolute;
-    inset: 3px;
-    display: grid;
-    place-items: center;
-    border: 1px solid #efece6;
-    border-radius: 3px;
-    background: linear-gradient(#fdfbf7,#e6e2db 46%,#c9c4bd 53%,#ded9d2);
-    transform: rotateX(-13deg);
-    box-shadow: 0 -2px 0 #a49e98,0 -3px 1px #fffdf9,inset 1px 0 1px #fffefb,inset -1px 0 1px #fffefbaa;
-    transition: transform var(--dur-quick) var(--ease-out);
-  }
-  .rocker-lamp { position: relative; width: 10px; height: 5px; border-radius: 2.5px; background: #4a3d54; box-shadow: 0 0 0 1px #a39d97,0 1px 0 1px #fffdf8,inset 0 1px 2px #221b28; }
-  .rocker-lamp::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: #c9a6de;
-    box-shadow: 0 0 5px #d9b7ee,0 0 10px #a56bb388,inset 0 1px 0 #fff9;
-    opacity: 0;
-    transition: opacity 550ms ease-in;
-  }
-  .rocker-face.lit {
-    background: linear-gradient(#bdb7b1,#d8d3cc 45%,#f6f3ee 53%,#e9e5de);
-    transform: rotateX(13deg);
-    box-shadow: 0 3px 0 #a49e98,0 4px 1px #efebe4,inset 0 1px 3px #6f6963aa,inset 1px 0 1px #fffefb,inset -1px 0 1px #fffefbaa;
-  }
-  .rocker-face.lit .rocker-lamp::after { opacity: 1; }
-  .rocker:hover:not(:disabled) .rocker-well { border-color: var(--violet-300); }
-  .rocker:active:not(:disabled) .rocker-face { transform: rotateX(0deg); }
+  /* The lamp warms rather than snaps: a valve amplifier's does, and at
+     `--dur-quick` the switch read as a checkbox. */
+  .lamp { transition-duration: 550ms; transition-timing-function: ease-in; }
+  /* No hover state of its own: the tooltip is the one the plate's controls
+     get, and animating a filter over a drop-shadow is forbidden anyway. */
+  .rocker:active:not(:disabled) .lever { translate: 0 1px; }
   .rocker:disabled { cursor: wait; }
-  @starting-style { .rocker-face.lit .rocker-lamp::after { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) {
     .skin-veil { opacity: .2 !important; }
-    .skin-night,.skin-veil,.skin-bloom,.rocker-lamp::after,.rocker-face,.lever { transition: none; }
+    .skin-night,.skin-veil,.skin-bloom,.lever { transition: none; }
     .skin-bloom img { opacity: .22 !important; will-change: auto; }
   }
 

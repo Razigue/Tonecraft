@@ -186,7 +186,7 @@ const en: LandingCopy = {
     tuner: 'The chromatic tuner',
     metronome: 'The metronome',
     engine: 'Tonecraft audio settings with the ASIO choice',
-    banner: 'Purple stained glass',
+    banner: 'The nave GUILT is photographed in',
   },
 };
 
@@ -336,7 +336,7 @@ const fr: LandingCopy = {
     tuner: 'L’accordeur chromatique',
     metronome: 'Le métronome',
     engine: 'Réglages audio de Tonecraft avec le choix ASIO',
-    banner: 'Vitrail violet',
+    banner: 'La nef dans laquelle GUILT est photographié',
   },
 };
 

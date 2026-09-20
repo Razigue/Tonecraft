@@ -133,7 +133,12 @@
   .display-name { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-3); }
   .display-title { overflow: hidden; font: 500 12px/1 var(--body); color: var(--text-2); text-overflow: ellipsis; white-space: nowrap; }
   .display-status { display: flex; margin-left: auto; }
-  .display-open { display: flex; align-items: center; gap: 4px; margin-left: -4px; }
+  /* Centred in the window, not pinned to its left edge. With no tab open the
+     window is an invitation and nothing else, and it is as wide as the whole
+     transport: two keys in its top-left corner read as a toolbar that had lost
+     its toolbar. Once a tab is open the window fills with the clock and the
+     scrub, and that lays itself out from the left as a readout does. */
+  .display-open { display: flex; align-items: center; justify-content: center; gap: 4px; }
   .display-open .tc-button { height: 36px; }
 
   /* Elapsed left of the groove, length right of it, then where in the song. */

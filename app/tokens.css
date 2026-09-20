@@ -427,6 +427,12 @@
    The reader is full of selects that belong to a score on white paper, and
    sinking those into a violet groove would be theming somebody else's page.
 
+   `.tc-dialog` is the shell's own floating surfaces — the settings, the
+   welcome, the tuner, the metronome — and it is read here as a band that
+   happens to float: they hold the same kind of control and they opened as
+   flat grey boxes in the middle of a violet-black studio. The reader's
+   score-tracks panel is not one, and keeps its own.
+
    The band itself. One surface: no border, a highlight along its top lip, a
    violet thread around it, and the nave blurred behind it. */
 [data-amp='guilt'] .tc-panel {
@@ -460,10 +466,27 @@
   backdrop-filter: none;
 }
 
+/* What floats: the dialogs and the panels that open from the bands. Same
+   material as a band — the cabinet's corner, the light along the top lip, the
+   shadow it casts — but opaque rather than 85 %. A band is a plate in a room
+   and the room reads through it; a dialog stands over a room that has already
+   been darkened behind it, and letting the nave through it only made the text
+   harder to read. No blur either, for the same reason: there is nothing left
+   behind one to blur. */
+[data-amp='guilt'] :is(.tc-dialog, .tc-popover) {
+  border-color: transparent;
+  border-radius: var(--panel-radius);
+  background: var(--panel-sheen), var(--panel-fill);
+  box-shadow: inset 0 1px 0 var(--panel-edge), 0 28px 64px #000000b3, 0 0 0 1px #0000008c;
+}
+/* The room goes dark behind one, rather than merely dim: the studio it covers
+   is a lit object and a scrim at 80 % left it legible through the panel. */
+[data-amp='guilt'] .tc-dialog::backdrop { background: #04030699; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+
 /* Wells — the tab display, the recorder's lanes and its segmented mode, the
    fields and the selects. Cut into the panel rather than drawn on it: no
    border at all, a shadow falling in from the top edge, a darker fill. */
-[data-amp='guilt'] .tc-band :is(.display, .lane, .mode) {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.display, .lane, .mode) {
   border-color: transparent;
   background: var(--well-fill);
   box-shadow: var(--well-shadow);
@@ -474,33 +497,33 @@
    or out-specify the rule that draws it. */
 /* Typed-in fields only: a range input is a groove already, and filling it
    would paint a well over the rail. */
-[data-amp='guilt'] .tc-band :is(input[type='text'], input:not([type])) {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(input[type='text'], input:not([type])) {
   border-color: transparent;
   background: var(--well-fill);
   box-shadow: var(--well-shadow);
 }
-[data-amp='guilt'] .tc-band select {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) select {
   border-color: transparent;
   background: var(--chevron) no-repeat right 11px center, var(--well-fill);
   box-shadow: var(--well-shadow);
 }
-[data-amp='guilt'] .tc-band :is(select, input[type='text']):hover {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(select, input[type='text']):hover {
   box-shadow: var(--well-shadow), inset 0 0 0 1px #7a54a84d;
 }
 /* Two corners in the studio: the band takes the cabinet's, everything inside
    it takes 8. The shell's single 4 px read as a form field. */
-[data-amp='guilt'] .tc-band :is(.display, .lane, .mode, select, input[type='text'], input:not([type])) { border-radius: 8px; }
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.display, .lane, .mode, select, input[type='text'], input:not([type])) { border-radius: 8px; }
 /* A select is also a key elsewhere in the row (the tab's speed). It is the
    same groove as the others and carries its chevron over it — the chevron is
    a background layer, so it cannot be inherited from the rule below. */
-[data-amp='guilt'] .tc-band select.tc-button {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) select.tc-button {
   border-color: transparent;
   border-radius: 8px;
   background: var(--chevron) no-repeat right 11px center, var(--well-fill);
   box-shadow: var(--well-shadow);
   color: var(--ivory);
 }
-[data-amp='guilt'] .tc-band select.tc-button:hover:not(:disabled) { box-shadow: var(--well-shadow), inset 0 0 0 1px #a56bb366; }
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) select.tc-button:hover:not(:disabled) { box-shadow: var(--well-shadow), inset 0 0 0 1px #a56bb366; }
 
 /* The keys. There is one secondary key in this studio and it is the groove:
    the same violet-black the lanes and the fields are cut into, no border at
@@ -514,68 +537,103 @@
 
    `.tc-panel` is not enough of a guard here: the tab reader is one too, and
    its keys belong to a score on white paper. */
-[data-amp='guilt'] .tc-band :is(.tc-button, .power),
-[data-amp='guilt'] .tc-band .recorder :is(.actions, .lane-tools, .record-tools) > button,
-[data-amp='guilt'] .tc-band .recorder .export-menu > button {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.tc-button, .power),
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .recorder :is(.actions, .lane-tools, .record-tools) > button,
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .recorder .export-menu > button {
   border-color: transparent;
   border-radius: 8px;
   background: var(--well-fill);
   box-shadow: var(--well-shadow);
   color: var(--ivory);
 }
-[data-amp='guilt'] .tc-band :is(.tc-button, .power):is(:hover, :focus-visible):not(:disabled),
-[data-amp='guilt'] .tc-band .recorder :is(.actions, .lane-tools, .record-tools) > button:is(:hover, :focus-visible):not(:disabled),
-[data-amp='guilt'] .tc-band .recorder .export-menu > button:is(:hover, :focus-visible):not(:disabled) {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.tc-button, .power):is(:hover, :focus-visible):not(:disabled),
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .recorder :is(.actions, .lane-tools, .record-tools) > button:is(:hover, :focus-visible):not(:disabled),
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .recorder .export-menu > button:is(:hover, :focus-visible):not(:disabled) {
   background: var(--well-fill);
   box-shadow: var(--well-shadow), inset 0 0 0 1px #a56bb366;
   color: var(--ivory);
 }
 /* Pressed: further into the panel, not a different colour. */
-[data-amp='guilt'] .tc-band :is(.tc-button, .power):active:not(:disabled),
-[data-amp='guilt'] .tc-band .recorder :is(.actions, .lane-tools, .record-tools) > button:active:not(:disabled),
-[data-amp='guilt'] .tc-band .recorder .export-menu > button:active:not(:disabled) {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.tc-button, .power):active:not(:disabled),
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .recorder :is(.actions, .lane-tools, .record-tools) > button:active:not(:disabled),
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .recorder .export-menu > button:active:not(:disabled) {
   box-shadow: inset 0 3px 7px #000000cc, inset 0 0 0 1px #7a54a833;
 }
-[data-amp='guilt'] .tc-band :is(.tc-button, .power):disabled,
-[data-amp='guilt'] .tc-band .recorder :is(.actions, .lane-tools, .record-tools) > button:disabled,
-[data-amp='guilt'] .tc-band .recorder .export-menu > button:disabled {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.tc-button, .power):disabled,
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .recorder :is(.actions, .lane-tools, .record-tools) > button:disabled,
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .recorder .export-menu > button:disabled {
   background: var(--well-fill);
   box-shadow: var(--well-shadow);
   color: var(--text-3);
 }
 /* A key that is on keeps the groove and gets the lamp's own thread. */
-[data-amp='guilt'] .tc-band :is(.tc-button[aria-pressed='true'], .tc-button[aria-expanded='true'], .tc-button.on) {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.tc-button[aria-pressed='true'], .tc-button[aria-expanded='true'], .tc-button.on) {
   background: linear-gradient(#a56bb324, #7a54a80f), var(--well-fill);
   box-shadow: var(--well-shadow), inset 0 0 0 1px #c9a6de66;
   color: var(--ivory);
 }
 /* Round keys stay round, and the one filled key stays violet: play is not a
    secondary key, it is the one thing the transport is for. */
-[data-amp='guilt'] .tc-band .tc-button.round { border-radius: 50%; }
-[data-amp='guilt'] .tc-band :is(.tc-button.primary, .recorder .primary) {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .tc-button.round { border-radius: 50%; }
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.tc-button.primary, .recorder .primary) {
   border-color: transparent;
   background: radial-gradient(circle at 50% 28%, var(--violet-400), var(--violet-600) 72%);
   box-shadow: inset 0 1px 0 #ffffff3d, inset 0 0 0 1px #c2a9c84d, 0 2px 6px #0009;
   color: var(--violet-50);
 }
-[data-amp='guilt'] .tc-band :is(.tc-button.primary, .recorder .primary):is(:hover, :focus-visible):not(:disabled) {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.tc-button.primary, .recorder .primary):is(:hover, :focus-visible):not(:disabled) {
   background: radial-gradient(circle at 50% 28%, var(--violet-300), var(--violet-500) 72%);
   box-shadow: inset 0 1px 0 #ffffff4d, inset 0 0 0 1px #d8c2dd73, 0 2px 8px #000000a6;
   color: #fff;
 }
 /* Quiet keys stay quiet: stop, clearing a selection, and deleting — which is
    only allowed to look like a key once it has asked to be confirmed. */
-[data-amp='guilt'] .tc-band :is(.tc-button.quiet, .recorder .delete-track:not(.confirm)),
-[data-amp='guilt'] .tc-band :is(.tc-button.quiet, .recorder .delete-track:not(.confirm)):hover:not(:disabled) {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.tc-button.quiet, .recorder .delete-track:not(.confirm)),
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.tc-button.quiet, .recorder .delete-track:not(.confirm)):hover:not(:disabled) {
   border-color: transparent;
   background: none;
   box-shadow: none;
 }
-[data-amp='guilt'] .tc-band .tc-button.quiet:hover:not(:disabled) { color: var(--ivory); }
-[data-amp='guilt'] .tc-band .recorder .delete-track:hover:not(:disabled) { border-color: var(--rec-line); color: var(--rec-lit); }
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .tc-button.quiet:hover:not(:disabled) { color: var(--ivory); }
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .recorder .delete-track:hover:not(:disabled) { border-color: var(--rec-line); color: var(--rec-lit); }
+
+/* The dialogs' own keys. They were written before `.tc-button` existed and
+   carry their own names — `.secondary` and `.start` for a choice, `.connect`
+   and `.update-button` for the one that closes the dialog — so they have to
+   be named here too, or the settings would hold two kinds of key: a groove
+   for the ones the band lent it and a raised grey film for its own. */
+[data-amp='guilt'] .tc-dialog :is(.secondary, .start) {
+  border-color: transparent;
+  border-radius: 8px;
+  background: var(--well-fill);
+  box-shadow: var(--well-shadow);
+  color: var(--ivory);
+}
+[data-amp='guilt'] .tc-dialog :is(.secondary, .start):hover:not(:disabled) {
+  background: var(--well-fill);
+  box-shadow: var(--well-shadow), inset 0 0 0 1px #a56bb366;
+  color: var(--ivory);
+}
+[data-amp='guilt'] .tc-dialog :is(.secondary, .start):active:not(:disabled) {
+  box-shadow: inset 0 3px 7px #000000cc, inset 0 0 0 1px #7a54a833;
+}
+/* The one filled key a dialog has, and the transport's play key are the same
+   object: the thing the panel is for. */
+[data-amp='guilt'] .tc-dialog :is(.connect, .update-button) {
+  border-color: transparent;
+  border-radius: 8px;
+  background: radial-gradient(circle at 50% 28%, var(--violet-400), var(--violet-600) 72%);
+  box-shadow: inset 0 1px 0 #ffffff3d, inset 0 0 0 1px #c2a9c84d, 0 2px 6px #0009;
+  color: var(--violet-50);
+}
+[data-amp='guilt'] .tc-dialog :is(.connect, .update-button):hover:not(:disabled) {
+  background: radial-gradient(circle at 50% 28%, var(--violet-300), var(--violet-500) 72%);
+  box-shadow: inset 0 1px 0 #ffffff4d, inset 0 0 0 1px #d8c2dd73, 0 2px 8px #000000a6;
+  color: #fff;
+}
 
 /* Lamps. Every one of them is the rocker's violet, lit the way it is lit. */
-[data-amp='guilt'] .tc-band :is(
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(
   .enable[aria-pressed='true'] span,
   .lamp.lit,
   .mode .on .dot,
@@ -587,8 +645,8 @@
   box-shadow: 0 0 5px var(--led-glow);
 }
 /* Armed is a lamp waiting, not a lamp lit. */
-[data-amp='guilt'] .tc-band .lane-head:not(.armed) .arm span { background: none; border-color: var(--violet-700); box-shadow: none; }
-[data-amp='guilt'] .tc-band .lamp.lit::after { background: radial-gradient(circle, #a56bb3aa, transparent 70%); }
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .lane-head:not(.armed) .arm span { background: none; border-color: var(--violet-700); box-shadow: none; }
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .lamp.lit::after { background: radial-gradient(circle, #a56bb3aa, transparent 70%); }
 /* The bar has no plate, but it is the same room, and it is read together with
    the panel at the other end of the screen: it takes the bands' own inner
    padding, and its navigation sits on the module step (11 px, 0.24 em) that
@@ -601,40 +659,40 @@
 
 /* Recording, everywhere it shows: burgundy, never orange. Scoped to the
    panels — the amp's own head and the meters' clip mark keep `--ember`. */
-[data-amp='guilt'] .tc-band {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) {
   --ember: var(--rec-lit);
   --ember-line: var(--rec-line);
 }
 /* The record key is the one filled key that is not violet. */
-[data-amp='guilt'] .tc-band .take-record {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .take-record {
   border-color: var(--rec-line);
   background: radial-gradient(circle at 50% 30%, #6d2635, var(--rec) 70%);
   box-shadow: 0 2px 6px #0009, inset 0 1px 0 #ffffff1a;
 }
 /* The lamp in it is burgundy too, down to its highlight: the shell's own is
    lit salmon, which on a violet-black panel is the one warm thing on screen. */
-[data-amp='guilt'] .tc-band .take-lamp {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .take-lamp {
   background: radial-gradient(circle at 40% 35%, #d295a0, var(--rec-lit) 70%);
   box-shadow: 0 0 0 2px #00000059, 0 0 8px #b64a6055;
 }
 /* Taking: the same key, lit. The lamp inside it is what breathes; this is
    only the difference between a dark bulb and one with current in it. */
-[data-amp='guilt'] .tc-band .take-record.recording {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .take-record.recording {
   border-color: var(--rec-lit);
   background: radial-gradient(circle at 50% 30%, #8e3244, #601f2d 70%);
   box-shadow: 0 2px 6px #0009, 0 0 14px #b64a6047, inset 0 1px 0 #ffffff26;
 }
-[data-amp='guilt'] .tc-band .take-record:disabled { background: var(--well-fill); border-color: #ffffff0d; box-shadow: none; }
-[data-amp='guilt'] .tc-band .primary.recording { background: var(--rec); border-color: var(--rec-line); color: #edccd3; }
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .take-record:disabled { background: var(--well-fill); border-color: #ffffff0d; box-shadow: none; }
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .primary.recording { background: var(--rec); border-color: var(--rec-line); color: #edccd3; }
 /* Burgundy has to survive the pointer: the keys' own hover is one step more
    specific than these, so each says what it does under the hand. */
-[data-amp='guilt'] .tc-band .take-record:hover:not(:disabled) {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .take-record:hover:not(:disabled) {
   border-color: var(--rec-lit);
   background: radial-gradient(circle at 50% 30%, #7f2d3e, #5b2130 70%);
   box-shadow: 0 2px 6px #0009, inset 0 1px 0 #ffffff26;
   color: var(--ivory);
 }
-[data-amp='guilt'] .tc-band .primary.recording:hover:not(:disabled) { background: #5f222f; border-color: var(--rec-lit); box-shadow: inset 0 1px 0 #ffffff26, 0 2px 6px #0009; color: #f4dde1; }
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .primary.recording:hover:not(:disabled) { background: #5f222f; border-color: var(--rec-lit); box-shadow: inset 0 1px 0 #ffffff26, 0 2px 6px #0009; color: #f4dde1; }
 
 /* Knobs in the bands wear the amplifier's own cap, cut from its photograph
    (`scripts/make-guilt-cap.mjs`), under the head's engraved index: one ivory
@@ -645,13 +703,13 @@
    highlight walks around the rim and the drop shadow ends up on top. So the
    head's arrangement is taken whole: the cap is still and only the index
    turns over it, in a box the size of the cap so it pivots on its centre. */
-[data-amp='guilt'] .tc-band .cap {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .cap {
   border-color: transparent;
   background: var(--knob-cap) center / cover no-repeat;
   box-shadow: 0 2px 4px #000000a6, 0 0 0 1px #0000004d;
   transform: none;
 }
-[data-amp='guilt'] .tc-band .indicator {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .indicator {
   inset: 0;
   top: 0;
   left: 0;
@@ -664,7 +722,7 @@
 }
 /* Engraved, not printed: a dark groove with the light catching its far lip —
    the same one the plate has, at the size the band's dial is. */
-[data-amp='guilt'] .tc-band .indicator::after {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .indicator::after {
   content: '';
   position: absolute;
   top: 9%;
@@ -676,21 +734,21 @@
   background: linear-gradient(#514a57, #6c6572);
   box-shadow: 0.5px 0 0 #ffffffcc;
 }
-[data-amp='guilt'] .tc-band .dial::before { background: radial-gradient(circle at 40% 32%, #241d2c, #0c0812 75%); }
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .dial::before { background: radial-gradient(circle at 40% 32%, #241d2c, #0c0812 75%); }
 
 /* One face for values — the mono the clock and the counters already use — and
    one for labels: small, spaced, uppercase, as the plate is engraved. */
-[data-amp='guilt'] .tc-band :is(.loop-status, .backing-name, .selection-info, .level output, .latency) {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.loop-status, .backing-name, .selection-info, .level output, .latency) {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
-[data-amp='guilt'] .tc-band :is(.mode button, .level) {
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.mode button, .level) {
   font: 400 10px/1 var(--display);
   font-stretch: 125%;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
-[data-amp='guilt'] .tc-band .level output { letter-spacing: 0; text-transform: none; }
+[data-amp='guilt'] :is(.tc-band, .tc-dialog) .level output { letter-spacing: 0; text-transform: none; }
 
 /* The band's seams. The shell draws them as a border on whichever child
    follows another, so each is as tall as that child — 120 px beside the

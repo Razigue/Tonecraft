@@ -11,7 +11,7 @@ import { Picture } from 'astro:assets';
 import { LANDING, type LandingLocale } from '../i18n/landing.ts';
 import '../../app/tokens.css';
 
-import glass from '../assets/landing/glass.webp';
+import room from '../assets/landing/room.webp';
 import overview from '../assets/landing/overview.png';
 import amp from '../assets/landing/amp.png';
 import controls from '../assets/landing/controls.png';
@@ -120,8 +120,8 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
 
     <main id="main">
       <section class="hero">
-        <div class="hero-glass" aria-hidden="true">
-          <Picture src={glass} formats={formats} widths={[1200, 2172]} sizes="100vw" alt="" loading="eager" fetchpriority="high" />
+        <div class="hero-room" aria-hidden="true">
+          <Picture src={room} formats={formats} widths={[1200, 1672]} sizes="100vw" alt="" loading="eager" fetchpriority="high" />
         </div>
         <div class="hero-inner">
           <div class="hero-copy">
@@ -210,7 +210,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
       </div>
 
       <section class="banner" aria-label={t.banner.line}>
-        <Picture src={glass} formats={formats} widths={[1200, 2172]} sizes="100vw" alt={t.alt.banner} loading="lazy" />
+        <Picture src={room} formats={formats} widths={[1200, 1672]} sizes="100vw" alt={t.alt.banner} loading="lazy" />
         <div class="banner-copy">
           <p class="banner-line">{t.banner.line}</p>
           <p class="banner-sub">{t.banner.sub}</p>
@@ -366,14 +366,18 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   .button.primary:hover { border-color: var(--violet-300); color: #fff; }
   .button.small { min-height: 36px; padding: 0 16px; font-size: 13px; }
 
-  /* Hero: the stained glass, darkened towards the text. */
+  /* Hero: the room the head is photographed in, darkened towards the text.
+     The same nave the studio stands in, so opening the app is walking into the
+     page rather than into another product. It is already dark and already out
+     of focus, so it carries less of a scrim than the stained glass it replaced
+     and none of its own blur. */
   .hero { position: relative; min-height: 100vh; min-height: 100svh; display: grid; align-items: center; overflow: hidden; }
-  .hero-glass { position: absolute; inset: 0; opacity: 0.5; }
-  .hero-glass :global(img) { width: 100%; height: 100%; object-fit: cover; }
-  .hero-glass::after {
+  .hero-room { position: absolute; inset: 0; opacity: 0.85; }
+  .hero-room :global(img) { width: 100%; height: 100%; object-fit: cover; }
+  .hero-room::after {
     content: ''; position: absolute; inset: 0;
-    background: linear-gradient(90deg, var(--surface-0) 18%, #09080bd6 48%, #09080b73),
-                linear-gradient(0deg, var(--surface-0) 2%, transparent 40%, #09080bb3);
+    background: linear-gradient(90deg, var(--surface-0) 14%, #09080bd1 46%, #09080b4d),
+                linear-gradient(0deg, var(--surface-0) 2%, transparent 42%, #09080b99);
   }
   .hero-inner {
     position: relative; width: min(100% - 32px, 1320px); margin: 0 auto; padding: 128px 0 72px;
@@ -387,7 +391,13 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 4px; }
   .facts { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 6px; font: 11px var(--mono); color: var(--text-3); }
   .hero-shot { animation: rise 900ms var(--ease) both; }
-  .hero-shot :global(img) { border-radius: var(--radius); box-shadow: var(--shadow), 0 40px 90px #000b; }
+  /* No frame. Every shot on this page is now cut to its own silhouette —
+     the amplifier to its cabinet and its lead, a band to the cabinet's own
+     18 px corner — so a 4 px radius, a hairline ring and a rectangle's drop
+     shadow all describe a rectangle that is not there. They drew one anyway:
+     a dark box around the amplifier, over a nave that was visible either side
+     of it. What the objects stand on is the page. */
+  .hero-shot :global(img) { border-radius: 0; box-shadow: none; }
   @keyframes rise { from { opacity: 0; transform: translateY(24px); } }
   @media (prefers-reduced-motion: reduce) { .hero-shot { animation: none; } }
 
@@ -399,7 +409,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   .prose { display: grid; gap: 12px; max-width: var(--text-max); color: var(--text-2); font-size: 16px; line-height: 1.65; }
 
   .shot { margin: 0 0 28px; width: min(100%, 980px); }
-  .shot :global(img), .stack :global(img) { border-radius: var(--radius); box-shadow: var(--shadow), 0 0 0 1px #000, 0 30px 70px #0009; }
+  .shot :global(img), .stack :global(img) { border-radius: 0; box-shadow: none; }
   .shot.small { width: min(100%, 440px); }
   .stack { display: grid; gap: 16px; width: min(100%, 980px); margin-bottom: 28px; }
 
@@ -428,10 +438,10 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   .engine .shot { margin: 0; }
   .os { font: 11px var(--mono) !important; letter-spacing: 0.08em; color: var(--accent); }
 
-  /* The banner: the glass, and the line carved into it as GUILT is. */
+  /* The banner: the nave, and the line carved into it as GUILT is. */
   .banner { position: relative; height: clamp(360px, 60vw, 720px); overflow: hidden; display: grid; place-items: center; }
   .banner :global(picture), .banner :global(img) { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  .banner::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, var(--surface-0), #09080b59 30%, #09080b59 70%, var(--surface-0)); }
+  .banner::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, var(--surface-0), #09080b40 32%, #09080b40 68%, var(--surface-0)); }
   .banner-copy { position: relative; z-index: 1; text-align: center; padding: 0 16px; }
   .banner-line { margin-right: -0.16em; font: 600 clamp(34px, 5vw, 84px)/1.1 var(--inscription); letter-spacing: 0.16em; text-wrap: balance; text-transform: uppercase; color: #efe2f1; text-shadow: 0 1px 0 #f7eaf6, 0 3px 0 #49334e, 0 8px 30px #000; }
   .banner-sub { margin-top: 22px; font: 400 11px/1.4 var(--display); font-stretch: 125%; letter-spacing: 0.4em; text-transform: uppercase; color: var(--violet-100); text-shadow: 0 2px 8px #000; }
@@ -520,7 +530,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
         animation-timeline: view();
         animation-range: entry 0% cover 45%;
       }
-      .hero-glass :global(img) {
+      .hero-room :global(img) {
         animation: drift linear both;
         animation-timeline: scroll(root);
         animation-range: 0 100vh;
@@ -538,13 +548,13 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   }
   @keyframes reveal { from { opacity: 0; transform: translateY(32px); } }
   @keyframes settle { from { opacity: 0.2; transform: scale(0.94); } }
-  @keyframes drift { to { transform: scale(1.08) translateY(4%); opacity: 0.4; } }
+  @keyframes drift { to { transform: scale(1.08) translateY(4%); opacity: 0.55; } }
   @keyframes parallax { from { transform: translateY(-12%) scale(1.2); } to { transform: translateY(12%) scale(1.2); } }
 
   @media (max-width: 900px) {
     .top nav > a:not(.button) { display: none; }
     .hero-inner { grid-template-columns: 1fr; padding-top: 104px; }
-    .hero-glass::after { background: linear-gradient(0deg, var(--surface-0) 10%, #09080bc7 60%, #09080b99); }
+    .hero-room::after { background: linear-gradient(0deg, var(--surface-0) 10%, #09080bc7 60%, #09080b99); }
     .pair, .engine-grid, .req-grid { grid-template-columns: 1fr; }
     .engine-grid { justify-items: center; }
     .foot-grid { grid-template-columns: 1fr 1fr; }
