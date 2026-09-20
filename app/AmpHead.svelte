@@ -182,12 +182,16 @@
     isolation: isolate;
     margin: 48px 0 0;
     padding: var(--guilt-rim);
-    border: 1px solid #d9d0cb;
+    border: 1px solid #746e6c;
     border-radius: 23px;
-    /* The metal of the glass's tracery, sampled from its bezel: a warm
-       silver, lighter where it faces the light, never brushed. */
-    background: url('/images/guilt-cast.webp') 0 0 / 256px 256px,linear-gradient(180deg,#bfb6b2,#b5aca8 18%,#a79e9a 70%,#8b8280);
-    box-shadow: inset 0 3px 3px #fff9,inset 0 -4px 4px #39353e,inset 2px 0 3px #ece6e477,inset -2px 0 3px #ece6e477,0 2px 0 #322e34,0 18px 16px -9px #000d,0 36px 45px -17px #000e;
+    /* Plain cast silver: narrow polished edges and darker oxidised flats,
+       matching the glass bezel's material without repeating its ornament. */
+    background:
+      url('/images/guilt-cast.webp') 0 0 / 192px 192px,
+      radial-gradient(ellipse at 24% 0%,#eee9e147,transparent 38%),
+      radial-gradient(ellipse at 80% 100%,#302b3040,transparent 42%),
+      linear-gradient(105deg,#625d5d,#9e9895 19%,#807a79 40%,#a8a29e 66%,#716b6b 88%,#938b88);
+    box-shadow: inset 0 1px 0 #ece8e2,inset 0 3px 1px #c7c1bc,inset 0 6px 4px #3b373688,inset 0 -2px 1px #d0c8c1,inset 0 -5px 4px #302b2c,inset 2px 0 1px #d5cec6,inset -2px 0 1px #d5cec6,0 2px 0 #322e34,0 18px 16px -9px #000d,0 36px 45px -17px #000e;
   }
   /* The top of the cabinet, seen from a little above: the front outline
      pushed back and narrowed by perspective, one layer per pixel of depth.
@@ -206,9 +210,9 @@
     position: absolute;
     z-index: 4;
     inset: 12px;
-    border: 1px solid #6a605d;
+    border: 1px solid #45403f;
     border-radius: 12px;
-    box-shadow: 0 -1px 0 #fff8,inset 0 1px 1px #fff7,0 1px 0 #f1e7df77;
+    box-shadow: 0 -1px 0 #d4ccc4bb,0 1px 0 #c4bbb4aa,inset 0 1px 2px #29252699;
     pointer-events: none;
   }
   .guilt-handle {
@@ -281,11 +285,10 @@
     border: 0;
     border-radius: 0 0 var(--guilt-front-radius) var(--guilt-front-radius);
     background:
-      radial-gradient(circle at 12px 14px,#413742 0 1px,#ddd2c8 1.5px 3px,#5f545e 3.5px 4px,transparent 4.5px),
-      radial-gradient(circle at calc(100% - 12px) 14px,#413742 0 1px,#ddd2c8 1.5px 3px,#5f545e 3.5px 4px,transparent 4.5px),
-      url('/images/guilt-cast.webp') 0 0 / 256px 256px,
-      linear-gradient(180deg,#bab1ad,#a9a09c 55%,#978e8b);
-    box-shadow: inset 0 1px 0 #f6e9df,inset 0 -2px 2px #4c4353,0 1px 0 #d9c8bc;
+      url('/images/guilt-cast.webp') 0 0 / 192px 192px,
+      radial-gradient(ellipse at 30% 0%,#dfd8cf40,transparent 65%),
+      linear-gradient(180deg,#827b79,#aba39e 7%,#a59e9a 48%,#99918e 90%,#716967);
+    box-shadow: inset 0 1px 0 #d4ccc5,inset 0 -2px 2px #423b3d,0 1px 0 #b9b0a8;
   }
   .guilt .amp-panel::before {
     content: '';
@@ -312,7 +315,7 @@
     background: conic-gradient(from 225deg,#746573 0deg,transparent 1deg 26deg,#746573 27deg 28deg,transparent 29deg 53deg,#746573 54deg 55deg,transparent 56deg 80deg,#746573 81deg 82deg,transparent 83deg 107deg,#746573 108deg 109deg,transparent 110deg 134deg,#746573 135deg 136deg,transparent 137deg 161deg,#746573 162deg 163deg,transparent 164deg 188deg,#746573 189deg 190deg,transparent 191deg 215deg,#746573 216deg 217deg,transparent 218deg 242deg,#746573 243deg 244deg,transparent 245deg 269deg,#746573 270deg,transparent 271deg);
     box-shadow: none;
   }
-  .guilt :global(.dial::before) { inset: 3px; background: #aca5a6; box-shadow: none; }
+  .guilt :global(.dial::before) { inset: 3px; background: radial-gradient(circle,#595253 57%,#b6aca5 65%,#7a7170 68%,#aaa19b 72%); box-shadow: none; }
   .guilt :global(.power-dial .dial-light) { inset: 5px; }
   .guilt :global(.sweep-half::before) { border-width: 2px; }
   /* Seen from the same point above as the cabinet: the cap's side shows
@@ -320,29 +323,32 @@
   .guilt :global(.cap) {
     inset: 8px;
     border: 0;
-    /* A knurled skirt: fine enough to read as grip, coarse enough not to
-       beat against the pixel grid the way a baked texture did at 46 px. */
+    /* A broad polished bevel over a finely fluted, oxidised silver skirt. */
     background:
-      radial-gradient(circle,#0000 0 64%,#0007 72%,#0000 80%,#fff2 94%,#0000),
-      repeating-conic-gradient(#57505c 0 5deg,#221d26 5deg 10deg);
-    box-shadow: 0 1px 0 #6f6674,0 2px 0 #5a5160,0 3px 0 #463e4c,0 5px 4px #1d152866,0 9px 9px -3px #1d152855;
+      radial-gradient(circle,transparent 57%,#d8d4d0 59%,#787473 64%,transparent 69%,#39363640 88%,#dedad699 95%,#4d4a49 100%),
+      conic-gradient(#dad7d2,#7f7c79 65deg,#b2afaa 105deg,#6e6a69 155deg,#494645 180deg,#6e6a69 205deg,#b2afaa 255deg,#7f7c79 295deg,#dad7d2),
+      repeating-conic-gradient(#989491 0 4deg,#6e6b68 4deg 8deg);
+    background-blend-mode: normal,soft-light,normal;
+    box-shadow: 0 1px 0 #aba6a2,0 2px 0 #7c7874,0 3px 0 #5c5755,0 4px 0 #403c3b,0 6px 4px #25222266,0 10px 9px -3px #25222266;
     transform: none;
   }
-  /* The face: spun metal lit from the front, so its highlights sit top and
-     bottom, symmetric, whatever the value. */
+  /* A shallow dished face. The reflection stays fixed while the engraved
+     index rotates, so the metal never appears to turn with the lighting. */
   .guilt :global(.cap::before) {
     content: '';
     position: absolute;
-    inset: 5px;
+    inset: 6px;
     border-radius: 50%;
     background:
-      radial-gradient(circle,#0000 0 30%,#0000 88%,#5a525e 96%),
-      conic-gradient(#f4efeb,#a7a0a4 50deg,#d9d3cf 90deg,#a7a0a4 130deg,#f4efeb 180deg,#a7a0a4 230deg,#d9d3cf 270deg,#a7a0a4 310deg,#f4efeb);
-    box-shadow: 0 0 0 1px #1a151d,inset 0 1px 0 #fffb;
+      url('/images/guilt-cast.webp') center / 96px 96px,
+      radial-gradient(ellipse at 50% 88%,#dcd8d299,transparent 62%),
+      linear-gradient(#706c6a,#a39f9a 28%,#b8b4af 65%,#c2beb9);
+    box-shadow: 0 0 0 1px #5d5956,0 1px 0 1px #dcd9d5,inset 0 2px 3px #2f2a2877,inset 0 -1px 1px #ede9e3aa;
   }
   /* A line engraved from the rim toward the centre; it turns about the
      cap's centre (23 px), never about its own. */
-  .guilt :global(.indicator) { z-index: 1; top: 3px; left: calc(50% - 1px); width: 2px; height: 13px; border-radius: 1px; background: #4a2c5a; box-shadow: 0 0 0 1px #24182bcc; transform-origin: 1px 20px; transform: rotate(var(--angle)); }
+  .guilt :global(.indicator) { z-index: 1; top: 3px; left: calc(50% - 1px); width: 2px; height: 9px; border-radius: 1px; background: #352d32; box-shadow: 1px 0 0 #d9d5cfaa; transform-origin: 1px 20px; transform: rotate(var(--angle)); }
+  .guilt :global(.indicator::after) { display: none; }
   .guilt .amp-signature { position: absolute; right: 76px; top: 50%; transform: translateY(-50%); min-width: 84px; color: #403341; text-shadow: 0 1px 0 #e9dcd080; }
   .guilt .sig-symbol { color: #56455f; width: 24px; height: 24px; }
   .guilt .amp-signature>span { font-size: 27px; }
@@ -351,15 +357,15 @@
   .jack-cable { position: absolute; left: -301px; top: 51px; overflow: visible; }
   .guilt .power-indicator { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); gap: 12px; min-width: 42px; padding: 8px 4px; }
   .guilt .power-indicator small { color: #403341; }
-  .guilt .power-indicator>span.power-rocker { position: relative; display: block; width: 30px; height: 51px; padding: 3px; border: 1px solid #746576; border-radius: 4px; background: #18121e; perspective: 180px; box-shadow: 0 0 0 2px #d7cbc477,3px 5px 5px #30203766,inset 0 2px 4px #000; }
-  .rocker-face { position: absolute; inset: 3px; display: flex; flex-direction: column; align-items: center; justify-content: space-around; border: 1px solid #665270; border-radius: 2px; background: linear-gradient(#6b5278,#32223f 48%,#22172b 52%,#3b2b45); transform: rotateX(-13deg); box-shadow: 0 -2px 0 #24172f,0 -3px 1px #9985a3; color: #c5accf; font: 9px var(--mono); text-shadow: 0 1px 1px #000; }
-  .rocker-on { color: #a58ab3; }
-  .rocker-off { color: #f3e4f6; }
-  .rocker-lamp { position: relative; width: 14px; height: 7px; border-radius: 1px; background: #3b2445; box-shadow: inset 0 1px 2px #000; }
-  .rocker-lamp::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: #e9b6fc; box-shadow: 0 0 5px #eac4ff,0 0 15px #c06decaa,inset 0 1px 0 #fff9; opacity: 0; transition: opacity 550ms ease-in; }
-  .power-rocker.lit .rocker-face { transform: rotateX(13deg); background: linear-gradient(#35213f,#533360 48%,#8a5996 52%,#573966); box-shadow: 0 3px 0 #291a35,0 4px 1px #b499bd,inset 0 1px 3px #0008; }
-  .power-rocker.lit .rocker-on { color: #fff0ff; }
-  .power-rocker.lit .rocker-off { color: #b591bf; }
+  .guilt .power-indicator>span.power-rocker { position: relative; display: block; width: 30px; height: 51px; padding: 3px; border: 1px solid #4c4847; border-radius: 5px; background: #292626; perspective: 180px; box-shadow: 0 -1px 0 2px #d0ccc7,0 1px 0 2px #736f6b,0 3px 0 2px #4c4746,0 6px 5px #2b272666,inset 0 2px 4px #000; }
+  .rocker-face { position: absolute; inset: 3px; display: flex; flex-direction: column; align-items: center; justify-content: space-around; border: 1px solid #aca7a2; border-radius: 3px; background: linear-gradient(#cbc6c0,#a7a29c 45%,#7e7974 52%,#9d9893); transform: rotateX(-13deg); box-shadow: 0 -2px 0 #605c58,0 -3px 1px #d9d5d0,inset 1px 0 1px #e8e4de99,inset -1px 0 1px #e8e4de66; color: #3d3938; font: 9px var(--mono); text-shadow: 0 1px 0 #d8d3cc99; }
+  .rocker-on { color: #534e4c; }
+  .rocker-off { color: #2c2928; }
+  .rocker-lamp { position: relative; width: 9px; height: 4px; border-radius: 2px; background: #35263e; box-shadow: 0 0 0 1px #524d4c,0 1px 0 1px #d6d1ca,inset 0 1px 2px #000; }
+  .rocker-lamp::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: #c3a2d8; box-shadow: 0 0 4px #d9b7ee,0 0 8px #a56bb377,inset 0 1px 0 #fff9; opacity: 0; transition: opacity 550ms ease-in; }
+  .power-rocker.lit .rocker-face { transform: rotateX(13deg); background: linear-gradient(#86807c,#a39e98 45%,#c9c4bd 52%,#b1aca6); box-shadow: 0 3px 0 #615c58,0 4px 1px #c8c3bc,inset 0 1px 3px #2e2a2788,inset 1px 0 1px #e8e4de99,inset -1px 0 1px #e8e4de66; }
+  .power-rocker.lit .rocker-on { color: #2c2928; }
+  .power-rocker.lit .rocker-off { color: #534e4c; }
   .power-rocker.lit .rocker-lamp::after { opacity: 1; }
   .guilt .power-indicator:hover:not(:disabled) .power-rocker { border-color: #e1c8ef; }
   .guilt .power-indicator:active:not(:disabled) .rocker-face { transform: rotateX(0deg); }

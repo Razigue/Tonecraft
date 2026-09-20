@@ -118,6 +118,8 @@ GUILT's rose window, pointed arches and quatrefoils sit behind raised pewter tra
 
 The stained glass is lit by the signal. Its glow layer's opacity follows the output RMS posted by the worklet at 30 Hz, mapped from −60 to 0 dBFS, and falls to its unlit baseline when the engine stops or the amp is off. Static SVG colour masks isolate violet, blue and burgundy glass from the neutral metal: switching off darkens the glass while the silver retains its reflections. Masks and bloom are rasterised once; only opacity moves.
 
+The cabinet and control faceplate share the glass bezel's patinated silver finish: darker metal flats, narrow polished edges and subtle cast grain. The outer moulding is plain; stained-glass motifs and coloured enamel stay confined to the original window. Knobs have a broad polished silver bevel, a shallow dished face and a fine fluted skirt, with a dark engraved index. Their lighting stays fixed as the index rotates. The power rocker shares the same patinated metal, with a small violet status lamp and mechanically distinct on/off positions. Cabinet dimensions, centred viewpoint and control positions are preserved. Materials use static CSS gradients and the existing cast-metal grain; there is no additional ornamental image.
+
 The glass and the two meters are the whole visualisation layer. There is no spectrum analyser, no oscilloscope, no `AnalyserNode` and no `<canvas>` anywhere in the product. Under `prefers-reduced-motion` the glass holds a steady illumination.
 
 On a pre-rendered preset page, the same illumination is driven by the RMS envelope computed at build time and animated from `audio.currentTime`, with no audio graph.
