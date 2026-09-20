@@ -37,9 +37,10 @@
     "test:store": "tsx store/session.test.ts && tsx store/tones.test.ts",
     "test:recording": "tsx scripts/test-recording.ts",
     "test:studio": "node scripts/test-studio.mjs",
+    "test:landing": "node scripts/test-landing.mjs",
     "test:browser": "node scripts/browser-test.mjs",
     "shots": "node scripts/landing-shots.mjs",
-    "verify": "npm test && npm run build && npm run test:browser && npm run test:studio"
+    "verify": "npm test && npm run build && npm run test:browser && npm run test:studio && npm run test:landing"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.4",

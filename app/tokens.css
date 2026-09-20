@@ -17,12 +17,6 @@
   font-weight: 100 900;
   font-display: swap;
 }
-@font-face {
-  font-family: "IBM Plex Mono";
-  src: url("/fonts/ibm-plex-mono-latin-400.woff2") format("woff2");
-  font-weight: 400;
-  font-display: swap;
-}
 /* GUILT's own face, and only GUILT's: a high-contrast serif for an inscription
    in glass and stone. A system serif read as a wedding card. */
 @font-face {
@@ -124,7 +118,6 @@
      the page, this brings a line of it back to the density the studio
      was drawn at; anything with tracking of its own keeps it. */
   --body-tracking: -0.015em;
-  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --inscription: "Cormorant Garamond", "Iowan Old Style", serif;
 
   /* The faceplate: the material the amp's control plate is made of, carried
@@ -177,7 +170,7 @@
   background: var(--surface-0);
   box-shadow: 0 6px 16px #0009;
   color: var(--text);
-  font: 11px/1 var(--mono);
+  font: 11px/1 var(--body);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
@@ -310,7 +303,7 @@
 .t-small   { font-family: var(--body); font-size: 13px; line-height: 1.4; color: var(--graphite); }
 
 .t-readout {
-  font-family: var(--mono);
+  font-family: var(--body);
   font-size: 13px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -721,25 +714,28 @@
   transform: rotate(var(--angle));
 }
 /* Engraved, not printed: a dark groove with the light catching its far lip —
-   the same one the plate has, at the size the band's dial is. */
+   the same one the plate has, at the size the band's dial is. Its percentages
+   are of the cap's box, which is now the cap's face alone: it starts where it
+   started on the face when that box was the whole knob body. */
 [data-amp='guilt'] :is(.tc-band, .tc-dialog) .indicator::after {
   content: '';
   position: absolute;
-  top: 9%;
+  top: 6%;
   left: 50%;
-  width: 6%;
-  height: 27%;
-  margin-left: -3%;
+  width: 7%;
+  height: 32%;
+  margin-left: -3.5%;
   border-radius: 40% / 5%;
   background: linear-gradient(#514a57, #6c6572);
   box-shadow: 0.5px 0 0 #ffffffcc;
 }
 [data-amp='guilt'] :is(.tc-band, .tc-dialog) .dial::before { background: radial-gradient(circle at 40% 32%, #241d2c, #0c0812 75%); }
 
-/* One face for values — the mono the clock and the counters already use — and
-   one for labels: small, spaced, uppercase, as the plate is engraved. */
+/* Values keep the body face — there is no second one — but take its tabular
+   figures, so a clock and a counter do not shuffle their digits at 30 Hz.
+   Labels take the display face: small, spaced, uppercase, as the plate is
+   engraved. */
 [data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.loop-status, .backing-name, .selection-info, .level output, .latency) {
-  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
 [data-amp='guilt'] :is(.tc-band, .tc-dialog) :is(.mode button, .level) {

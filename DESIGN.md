@@ -38,13 +38,12 @@ The studio plates stay dark; notation is read on light paper. GUILT's cabinet al
 
 ## 3. Typography
 
-Four faces, self-hosted, subset, `woff2`, `font-display: swap`.
+Three faces, self-hosted, subset, `woff2`, `font-display: swap`.
 
 - **Display: Anybody**, width 125, uppercase, tracked. The wordmark, eyebrows, band and group labels.
-- **Body: Onest**, one variable file, weight axis 400 and 500. Names, buttons, help, dialogs.
+- **Body: Onest**, one variable file, weight axis 400 and 500. Names, buttons, help, dialogs — and every number: dB, cents, ms, BPM, bars, time, in `font-variant-numeric: tabular-nums`, so the digits do not jitter at 30 fps. A fourth face for figures alone was a download nobody heard.
   It sets wider than the Inter Tight it replaced, so the page carries `--body-tracking: -0.015em`:
   a line reads at the density the studio was drawn at, and anything already tracked keeps its own.
-- **Utility: IBM Plex Mono**, tabular figures. Every number: dB, cents, ms, BPM, bars, time. Fixed-width digits do not jitter at 30 fps.
 - **Inscription: Cormorant Garamond**, GUILT's face and only GUILT's.
 
 ### Two scales

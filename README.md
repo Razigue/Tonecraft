@@ -72,6 +72,7 @@ npm run check     # the invariants that span files, on their own
 npm run test:chain   # the chain from Node: ABI, convolution, zero latency, a capture
 npm run test:recording # the DI tap, the WAV round trip and the offline export render
 npm run test:studio  # reader and recorder in a real browser (after npm run build)
+npm run test:landing # the home page: no script, no 404, three faces, its animations
 npm run test:parity  # browser and Tonecraft Engine, bit for bit (needs service/ built)
 npm run measure   # the boost's aliasing, as a table
 npm run vendor    # re-fetch the captures (network)

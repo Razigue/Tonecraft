@@ -397,21 +397,21 @@
   .fig-track{display:grid;grid-template-columns:1fr auto auto 70px;align-items:center;gap:6px;padding:6px 4px;font:12px var(--body);color:#ddd}
   .fig-track+.fig-track{border-top:1px solid #29242c}
   .fig-track.muted .fig-name{opacity:.45;text-decoration:line-through}
-  .fig-name b{font:10px var(--mono);color:#9e9e9e;margin-right:6px;font-weight:400}
+  .fig-name b{font:10px var(--body);color:#9e9e9e;margin-right:6px;font-weight:400}
   .fig-btn{padding:3px 8px;border:1px solid #4b4b4b;border-radius:4px;font-size:11px;color:#bbb}
   .fig-btn.on{background:var(--violet-900);border-color:var(--accent-line);color:var(--violet-100)}
   .fig-level{height:4px;border-radius:2px;background:#3a3a3a;overflow:hidden}
   .fig-level i{display:block;height:100%;background:#bdb7ae;transform-origin:left}
   .fig-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
-  .fig-chips span{padding:4px 9px;border:1px solid #4b4b4b;border-radius:4px;font:11px var(--mono);color:#ddd;background:#242026}
+  .fig-chips span{padding:4px 9px;border:1px solid #4b4b4b;border-radius:4px;font:11px var(--body);color:#ddd;background:#242026}
   .fig-tab{display:block;width:100%;height:auto;background:#faf8f3;border-radius:4px}
   .fig-tab line{stroke:#9a958c;stroke-width:1}
   .fig-tab line.bar{stroke:#333;stroke-width:1.5}
-  .fig-tab text{font:600 11px var(--mono);fill:#171717;text-anchor:middle;stroke:#faf8f3;stroke-width:4px;paint-order:stroke}
+  .fig-tab text{font:600 11px var(--body);fill:#171717;text-anchor:middle;stroke:#faf8f3;stroke-width:4px;paint-order:stroke}
   .fig-cursor{fill:#a373201f;stroke:#a37320;stroke-width:1.5;transform-box:view-box;animation:fig-cursor 4.8s steps(1) infinite}
   .fig-keys{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
   .fig-keyset{display:flex;gap:3px;flex-wrap:wrap}
-  kbd{display:inline-grid;place-items:center;min-width:20px;height:22px;padding:0 3px;box-sizing:border-box;border:1px solid #5a525e;border-bottom-width:2px;border-radius:4px;background:#2a252d;font:11px var(--mono);color:#eee}
+  kbd{display:inline-grid;place-items:center;min-width:20px;height:22px;padding:0 3px;box-sizing:border-box;border:1px solid #5a525e;border-bottom-width:2px;border-radius:4px;background:#2a252d;font:11px var(--body);color:#eee}
   :global(.tour-lit){outline:1px solid #cdb6d466;outline-offset:6px}
   @keyframes tour-in{from{opacity:0}to{opacity:1}}
   @keyframes tour-pulse{from{opacity:.8;transform:scale(1)}to{opacity:0;transform:scale(1.12)}}

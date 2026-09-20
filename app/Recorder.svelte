@@ -936,7 +936,7 @@
   .record-head { grid-column: 2; grid-row: 1; align-self: start; display: flex; align-items: center; gap: 12px; }
   .record-title { display: none; }
   .eyebrow { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-2); }
-  .duration { display: flex; align-items: center; gap: 7px; font: 18px var(--mono); font-variant-numeric: tabular-nums; }
+  .duration { display: flex; align-items: center; gap: 7px; font: 18px var(--body); font-variant-numeric: tabular-nums; }
   .live { color: var(--ember); }
   i { width: 7px; height: 7px; border-radius: 50%; background: var(--ember); }
 
@@ -985,7 +985,7 @@
   @media (prefers-reduced-motion: reduce) { .menu { animation: none; } }
   .menu button { display: flex; justify-content: space-between; gap: 16px; min-height: 34px; border: 0; background: none; box-shadow: none; color: var(--text); text-align: left; }
   .menu button:hover:not(:disabled) { background: var(--surface-2); }
-  .menu small { font: 10px var(--mono); color: var(--text-2); }
+  .menu small { font: 10px var(--body); color: var(--text-2); }
 
   /* A track per row: its name and level, then its lane. Past three tracks the
      rows scroll, so the stage above keeps its height. */
@@ -1048,11 +1048,11 @@
   .delete-track { border-color: transparent; background: none; color: var(--text-2); }
   .delete-track:hover:not(:disabled) { border-color: var(--ember-line); background: none; color: var(--ember); }
   .delete-track.confirm { color: var(--ember); border-color: var(--ember); }
-  .backing-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px var(--mono); color: var(--text-2); }
+  .backing-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px var(--body); color: var(--text-2); }
   .level { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-2); }
   .level input { width: 110px; }
-  .sync output { min-width: 48px; font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--text-2); }
-  .selection-info { margin-left: auto; font: 11px var(--mono); color: var(--accent); }
+  .sync output { min-width: 48px; font: 11px var(--body); font-variant-numeric: tabular-nums; color: var(--text-2); }
+  .selection-info { margin-left: auto; font: 11px var(--body); font-variant-numeric: tabular-nums; color: var(--accent); }
   p { grid-column: 1 / -1; margin: 0; font-size: 12px; color: var(--ember); }
   @media (max-height: 820px) {
     .recorder { padding-top: 8px; padding-bottom: 8px; }

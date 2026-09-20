@@ -108,6 +108,6 @@
   .scale-labels strong { min-height: 1em; font-weight: 400; color: var(--text-2); text-align: center; }
   .scale-labels span:last-child { text-align: right; }
   .in-tune .scale-labels strong { color: var(--accent); }
-  .cents { place-self: start center; min-height: 1em; margin: 6px 0 0; font: 13px var(--mono); color: var(--text-2); }
+  .cents { place-self: start center; min-height: 1em; margin: 6px 0 0; font: 13px var(--body); font-variant-numeric: tabular-nums; color: var(--text-2); }
   @media (max-width: 600px) { .tuner { padding: 58px 24px 30px; } }
 </style>

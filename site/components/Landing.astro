@@ -108,7 +108,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   <body>
     <a class="skip" href="#main">{locale === 'fr' ? 'Aller au contenu' : 'Skip to content'}</a>
 
-    <header class="top">
+    <header class="top" id="top">
       <a class="wordmark" href={homes[locale]}>tonecraft</a>
       <nav aria-label={locale === 'fr' ? 'Principale' : 'Main'}>
         <a href="#features">{t.nav.features}</a>
@@ -145,7 +145,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
         <p class="eyebrow">{t.overview.eyebrow}</p>
         <h2>{t.overview.title}</h2>
         <span class="rule" aria-hidden="true"></span>
-        <div class="prose">{t.overview.body.map((p) => <p>{p}</p>)}</div>
+        <p class="prose">{t.overview.body.join(' ')}</p>
         <ol class="points steps">
           {t.overview.steps.map(([term, def]) => (<li><span class="term">{term}</span><span class="def">{def}</span></li>))}
         </ol>
@@ -179,16 +179,16 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
                 <Picture src={recorder} formats={formats} widths={[800, 1600, 2360]} sizes="(min-width: 1080px) 980px, 100vw" alt="" loading="lazy" />
               </div>
             ) : (
-              <figure class:list={['shot', f.id === 'tabs' && 'paper']}>
+              <figure class:list={['shot', f.id === 'amp' && 'head']}>
                 <Picture src={shots[f.id as keyof typeof shots]} formats={formats} widths={[800, 1600, 2360]} sizes="(min-width: 1080px) 980px, 100vw" alt={t.alt[f.id]} loading="lazy" />
               </figure>
             )}
             <p class="eyebrow">{f.eyebrow}</p>
             <h2>{f.title}</h2>
             <span class="rule" aria-hidden="true"></span>
-            <div class="prose">{f.body.map((p) => <p>{p}</p>)}</div>
+            <p class="prose">{f.body.join(' ')}</p>
             {f.points && (
-              <dl class="points">
+              <dl class:list={['points', f.points.length === 1 && 'lone']}>
                 {f.points.map(([term, def]) => (<div><dt>{term}</dt><dd>{def}</dd></div>))}
               </dl>
             )}
@@ -203,7 +203,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
               </figure>
               <h3>{f.title}</h3>
               <span class="rule" aria-hidden="true"></span>
-              <div class="prose">{f.body.map((p) => <p>{p}</p>)}</div>
+              <p class="prose">{f.body.join(' ')}</p>
             </article>
           ))}
         </section>
@@ -223,7 +223,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
             <h2>{t.requirements.title}</h2>
             <ul class="req-list">{t.requirements.items.map((i) => <li>{i}</li>)}</ul>
           </div>
-          <div>
+          <div class="req-card">
             <h3>{t.requirements.browsers}</h3>
             <table>
               <thead><tr>{t.requirements.head.map((h) => <th scope="col">{h}</th>)}</tr></thead>
@@ -248,7 +248,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
       </section>
 
       <section class="cta">
-        <span class="rose"><svg width="34" height="34" viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width=".9" aria-hidden="true"><circle cx="15" cy="15" r="13.5"/><path d="M15 3.8a5.6 5.6 0 0 1 0 11.2 5.6 5.6 0 0 1 0-11.2ZM15 15a5.6 5.6 0 0 1 0 11.2A5.6 5.6 0 0 1 15 15ZM3.8 15a5.6 5.6 0 0 1 11.2 0 5.6 5.6 0 0 1-11.2 0ZM15 15a5.6 5.6 0 0 1 11.2 0A5.6 5.6 0 0 1 15 15Z"/><circle cx="15" cy="15" r="2"/></svg></span>
+        <span class="rose"><svg width="44" height="44" viewBox="0 0 30 30" fill="none" stroke="currentColor" stroke-width=".9" aria-hidden="true"><circle cx="15" cy="15" r="13.5"/><path d="M15 3.8a5.6 5.6 0 0 1 0 11.2 5.6 5.6 0 0 1 0-11.2ZM15 15a5.6 5.6 0 0 1 0 11.2A5.6 5.6 0 0 1 15 15ZM3.8 15a5.6 5.6 0 0 1 11.2 0 5.6 5.6 0 0 1-11.2 0ZM15 15a5.6 5.6 0 0 1 11.2 0A5.6 5.6 0 0 1 15 15Z"/><circle cx="15" cy="15" r="2"/></svg></span>
         <h2>{t.cta.title}</h2>
         <p>{t.cta.body}</p>
         <a class="button primary" href={studio}>{t.cta.open}</a>
@@ -284,6 +284,10 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
       </div>
     </footer>
 
+    <a class="to-top" href="#top" aria-label={locale === 'fr' ? 'Revenir en haut' : 'Back to top'}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V6M6 12l6-6 6 6" /></svg>
+    </a>
+
     <div id="language" class="language" popover aria-labelledby="language-title">
       <div class="language-head">
         <h2 id="language-title">{t.nav.language}</h2>
@@ -305,13 +309,24 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
     --text-max: 620px;
     /* The studio's curve and durations (app/tokens.css): one motion system. */
     --ease: var(--ease-out);
+    /* One vertical scale for the whole page, so a section's air is a multiple
+       of the next one's rather than a clamp invented per block. */
+    --band: clamp(56px, 6.4vw, 96px);
+    --step: 8px;
   }
-  html { scroll-behavior: smooth; background: var(--surface-0); }
+  html {
+    scroll-behavior: smooth;
+    background: var(--surface-0);
+    /* An anchor lands under the header rather than behind it. */
+    scroll-padding-top: 88px;
+  }
   @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   body {
     margin: 0;
+    /* The room the page stands in is dark first and violet only where the nave
+       shows through: the wash used to tint the whole document. */
     background:
-      radial-gradient(ellipse 80% 50% at 50% 0%, #1d1723 0%, transparent 70%),
+      radial-gradient(ellipse 70% 38% at 50% 0%, #141119 0%, transparent 72%),
       var(--surface-0);
     color: var(--text);
     font-family: var(--body);
@@ -323,7 +338,15 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   a { color: inherit; }
   h1, h2, h3 { margin: 0; font-weight: 600; }
   p { margin: 0; }
-  :focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
+  :focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; border-radius: 2px; }
+
+  /* The surfaces the browser draws for us still belong to the studio. */
+  ::selection { background: var(--violet-700); color: var(--violet-50); }
+  * { scrollbar-color: var(--surface-2) transparent; scrollbar-width: thin; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--surface-0); }
+  ::-webkit-scrollbar-thumb { background: var(--surface-2); border: 3px solid var(--surface-0); border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--line-strong); }
 </style>
 
 <style>
@@ -333,7 +356,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   .top {
     position: absolute; inset: 0 0 auto 0; z-index: 5;
     display: flex; align-items: center; justify-content: space-between; gap: 24px;
-    padding: 24px clamp(16px, 4vw, 48px);
+    padding: 22px clamp(16px, 4vw, 48px);
   }
   /* The studio's wordmark, as its header draws it. */
   .wordmark { font: 400 14px/1 var(--display); font-stretch: 125%; letter-spacing: 0.36em; text-transform: uppercase; text-decoration: none; color: var(--text); }
@@ -342,8 +365,10 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   .top nav > a:not(.button):hover { color: var(--text); }
 
   /* The one eyebrow, and the one heading face: the inscription on the glass. */
-  .eyebrow { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.24em; text-transform: uppercase; color: var(--text-2); }
-  h2, h3 { font-family: var(--inscription); color: var(--violet-50); letter-spacing: 0.005em; text-wrap: balance; }
+  .eyebrow { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.24em; text-transform: uppercase; color: var(--text-3); }
+  /* The inscription face carries the headings; the violet stays in the rule
+     under them, the lamp and the one action, not in the text itself. */
+  h2, h3 { font-family: var(--inscription); color: var(--text); letter-spacing: 0.005em; text-wrap: balance; }
 
   /* The studio's key, cut into the plate: an edge drawn by light, not a box
      (`.tc-button` in app/tokens.css). The page and the rig press the same. */
@@ -372,24 +397,29 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
      of focus, so it carries less of a scrim than the stained glass it replaced
      and none of its own blur. */
   .hero { position: relative; min-height: 100vh; min-height: 100svh; display: grid; align-items: center; overflow: hidden; }
-  .hero-room { position: absolute; inset: 0; opacity: 0.85; }
+  /* The nave is the room, not the subject: it reads as depth behind the head
+     and stops short of tinting the copy beside it. */
+  .hero-room { position: absolute; inset: 0; opacity: 0.6; }
   .hero-room :global(img) { width: 100%; height: 100%; object-fit: cover; }
   .hero-room::after {
     content: ''; position: absolute; inset: 0;
-    background: linear-gradient(90deg, var(--surface-0) 14%, #09080bd1 46%, #09080b4d),
-                linear-gradient(0deg, var(--surface-0) 2%, transparent 42%, #09080b99);
+    background: linear-gradient(90deg, var(--surface-0) 16%, #09080be0 48%, #09080b66),
+                linear-gradient(0deg, var(--surface-0) 2%, transparent 44%, #09080bb3);
   }
   .hero-inner {
-    position: relative; width: min(100% - 32px, 1320px); margin: 0 auto; padding: 128px 0 72px;
-    display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(24px, 4vw, 64px); align-items: center;
+    position: relative; width: min(100% - 32px, 1320px); margin: 0 auto;
+    /* The header is absolute over the hero: its height is the only reason the
+       top pads more than the bottom, and the two now balance optically. */
+    padding: 104px 0 64px;
+    display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(24px, 4vw, 56px); align-items: center;
   }
-  .hero-copy { display: grid; gap: 18px; justify-items: start; }
-  .hero h1 { font: 600 clamp(58px, 8vw, 108px)/0.92 var(--inscription); letter-spacing: 0.01em; color: var(--violet-50); text-shadow: 0 4px 30px #000; }
-  .tagline { font: 400 clamp(19px, 2vw, 24px)/1.35 var(--body); color: var(--text); }
-  .lede { max-width: 36ch; font-size: 16px; line-height: 1.6; color: var(--text-2); }
+  .hero-copy { display: grid; gap: 16px; justify-items: start; }
+  .hero h1 { font: 600 clamp(58px, 8vw, 104px)/0.92 var(--inscription); letter-spacing: 0.01em; color: var(--violet-50); text-shadow: 0 4px 30px #000; }
+  .tagline { font: 400 clamp(19px, 2vw, 24px)/1.35 var(--body); color: var(--text); text-wrap: balance; }
+  .lede { max-width: 38ch; font-size: 16px; line-height: 1.6; color: var(--text-2); }
   .price { font: 400 11px/1 var(--display) !important; font-stretch: 125%; letter-spacing: 0.3em; text-transform: uppercase; color: var(--accent); }
-  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 4px; }
-  .facts { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 6px; font: 11px var(--mono); color: var(--text-3); }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 2px; }
+  .facts { list-style: none; padding: 0; margin: 4px 0 0; display: grid; gap: 6px; font: 11px var(--body); color: var(--text-3); }
   .hero-shot { animation: rise 900ms var(--ease) both; }
   /* No frame. Every shot on this page is now cut to its own silhouette —
      the amplifier to its cabinet and its lead, a band to the cabinet's own
@@ -401,89 +431,164 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   @keyframes rise { from { opacity: 0; transform: translateY(24px); } }
   @media (prefers-reduced-motion: reduce) { .hero-shot { animation: none; } }
 
-  /* Content blocks: centred, one idea each, separated by an engraved seam. */
-  .block { width: min(100% - 32px, var(--page-max)); margin: 0 auto; padding: clamp(72px, 10vw, 140px) 0; display: grid; justify-items: center; text-align: center; gap: 18px; }
-  .block h2 { font-size: clamp(34px, 4.2vw, 50px); line-height: 1.05; max-width: 20ch; }
+  /* Content blocks: centred, one idea each, separated by an engraved seam.
+     The rhythm is set by margins rather than one flat gap, so a label sits
+     tight under its heading and a new group gets the air instead. */
+  .block { width: min(100% - 32px, var(--page-max)); margin: 0 auto; padding: var(--band) 0; display: grid; justify-items: center; text-align: center; gap: 0; scroll-margin-top: 88px; }
+  .block h2 { font-size: clamp(32px, 4vw, 46px); line-height: 1.06; max-width: 20ch; }
+  .block .eyebrow { margin-bottom: calc(var(--step) * 1.75); }
+  .block h2 + .rule, .pair h3 + .rule { margin-top: calc(var(--step) * 2.25); }
   .rule { display: block; width: 44px; height: 1px; background: var(--violet-500); }
   .rule.left { justify-self: start; }
-  .prose { display: grid; gap: 12px; max-width: var(--text-max); color: var(--text-2); font-size: 16px; line-height: 1.65; }
+  .rule + .prose, .rule + p { margin-top: calc(var(--step) * 3); }
+  /* One paragraph, not two: centred text of unequal lengths stacked into a
+     stranded last line. The engine block keeps its pair — it reads down a
+     column beside a tall picture, which is the shape that carries them. */
+  .prose { max-width: var(--text-max); color: var(--text-2); font-size: 16px; line-height: 1.65; text-wrap: pretty; }
 
-  .shot { margin: 0 0 28px; width: min(100%, 980px); }
-  .shot :global(img), .stack :global(img) { border-radius: 0; box-shadow: none; }
+  /* A shot is narrower than its slot whenever the source image is: they are cut
+     to their own silhouette, so `max-width` alone left the narrow ones (the
+     pedals panel, 796 px) hard against the left edge of a 980 px block. */
+  .shot { margin: 0 0 calc(var(--step) * 4); width: min(100%, 980px); }
+  .shot :global(img), .stack :global(img) { border-radius: 0; box-shadow: none; margin-inline: auto; }
   .shot.small { width: min(100%, 440px); }
-  .stack { display: grid; gap: 16px; width: min(100%, 980px); margin-bottom: 28px; }
+  /* The head already opened the page. Here it is the subject of a paragraph,
+     not the first thing seen, so it is drawn smaller than in the hero. */
+  .shot.head { width: min(100%, 660px); }
+  .stack { display: grid; gap: 14px; width: min(100%, 980px); margin-bottom: calc(var(--step) * 4); }
 
-  .window { margin: 36px 0 0; width: 100%; overflow: hidden; border: 1px solid var(--line); border-top-color: #3b3441; border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: var(--shadow), inset 0 1px 0 #ffffff08, 0 40px 100px #000a; }
+  .window { margin: calc(var(--step) * 4) 0 0; width: 100%; overflow: hidden; border: 1px solid var(--line); border-top-color: #3b3441; border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: var(--shadow), inset 0 1px 0 #ffffff08, 0 40px 100px #000a; }
   .window-bar { display: flex; align-items: center; gap: 6px; padding: 11px 14px; border-bottom: 1px solid #050407; box-shadow: 0 1px 0 #ffffff0a; }
   .window-bar i { width: 8px; height: 8px; border-radius: 50%; background: var(--violet-800); }
   .window-bar span { margin-left: 12px; font: 400 9px/1 var(--display); font-stretch: 125%; letter-spacing: 0.24em; text-transform: uppercase; color: var(--text-3); }
 
-  /* Cards are cut from the studio's plate. */
-  .points { margin: 8px 0 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
-  .steps { list-style: none; padding: 0; counter-reset: step; }
-  .steps li { counter-increment: step; display: grid; gap: 6px; }
+  /* Cards are cut from the studio's plate. Equal columns, not a wrapped row:
+     content-sized cards gave four different widths for four equal things. */
+  .points, .steps {
+    margin: calc(var(--step) * 4) 0 0; width: 100%; padding: 0; list-style: none;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; align-items: stretch;
+  }
+  .steps { counter-reset: step; }
+  .steps li { counter-increment: step; }
   .steps .term::before { content: counter(step, decimal-leading-zero) '  '; color: var(--text-3); }
-  .points div, .steps li { min-width: 160px; padding: 16px 20px; border: 1px solid var(--line); border-top-color: #3b3441; border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: var(--shadow), inset 0 1px 0 #ffffff08; text-align: left; }
-  .points dt, .steps .term { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.24em; text-transform: uppercase; color: var(--violet-100); }
-  .points dd, .steps .def { margin: 8px 0 0; font-size: 14px; color: var(--text-2); }
+  .points div, .steps li { padding: 16px 20px; border: 1px solid var(--line); border-top-color: #3b3441; border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: var(--shadow), inset 0 1px 0 #ffffff08; text-align: left; }
+  .points dt, .steps .term { display: block; font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.24em; text-transform: uppercase; color: var(--text); }
+  .points dd, .steps .def { margin: 10px 0 0; font-size: 14px; line-height: 1.5; color: var(--text-2); }
+  /* One term is a line, not a card: a lone plate in the middle of a block reads
+     as a row that lost its neighbours. */
+  .points.lone { grid-template-columns: auto; justify-content: center; }
+  .points.lone div { padding: 0; border: 0; background: none; box-shadow: none; display: flex; align-items: baseline; gap: 12px; }
+  .points.lone dd { margin: 0; }
 
-  .feature + .feature, .pair, .engine, .faq { border-top: 1px solid #050407; box-shadow: inset 0 1px 0 #ffffff08; }
+  .pair { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: clamp(28px, 5vw, 80px); }
+  /* The two dialogs are different shapes. Each gets the same box, and sits
+     centred in it: bottom-aligning two pictures of unequal height stepped the
+     whole pair, and their titles with it. */
+  .pair article { display: grid; justify-items: center; gap: 0; }
+  .pair .shot { margin: 0 0 calc(var(--step) * 3.5); width: min(100%, 460px); height: clamp(190px, 17vw, 240px); }
+  .pair .shot :global(picture) { display: contents; }
+  .pair .shot :global(img) { width: 100%; height: 100%; max-width: none; object-fit: contain; }
+  .pair h3 { font-size: clamp(26px, 2.4vw, 30px); }
 
-  .pair { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: clamp(32px, 6vw, 96px); }
-  .pair article { display: grid; justify-items: center; gap: 16px; }
-  .pair h3 { font-size: 32px; }
-
-  .engine-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(32px, 6vw, 88px); align-items: center; text-align: left; }
+  .engine-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(32px, 5vw, 80px); align-items: center; text-align: left; }
   .engine-copy { display: grid; gap: 16px; justify-items: start; color: var(--text-2); line-height: 1.65; }
-  .engine .shot { margin: 0; }
-  .os { font: 11px var(--mono) !important; letter-spacing: 0.08em; color: var(--accent); }
+  .engine-copy .eyebrow { margin-bottom: calc(var(--step) * 0.75); }
+  .engine-copy h2 + .rule { margin: calc(var(--step) * 0.5) 0 calc(var(--step) * 1.5); }
+  .engine .shot { margin: 0 auto; }
+  .os { font: 11px var(--body) !important; letter-spacing: 0.08em; color: var(--accent); }
 
-  /* The banner: the nave, and the line carved into it as GUILT is. */
+  /* The banner: the nave, and the line carved into it as GUILT is. The scrim
+     is heavier than the hero's — nothing stands in front of this one, so the
+     picture would otherwise be the brightest violet on the page. */
   .banner { position: relative; height: clamp(360px, 60vw, 720px); overflow: hidden; display: grid; place-items: center; }
   .banner :global(picture), .banner :global(img) { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  .banner::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, var(--surface-0), #09080b40 32%, #09080b40 68%, var(--surface-0)); }
+  .banner::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, var(--surface-0), #09080b8f 34%, #09080b8f 66%, var(--surface-0)); }
   .banner-copy { position: relative; z-index: 1; text-align: center; padding: 0 16px; }
-  .banner-line { margin-right: -0.16em; font: 600 clamp(34px, 5vw, 84px)/1.1 var(--inscription); letter-spacing: 0.16em; text-wrap: balance; text-transform: uppercase; color: #efe2f1; text-shadow: 0 1px 0 #f7eaf6, 0 3px 0 #49334e, 0 8px 30px #000; }
-  .banner-sub { margin-top: 22px; font: 400 11px/1.4 var(--display); font-stretch: 125%; letter-spacing: 0.4em; text-transform: uppercase; color: var(--violet-100); text-shadow: 0 2px 8px #000; }
+  .banner-line { margin-right: -0.16em; font: 600 clamp(34px, 5vw, 84px)/1.1 var(--inscription); letter-spacing: 0.16em; text-wrap: balance; text-transform: uppercase; color: #ece7ef; text-shadow: 0 1px 0 #f5f1f6, 0 3px 0 #2e2833, 0 8px 30px #000; }
+  .banner-sub { margin-top: 22px; font: 400 11px/1.4 var(--display); font-stretch: 125%; letter-spacing: 0.4em; text-transform: uppercase; color: var(--text-2); text-shadow: 0 2px 8px #000; }
 
   .requirements { text-align: left; justify-items: stretch; }
-  .req-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(32px, 6vw, 96px); align-items: start; }
-  .req-grid h3 { font-size: 28px; margin-bottom: 16px; }
-  .req-list { margin: 20px 0 0; padding-left: 18px; display: grid; gap: 10px; color: var(--text-2); line-height: 1.6; }
-  .req-list li::marker { color: var(--violet-500); }
-  .req-grid > div:last-child { padding: 24px 24px 12px; border: 1px solid var(--line); border-top-color: #3b3441; border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: var(--shadow), inset 0 1px 0 #ffffff08; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .req-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(32px, 5vw, 80px); align-items: start; }
+  /* The card's own padding used to push its title 16 px below the one beside
+     it; the negative top pulls the two headings onto one line. */
+  .req-grid h3 { font-size: clamp(24px, 2.2vw, 28px); }
+  .req-list { margin: calc(var(--step) * 2.5) 0 0; padding-left: 18px; display: grid; gap: 10px; color: var(--text-2); line-height: 1.6; }
+  .req-list li::marker { color: var(--line-strong); }
+  .req-card { padding: 22px 24px 10px; border: 1px solid var(--line); border-top-color: #3b3441; border-radius: var(--radius); background: var(--faceplate), var(--surface-1); box-shadow: var(--shadow), inset 0 1px 0 #ffffff08; }
+  .req-card h3 { margin-top: -4px; }
+  table { width: 100%; margin-top: calc(var(--step) * 2); border-collapse: collapse; font-size: 14px; }
   th, td { padding: 12px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+  th:first-child, td:first-child { padding-left: 0; }
+  th:last-child, td:last-child { padding-right: 0; }
   tbody tr:last-child > * { border-bottom: 0; }
   thead th { font: 400 9px/1 var(--display); font-stretch: 125%; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-3); }
   tbody th { font-weight: 500; color: var(--text); }
-  td { color: var(--text-2); }
+  td { color: var(--text-2); font-variant-numeric: tabular-nums; }
 
-  .faq-list { width: min(100%, 760px); text-align: left; margin-top: 16px; }
+  .faq-list { width: min(100%, 760px); text-align: left; margin-top: calc(var(--step) * 3); }
   details { border-bottom: 1px solid var(--line); }
-  summary { cursor: pointer; list-style: none; padding: 20px 36px 20px 0; position: relative; font-size: 17px; color: var(--text); transition: color var(--dur-quick) var(--ease); }
+  /* The marker is laid out with the question rather than nudged to a fixed
+     offset, so a question that wraps keeps its sign on the first line. */
+  summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; justify-content: space-between; gap: 24px; padding: 18px 2px; font-size: 17px; line-height: 1.4; color: var(--text); transition: color var(--dur-quick) var(--ease); }
   summary:hover { color: var(--violet-100); }
   summary::-webkit-details-marker { display: none; }
-  summary::after { content: '+'; position: absolute; right: 6px; top: 18px; font: 18px var(--mono); color: var(--violet-400); transition: transform var(--dur-quick) var(--ease); }
+  summary::after { content: '+'; flex: none; font: 17px/1 var(--body); color: var(--text-3); transition: transform var(--dur-quick) var(--ease), color var(--dur-quick) var(--ease); }
+  summary:hover::after { color: var(--violet-200); }
   details[open] summary::after { transform: rotate(45deg); }
-  details p { padding: 0 0 20px; color: var(--text-2); line-height: 1.65; }
+  details p { padding: 0 2px 20px; max-width: 64ch; color: var(--text-2); line-height: 1.65; }
 
-  .cta { display: grid; justify-items: center; gap: 18px; text-align: center; padding: clamp(80px, 10vw, 140px) 16px; background: radial-gradient(ellipse at 50% 100%, #65536b40, transparent 62%); border-top: 1px solid #050407; box-shadow: inset 0 1px 0 #ffffff08; }
-  .rose { color: var(--violet-300); }
-  .cta h2 { font-size: clamp(38px, 5vw, 60px); line-height: 1.05; }
-  .cta p { color: var(--text-2); }
+  .cta { display: grid; justify-items: center; gap: 0; text-align: center; padding: clamp(64px, 7vw, 104px) 16px; background: radial-gradient(ellipse at 50% 100%, #65536b26, transparent 64%); }
+  .rose { display: block; color: var(--violet-400); margin-bottom: calc(var(--step) * 3); }
+  .cta h2 { font-size: clamp(34px, 4.4vw, 54px); line-height: 1.06; }
+  .cta p { margin: calc(var(--step) * 2) 0 calc(var(--step) * 3.5); color: var(--text-2); }
 
-  .foot { border-top: 1px solid #050407; box-shadow: inset 0 1px 0 #ffffff08; padding: 56px clamp(16px, 4vw, 48px) 32px; }
-  .foot-grid { width: min(100%, var(--page-max)); margin: 0 auto 40px; display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 32px; }
-  .foot nav { display: grid; gap: 12px; align-content: start; font-size: 14px; }
-  .foot nav .eyebrow { margin-bottom: 4px; }
-  .foot nav a { color: var(--text-2); text-decoration: none; }
+  .foot { padding: 48px clamp(16px, 4vw, 48px) 28px; }
+  .foot-grid { width: min(100%, var(--page-max)); margin: 0 auto 32px; display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 32px; }
+  .foot nav { display: grid; gap: 11px; align-content: start; font-size: 14px; }
+  /* The wordmark and the two column labels are set on different faces and
+     sizes: matching their cap heights is what puts them on one line. */
+  .foot-grid > div, .foot nav { padding-top: 2px; }
+  .foot nav .eyebrow { margin-bottom: 3px; }
+  .foot nav a { color: var(--text-2); text-decoration: none; transition: color var(--dur-quick) var(--ease); }
   .foot nav a:hover { color: var(--text); }
-  .foot .wordmark { margin-bottom: 14px; }
-  .muted { color: var(--text-3); font-size: 13px; }
-  .foot-bottom { width: min(100%, var(--page-max)); margin: 0 auto; padding-top: 24px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  .globe { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 4px; border: 0; background: none; color: var(--text-2); font: 13px var(--body); cursor: pointer; }
+  .foot .wordmark { display: block; margin-bottom: 12px; }
+  .muted { color: var(--text-3); font-size: 13px; line-height: 1.5; }
+  .foot-bottom { width: min(100%, var(--page-max)); margin: 0 auto; padding-top: 22px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .globe { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 4px; border: 0; background: none; color: var(--text-2); font: 13px var(--body); cursor: pointer; transition: color var(--dur-quick) var(--ease); }
   .globe:hover { color: var(--text); }
+
+  /*
+   * Back to the top. A plain anchor to the document's head — no script, and it
+   * works pressed, tabbed to, or with JavaScript off. It is out of the way
+   * until the page has actually been scrolled: the reveal is a scroll-driven
+   * animation, and a browser without them simply keeps it on screen.
+   *
+   * The jump is deliberately not smooth. The page is ten screens tall, so a
+   * smooth return takes well over a second, and a browser cancels a smooth
+   * scroll on the first wheel or trackpad event that arrives — inertia left
+   * over from the scroll that made the button appear is enough. The scroll
+   * then stops wherever it was, which reads as a button that does not go all
+   * the way up. `:has()` turns the page's smooth behaviour off for this one
+   * hop only (the nav anchors are a screen away and keep it); a browser
+   * without `:has()` simply keeps the old, interruptible smooth scroll.
+   */
+  html:has(#top:target) { scroll-behavior: auto; }
+  .to-top {
+    position: fixed; right: clamp(16px, 3vw, 28px); bottom: clamp(16px, 3vw, 28px); z-index: 6;
+    display: grid; place-items: center; width: 44px; height: 44px;
+    border: 1px solid var(--line); border-top-color: var(--line-strong); border-radius: 50%;
+    background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+    box-shadow: 0 6px 18px #000a; color: var(--text-2);
+    transition: color var(--dur-quick) var(--ease), border-color var(--dur-quick) var(--ease), background-color var(--dur-quick) var(--ease);
+  }
+  .to-top:hover { border-color: var(--accent-line); background-color: var(--surface-2); color: var(--text); }
+  @supports (animation-timeline: scroll(root)) {
+    .to-top { animation: surface linear both; }
+    /* See the note by the scroll-driven block below: the timeline is kept out
+       of any rule that also carries an `animation` shorthand. */
+    :root .to-top { animation-timeline: scroll(root); animation-range: 80vh 110vh; }
+  }
+  @keyframes surface { from { opacity: 0; visibility: hidden; } to { opacity: 1; visibility: visible; } }
 
   /* The language sheet takes the studio's dialog frame. */
   .language { width: min(100% - 32px, 360px); padding: 22px 24px 24px; border: 1px solid var(--violet-800); border-radius: var(--radius); background: var(--surface-1); color: var(--text); box-shadow: var(--shadow), 0 0 0 1px #000; }
@@ -519,44 +624,52 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
     .hero-copy > :nth-child(7) { animation-delay: 360ms; }
     .hero-shot { animation-delay: 200ms; }
 
+    /*
+     * `animation-timeline` is deliberately never written in the same rule as an
+     * `animation` shorthand: the CSS minifier folds the two together and emits
+     * `animation: linear both reveal view()`, which no engine parses — the
+     * timeline was taken out of the shorthand — so the whole declaration is
+     * dropped and every animation below silently stops existing. The `:root`
+     * prefix is what keeps the two rules from being merged back into one.
+     */
     @supports (animation-timeline: view()) {
-      .block > *, .pair article, .points div, .steps li, .faq-list details, .cta > * {
-        animation: reveal linear both;
+      .block > *, .pair article, .points div, .steps li, .faq-list details, .cta > * { animation: reveal linear both; }
+      :root .block > *, :root .pair article, :root .points div, :root .steps li, :root .faq-list details, :root .cta > * {
         animation-timeline: view();
         animation-range: entry 0% entry 70%;
       }
-      .shot :global(img), .stack :global(img), .window :global(img) {
-        animation: settle linear both;
+      .shot :global(img), .stack :global(img), .window :global(img) { animation: settle linear both; }
+      :root .shot :global(img), :root .stack :global(img), :root .window :global(img) {
         animation-timeline: view();
         animation-range: entry 0% cover 45%;
       }
-      .hero-room :global(img) {
-        animation: drift linear both;
+      .hero-room :global(img) { animation: drift linear both; }
+      :root .hero-room :global(img) {
         animation-timeline: scroll(root);
         animation-range: 0 100vh;
       }
-      .banner :global(img) {
-        animation: parallax linear both;
-        animation-timeline: view();
-      }
-      .banner-copy {
-        animation: reveal linear both;
+      .banner :global(img) { animation: parallax linear both; }
+      :root .banner :global(img) { animation-timeline: view(); }
+      .banner-copy { animation: reveal linear both; }
+      :root .banner-copy {
         animation-timeline: view();
         animation-range: entry 20% cover 50%;
       }
     }
   }
-  @keyframes reveal { from { opacity: 0; transform: translateY(32px); } }
+  @keyframes reveal { from { opacity: 0; transform: translateY(24px); } }
   @keyframes settle { from { opacity: 0.2; transform: scale(0.94); } }
-  @keyframes drift { to { transform: scale(1.08) translateY(4%); opacity: 0.55; } }
+  @keyframes drift { to { transform: scale(1.06) translateY(4%); opacity: 0.3; } }
   @keyframes parallax { from { transform: translateY(-12%) scale(1.2); } to { transform: translateY(12%) scale(1.2); } }
 
   @media (max-width: 900px) {
     .top nav > a:not(.button) { display: none; }
-    .hero-inner { grid-template-columns: 1fr; padding-top: 104px; }
-    .hero-room::after { background: linear-gradient(0deg, var(--surface-0) 10%, #09080bc7 60%, #09080b99); }
+    .hero-inner { grid-template-columns: 1fr; padding: 96px 0 56px; }
+    .hero-room::after { background: linear-gradient(0deg, var(--surface-0) 10%, #09080bd6 60%, #09080bb3); }
     .pair, .engine-grid, .req-grid { grid-template-columns: 1fr; }
     .engine-grid { justify-items: center; }
+    .pair article + article { margin-top: calc(var(--step) * 5); }
+    .req-card h3 { margin-top: 0; }
     .foot-grid { grid-template-columns: 1fr 1fr; }
     .foot-grid > div:first-child { grid-column: 1 / -1; }
   }
@@ -564,8 +677,9 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
     .top .button.small { display: none; }
     .banner-line { letter-spacing: 0.08em; margin-right: -0.08em; }
     .banner-sub { letter-spacing: 0.24em; }
-    .points, .steps { flex-direction: column; align-items: stretch; width: 100%; }
-    .req-grid > div:last-child { padding: 16px 14px 6px; }
+    .points, .steps { grid-template-columns: 1fr; }
+    .req-card { padding: 16px 16px 6px; }
     th, td { padding: 10px 4px; font-size: 13px; }
+    th:first-child, td:first-child, th:last-child, td:last-child { padding-inline: 0; }
   }
 </style>

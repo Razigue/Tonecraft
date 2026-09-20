@@ -1179,9 +1179,9 @@
   .dragging { outline: 2px dashed var(--accent-line); outline-offset: -5px; }
   .editor-bar, .scale-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 20px; border-top: 1px solid #050407; box-shadow: inset 0 1px 0 #ffffff0a; }
   .display label, .editor-bar label, .scale-bar label { display: flex; align-items: center; gap: 8px; font: 400 9px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); }
-  .tempo { width: 62px; box-sizing: border-box; min-height: 34px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-2); color: var(--text); font: 12px var(--mono); }
+  .tempo { width: 62px; box-sizing: border-box; min-height: 34px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-2); color: var(--text); font: 12px var(--body); }
   .durations { display: flex; flex-wrap: wrap; gap: 3px; }
-  .durations button { padding: 0 8px; font: 11px var(--mono); }
+  .durations button { padding: 0 8px; font: 11px var(--body); }
   .export { margin-left: auto; }
 
   .reader-body { display: flex; flex: 1; flex-direction: column; min-height: 0; border-top: 1px solid #050407; box-shadow: inset 0 1px 0 #ffffff0a; }
@@ -1213,11 +1213,11 @@
   .tracks button:hover:not(:disabled) { border-color: var(--line); background: var(--surface-2); }
   .tracks .selected, .tracks .selected:hover:not(:disabled) { border-color: var(--accent-line); background: var(--violet-900); color: var(--text); }
   .track-volume { width: calc(100% - 16px); height: 18px; margin: 0 8px 4px; cursor: pointer; }
-  .track-number { flex-shrink: 0; font: 10px var(--mono); color: var(--text-3); }
+  .track-number { flex-shrink: 0; font: 10px var(--body); color: var(--text-3); }
   .track-name { min-width: 0; }
-  .track-bars { flex-shrink: 0; margin-left: auto; font: 10px var(--mono); color: var(--text-3); }
+  .track-bars { flex-shrink: 0; margin-left: auto; font: 10px var(--body); color: var(--text-3); }
   .tracks .selected .track-bars { color: var(--text-2); }
-  .flag { flex-shrink: 0; align-self: center; margin-left: auto; padding: 3px 5px; border-radius: 2px; font: 9px/1 var(--mono); }
+  .flag { flex-shrink: 0; align-self: center; margin-left: auto; padding: 3px 5px; border-radius: 2px; font: 9px/1 var(--body); }
   .flag + .flag, .flag ~ .track-bars { margin-left: 0; }
   .flag.mute { background: var(--ember-line); color: #f6ddd6; }
   .flag.solo { background: var(--violet-600); color: var(--violet-50); }
@@ -1227,7 +1227,7 @@
      edge in the studio has, so it reads as a foot rather than as a last row. */
   .track-tools { flex-shrink: 0; display: flex; gap: 6px; margin: 0 8px; padding-top: 12px; border-top: 1px solid var(--line); box-shadow: 0 -1px 0 #ffffff0a; }
   .track-tools button { flex: 1; min-height: 30px; font-size: 11px; }
-  aside p { margin: 0; padding: 0 8px; font: 11px/1.7 var(--mono); color: var(--text-2); }
+  aside p { margin: 0; padding: 0 8px; font: 11px/1.7 var(--body); color: var(--text-2); }
   aside p span { color: var(--text-3); }
   aside > p { flex-shrink: 0; }
   .plays { margin-top: 14px !important; font: 12px/1.7 var(--body) !important; }
@@ -1270,14 +1270,14 @@
   .hidden { display: none; }
   .string-cursor { position: absolute; left: -10px; top: -8px; z-index: 2; width: 20px; height: 16px; box-sizing: border-box; border: 1.5px solid #a37320; border-radius: 3px; background: #a373201f; pointer-events: none; will-change: transform; }
   .empty-state { padding: 44px 24px 48px; text-align: center; }
-  .formats { display: block; margin-top: 22px; font: 10px var(--mono); letter-spacing: 1px; color: var(--text-3); }
+  .formats { display: block; margin-top: 22px; font: 10px var(--body); letter-spacing: 1px; color: var(--text-3); }
   .tab-mark { position: relative; width: 124px; margin: auto; padding: 4px 0; }
   .tab-mark i { display: block; height: 1px; margin: 7px 0; background: var(--violet-700); }
   .tab-mark span { position: absolute; inset: 0; display: grid; place-items: center; font: 400 15px/1 var(--display); font-stretch: 125%; letter-spacing: 0.3em; color: var(--violet-200); background: linear-gradient(90deg, transparent, #141218 32%, #141218 68%, transparent); }
 
   .scale-bar { margin: 0 -16px; padding: 10px 16px 0; }
-  .scale-notes { font: 11px var(--mono); color: var(--text); letter-spacing: .5px; }
-  .legend { display: flex; align-items: center; gap: 6px; margin-left: auto; font: 10px var(--mono); color: var(--text-2); }
+  .scale-notes { font: 11px var(--body); color: var(--text); letter-spacing: .5px; }
+  .legend { display: flex; align-items: center; gap: 6px; margin-left: auto; font: 10px var(--body); color: var(--text-2); }
   .legend i { display: inline-block; width: 10px; height: 10px; margin-left: 8px; border-radius: 50%; box-sizing: border-box; }
   .legend .root { background: var(--violet-400); }
   .legend .tone { border: 1.5px solid var(--violet-400); }

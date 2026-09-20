@@ -112,7 +112,7 @@
   .modes button:focus-visible { outline: 2px solid var(--iris); outline-offset: -4px; }
   .t-wordmark { font: 400 14px/1 var(--display); font-stretch: 125%; letter-spacing: 0.36em; text-transform: uppercase; color: var(--text); }
   .bar-right { display: flex; align-items: center; justify-self: end; gap: 12px; }
-  .latency { margin-right: 4px; font: 12px var(--mono); white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-3); }
+  .latency { margin-right: 4px; font: 12px var(--body); white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-3); }
   .settings-button {
     display: grid;
     place-items: center;

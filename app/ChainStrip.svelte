@@ -251,13 +251,25 @@
      inside a 136 px plate, and a panel opening under it would cover the stages
      beside it. Where anchors are not supported yet, it is simply centred. */
   .pedals { position: fixed; inset: 50% auto auto 50%; translate: -50% -50%; padding: 20px 24px; }
-  .pedals:popover-open { display: flex; align-items: flex-start; gap: 28px; }
+  .pedals:popover-open { display: flex; align-items: flex-start; }
   @supports (position-anchor: --a) {
     .pedals { position-anchor: --chain-pedals; inset: auto; top: anchor(--chain-band bottom); left: anchor(center); translate: -50% 0; margin-top: 12px; position-try-fallbacks: flip-block; }
   }
-  .pedal { display: flex; flex-direction: column; align-items: center; gap: 14px; }
-  .pedal + .pedal { padding-left: 28px; border-left: 1px solid var(--line); }
-  .pedal .enable { display: flex; gap: 8px; width: auto; height: 16px; }
+  /* A stage is as wide as its knobs and nothing else, and the seam is drawn in
+     the middle of the gutter rather than against a column's edge. Both matter:
+     the name used to set the width whenever it was wider than the single knob
+     it names — "REVERB ●" is — and the seam, placed at a fixed distance from
+     that edge, then landed off centre, against the dial next door. Now the
+     name hangs over its knobs, free to overhang a gutter 56 px wide, and the
+     seam is 28 px from the knobs on either side of it, at every stage. */
+  .pedal { position: relative; display: flex; flex-direction: column; align-items: center; padding-top: 30px; }
+  /* The gutter is a margin and the seam is drawn inside it, so a stage's own
+     box stays exactly its knobs: that is what keeps `left: 50%` the middle of
+     the knobs for the name above, and the seam 28 px from the dial on both
+     sides of it. */
+  .pedal + .pedal { margin-left: 56px; }
+  .pedal + .pedal::before { content: ''; position: absolute; top: 0; bottom: 0; left: -28px; border-left: 1px solid var(--line); }
+  .pedal .enable { position: absolute; top: 0; left: 50%; translate: -50% 0; display: flex; gap: 8px; width: auto; height: 16px; white-space: nowrap; }
   .pedal-knobs { display: flex; gap: 20px; }
 
   .eyebrow, .selector > span {

@@ -162,5 +162,5 @@
   }
   .volume input::-webkit-slider-thumb { width: 12px; height: 12px; appearance: none; border: 1px solid var(--violet-200); border-radius: 50%; background: var(--surface-1); }
   .volume input::-moz-range-thumb { width: 12px; height: 12px; border: 1px solid var(--violet-200); border-radius: 50%; background: var(--surface-1); }
-  .volume output { font: 11px var(--mono); color: var(--text-2); text-align: right; }
+  .volume output { font: 11px var(--body); font-variant-numeric: tabular-nums; color: var(--text-2); text-align: right; }
 </style>

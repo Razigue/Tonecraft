@@ -143,7 +143,7 @@
 
   /* Elapsed left of the groove, length right of it, then where in the song. */
   .display-main { display: flex; align-items: center; gap: 14px; min-width: 0; height: 30px; }
-  .clock, .total, .figure { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1; }
+  .clock, .total, .figure { font-family: var(--body); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1; }
   .clock { min-width: 4ch; font-size: var(--type-clock); color: var(--violet-50); }
   .total { font-size: var(--type-clock); color: var(--text-3); }
   .position { display: flex; flex: 1 1 200px; min-width: 60px; }
@@ -163,7 +163,7 @@
   .scrub:hover::-webkit-slider-thumb { transform: scale(1.2); }
   .scrub:disabled { opacity: .4; }
   .scrub:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; border-radius: 2px; }
-  .synced-note { font: 12px var(--mono); color: var(--accent); white-space: nowrap; }
+  .synced-note { font: 12px var(--body); color: var(--accent); white-space: nowrap; }
   .tracks { anchor-name: --tab-tracks; }
   @media (max-width: 1366px) { .total { display: none; } .readout { padding-left: 12px; } }
   @media (max-width: 760px) {

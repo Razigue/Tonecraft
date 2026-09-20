@@ -288,7 +288,7 @@
   .update-link { padding: 8px 14px; border: 1px solid var(--violet-500); border-radius: var(--radius); background: var(--action); color: var(--action-text); text-decoration: none; }
   a { color: var(--ink); }
   a:focus-visible, .inline:focus-visible, input:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
-  code { font-family: var(--mono); font-size: 12px; }
+  code { font-family: var(--body); font-size: 12px; }
   .inline {
     padding: 0; border: 0; background: none; color: var(--ink);
     font: inherit; text-decoration: underline; cursor: pointer;

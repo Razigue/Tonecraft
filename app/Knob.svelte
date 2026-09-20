@@ -152,7 +152,7 @@
   }
   input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ns-resize; touch-action: none; }
   .dial:focus-within { outline: 2px solid var(--iris); outline-offset: 5px; }
-  .value { font: 10px var(--mono); font-variant-numeric: tabular-nums; color: var(--control-label, var(--text-2)); white-space: nowrap; }
+  .value { font: 10px var(--body); font-variant-numeric: tabular-nums; color: var(--control-label, var(--text-2)); white-space: nowrap; }
   .knob:hover .label { color: var(--text); }
   /* Name above value, both to the right of a 44 px dial: 44 px tall in all. */
   .compact { display: grid; grid-template: auto auto / 44px auto; column-gap: 10px; row-gap: 6px; align-items: center; min-width: 0; }

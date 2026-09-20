@@ -141,13 +141,13 @@
   .capo{stroke:#a37320;stroke-width:3;opacity:.55}
   .string{stroke:#a9a296}
   .inlay{fill:#e3dccf}
-  .open{font:11px var(--mono);fill:#8b8378;text-anchor:middle}
-  .number{font:9px var(--mono);fill:#b1a99d;text-anchor:middle}
+  .open{font:11px var(--body);fill:#8b8378;text-anchor:middle}
+  .number{font:9px var(--body);fill:#b1a99d;text-anchor:middle}
   /* The scale is violet and drawn, the playing note amber and filled: two hues
      and two shapes, so neither depends on telling colours apart (DESIGN.md §8).
      The violet is the studio's, deepened to be read on paper. */
   .mark{fill:#fbf8f2;stroke:#5e4a66;stroke-width:1.6}
-  .degree{font:7.5px var(--mono);fill:#5e4a66;text-anchor:middle;pointer-events:none}
+  .degree{font:7.5px var(--body);fill:#5e4a66;text-anchor:middle;pointer-events:none}
   .root .mark{fill:#5e4a66}
   .root .degree{fill:#fbf8f2;font-weight:600}
   .halo{fill:#a3732040}

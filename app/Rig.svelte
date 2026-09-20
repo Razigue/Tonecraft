@@ -1644,7 +1644,7 @@
     justify-content: center;
     gap: 3px;
     height: 62px;
-    font: 12px/1 var(--mono);
+    font: 12px/1 var(--body);
     font-variant-numeric: tabular-nums;
   }
   .metronome-toggle[aria-pressed='true'] { color: var(--violet-50); }

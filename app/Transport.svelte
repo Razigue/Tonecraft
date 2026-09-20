@@ -129,7 +129,7 @@
 
   .take-status { display: flex; align-items: baseline; gap: 8px; font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-3); }
   .rec-dot { align-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--violet-700); }
-  .take-time { font: var(--type-rec)/1 var(--mono); letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--text-2); }
+  .take-time { font: var(--type-rec)/1 var(--body); letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--text-2); }
   .take-status.recording { color: var(--ember); }
   .take-status.recording .rec-dot { background: var(--ember); animation: rec 1.6s ease-in-out infinite alternate; }
   .take-status.recording .take-time { color: var(--ember); }
