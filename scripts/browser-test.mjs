@@ -727,13 +727,43 @@ await demoPage.getByRole('button', { name: 'Tester' }).click();
 // A tester is walked through the page one window at a time, the rest in the
 // dark, each window lit where it is and explained beside it.
 check('a tester starts with the tutorial', await demoPage.locator('.tour-card').isVisible());
+/**
+ * A tutorial step's own 900 ms, and then however much longer the page needs.
+ *
+ * Each step lights its window, scrolls it into place — smoothly — and puts the
+ * card beside it. A smooth scroll runs for a fixed time, so how much of one has
+ * happened when a flat 900 ms is up depends on when the step began, which on a
+ * loaded runner is later than it is on an idle laptop. Read mid-step, the
+ * geometry reported the window not yet on top, the page not yet shaded, and on
+ * the phone the sheet still unfolded with its window behind it. Run under four
+ * busy cores, that is what this suite does.
+ *
+ * The flat wait stays as a floor, so this can only ever wait longer than it
+ * used to and never less. After it the page is given up to six more seconds to
+ * hold still. Whether it has stopped moving is a different question from where
+ * it stopped, which is what the checks still assert.
+ */
+const stepPlaced = async (view) => {
+  await view.waitForTimeout(900);
+  await view.waitForFunction(() => {
+    const card = document.querySelector('.tour-card');
+    if (!card) return false;
+    const now = `${Math.round(scrollY)}:${Math.round(card.getBoundingClientRect().top)}`;
+    const state = (window.__placed ??= { at: '', runs: 0 });
+    state.runs = state.at === now ? state.runs + 1 : 0;
+    state.at = now;
+    return state.runs >= 6;
+  }, null, { timeout: 6000, polling: 'raf' }).catch(() => {});
+  await view.evaluate(() => { delete window.__placed; });
+};
+
 const tourTargets = ['.global-controls', '.amp-head', '.demo-panel', '.reader', '.reader', '.metronome-launch', null];
 const tourSeen = [];
 let tourWaited = false;
 for (const [step, target] of tourTargets.entries()) {
   // The composing step waits for a note written from the keyboard.
   if (step === 4) {
-    await demoPage.waitForTimeout(900);
+    await stepPlaced(demoPage);
     const waited = await demoPage.locator('.tour-card .tour-next').isDisabled();
     await demoPage.locator('.write-tab').click();
     await demoPage.locator('.editor-bar').waitFor({ timeout: 30000 });
@@ -741,7 +771,7 @@ for (const [step, target] of tourTargets.entries()) {
     await demoPage.waitForFunction(() => !document.querySelector('.tour-card .tour-next').disabled, null, { timeout: 15000 });
     tourWaited = waited;
   }
-  await demoPage.waitForTimeout(900);
+  await stepPlaced(demoPage);
   tourSeen.push(await demoPage.evaluate((selector) => {
     const card = document.querySelector('.tour-card').getBoundingClientRect();
     const inView = card.top >= 0 && card.bottom <= innerHeight && card.left >= 0 && card.right <= innerWidth;
@@ -981,7 +1011,7 @@ check('an engine older than the newest release is offered the update', updateOff
   const seen = [];
   for (const [step, target] of tourTargets.entries()) {
     if (step === 4) {
-      await tap.waitForTimeout(900);
+      await stepPlaced(tap);
       const folded = await tap.locator('.tour-card.collapsed').count() === 1;
       const write = await tap.locator('.write-tab').boundingBox();
       await tap.touchscreen.tap(write.x + write.width / 2, write.y + write.height / 2);
@@ -994,7 +1024,7 @@ check('an engine older than the newest release is offered the update', updateOff
       await tap.waitForFunction(() => !document.querySelector('.tour-card .tour-next').disabled, null, { timeout: 15000 });
       seen.push({ title: 'compose', ok: folded, detail: `starts folded ${folded}` });
     }
-    await tap.waitForTimeout(900);
+    await stepPlaced(tap);
     seen.push(await tap.evaluate((selector) => {
       const card = document.querySelector('.tour-card').getBoundingClientRect();
       const next = document.querySelector('.tour-card .tour-next').getBoundingClientRect();
