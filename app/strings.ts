@@ -283,6 +283,10 @@ const en = {
     scoreTracks: 'Score tracks',
     tracks: (n: number) => (n === 1 ? '1 track' : `${n} tracks`),
     trackN: (n: number) => `Track ${n}`,
+    /* The track on the lectern, named on the lectern: which one is being read
+       and played should not cost a click on a panel to find out. */
+    following: (name: string) => `Following ${name}`,
+    followingSilent: (name: string) => `Following ${name}, which is silent`,
     soloFlag: 'S',
     muteFlag: 'M',
     soloTitle: 'Solo',
@@ -694,6 +698,8 @@ const fr: Ui = {
     scoreTracks: 'Pistes de la partition',
     tracks: (n) => (n === 1 ? '1 piste' : `${n} pistes`),
     trackN: (n) => `Piste ${n}`,
+    following: (name) => `Piste suivie : ${name}`,
+    followingSilent: (name) => `Piste suivie : ${name}, muette`,
     soloFlag: 'S',
     muteFlag: 'M',
     soloTitle: 'Solo',

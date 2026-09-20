@@ -150,7 +150,7 @@ export const PARAMS: readonly Param[] = [
   // What reaches the model. On captures this saturated it sets bite and
   // dynamics far more than it sets volume.
   { id: 'in_trim', stage: 'input', label: 'Trim', unit: 'dB',
-    min: -6, max: 24, default: 11.4, taper: 'linear' },
+    min: -6, max: 24, default: -4, taper: 'linear' },
 
   // --- Gate --------------------------------------------------------------
   // Release is automatic and deliberately not exposed: a player should not have
@@ -160,10 +160,10 @@ export const PARAMS: readonly Param[] = [
   // captures amplify enormously — 0.02 in comes back out at -19 dBFS — so the
   // useful thresholds all sit in the last 20 dB above silence.
   //
-  // -58 is the player's chosen default; the 8 ms release in dsp/frontend.cpp
+  // -50 is the player's chosen default; the 8 ms release in dsp/frontend.cpp
   // tightens the close independently of this level threshold.
   { id: 'gate_threshold', stage: 'gate', label: 'Threshold', unit: 'dB',
-    min: -95, max: -30, default: -58, taper: 'linear' },
+    min: -95, max: -30, default: -50, taper: 'linear' },
   { id: 'gate_bypass', stage: 'gate', label: 'Bypass', unit: 'bool',
     min: 0, max: 1, default: 0, taper: 'switch' },
 

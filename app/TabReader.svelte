@@ -150,6 +150,10 @@
   const scaleNames = $derived(scaleDef ? scaleNoteNames(scaleRoot, scaleDef) : []);
   function rememberScale() { void dbPut(STORES.state, { scaleId, scaleRoot }, SCALE_KEY); }
 
+  /** The track on the lectern: its name, and whether anything of it is heard. */
+  const followingName = $derived(score?.tracks[track]?.name || words.trackN(track + 1));
+  const followingSilent = $derived(mutedTracks.has(track) || (soloed.size > 0 && !soloed.has(track)));
+
   /**
    * One line, running right to left under a playhead that stays in the middle
    * of the window. A page of music asks the reader to know where the eye is
@@ -176,6 +180,37 @@
     };
     sliding = requestAnimationFrame(step);
   }
+  /**
+   * Puts the paper back under the cursor, wherever alphaTab left it.
+   *
+   * Paused, alphaTab freezes its beat cursor part way through the beat it was
+   * crossing, and then re-issues that beat's cursor update with a duration of
+   * zero — whose `fromX` is the beat's *start*. Following that snapped the line
+   * back to the beat's first note while the cursor stayed where it had stopped:
+   * measured, 78 px of paper one way and 11 px of cursor the other, so the tab
+   * stopped 84 px from the playhead it is read under. The event cannot say
+   * where the cursor is, so the cursor is asked.
+   */
+  function cursorX(): number | null {
+    const mark = surface?.parentElement?.querySelector<HTMLElement>('.at-cursor-beat');
+    if (!mark || !viewport) return null;
+    return mark.getBoundingClientRect().left - viewport.getBoundingClientRect().left + viewport.scrollLeft;
+  }
+   /**
+   * The re-pin does not land in one frame — alphaTab moves the cursor again
+   * after the state change — so this waits for two frames that read the same
+   * place and only then moves the paper, once. Following it every frame while
+   * it was still moving sent the line 29 px past where it belonged and back.
+   * It only ever runs while paused, and gives up after eight frames.
+   */
+  function settleOnCursor(previous: number | null = null, frames = 8) {
+    const x = cursorX();
+    if (x !== null && (x === previous || frames <= 0)) { slid = -1; follow(x, 0); }
+    else if (x !== null && frames > 0) { requestAnimationFrame(() => settleOnCursor(x, frames - 1)); return; }
+    pausing = false;
+  }
+  /** Set between a pause and the paper settling under the frozen cursor. */
+  let pausing = false;
   function showBar(index: number) {
     const bounds = api?.boundsLookup?.findMasterBarByIndex(index);
     if (bounds) { slid = -1; follow(bounds.realBounds.x, 0); }
@@ -315,10 +350,19 @@
     // alphaTab's own handler for this layout parks the cursor on the left edge.
     api.customScrollHandler = {
       [Symbol.dispose]() {},
-      forceScrollTo: beat => { slid = -1; follow(beat.onNotesX, 0); },
+      // A pause asks for this too, with the beat's own notes — the beat the
+      // cursor was part way across, so its start. `settleOnCursor` places that
+      // one, from the cursor rather than from the beat.
+      forceScrollTo: beat => { if (pausing) return; slid = -1; follow(beat.onNotesX, 0); },
       onBeatCursorUpdating: (_start, _end, _mode, fromX, toX, ms) => {
         if (toX === slid && ms > 0) return;
         slid = ms > 0 ? toX : -1;
+        // A pause re-pins the cursor with a duration of zero and this beat's
+        // *start*, which is not where the cursor stopped. Following it threw
+        // the paper back 78 px; `settleOnCursor` does this one instead, from
+        // where the cursor actually is. Every other zero-duration update — a
+        // seek, a click on a note — still lands here.
+        if (ms <= 0 && pausing) return;
         follow(fromX, 0);
         if (ms > 0) follow(toX, ms);
       },
@@ -343,8 +387,13 @@
       playing = e.state === 1;
       // Paused, stopped, or run to the last bar: all three are the tab no longer
       // asking for a beat.
-      if (was && !playing) onsyncstop?.();
-      if (playing) stringCursor = null;
+      // A frame later, so alphaTab's own re-snap of the cursor has happened
+      // and the paper is put back under where it actually ended up.
+      // The slide of the beat that was being crossed is stopped with it: the
+      // paper holds where the cursor held, and `settleOnCursor` makes up the
+      // difference once alphaTab has finished re-pinning it.
+      if (was && !playing) { onsyncstop?.(); pausing = true; cancelAnimationFrame(sliding); requestAnimationFrame(() => settleOnCursor()); }
+      if (playing) { stringCursor = null; pausing = false; }
       // Only a pause moves the cursor to where playback stopped: every new
       // layout reloads the player, which reports "stopped" at tick 0, and
       // typing fast sent the cursor back to the first beat mid-chord.
@@ -357,7 +406,10 @@
       // a stray position update from the pause that preceded it consumed the
       // flag, and the seek that followed then scrolled nowhere. Writing, the
       // cursor scrolls itself, to the beat rather than to its bar.
-      if (e.isSeek && !editing) { if (playing) lit = []; showBar(barAt(e.currentTick)); }
+      // A pause reports a seek of its own, to the bar the cursor stopped in:
+      // following it put the line back at that bar's first note. `pausing`
+      // holds it off; `settleOnCursor` places the paper instead.
+      if (e.isSeek && !editing && !pausing) { if (playing) lit = []; showBar(barAt(e.currentTick)); }
     });
     api.beatMouseDown.on(beat => { if (editing && !playing) cursorAtTick(beat.absolutePlaybackStart); });
     // What is sounding, replaced whole on every beat: the previous position
@@ -508,6 +560,10 @@
     // Cued but not yet playing: the player changed their mind before the first
     // beat, and the click started for the count-in goes with it.
     if (cueing) { cancelCue(); onsyncstop?.(); return; }
+    // Raised before the press, not in the state change alphaTab sends after it:
+    // its zero-duration cursor re-pin can arrive first, and then the paper has
+    // already jumped back to the start of the beat.
+    if (playing) pausing = true;
     if (playing || syncBpm === null || !onsyncstart || !score) { api.playPause(); return; }
     const reader = api;
     reader.tickPosition = score.masterBars[barAt(positionTick())]?.start ?? 0;
@@ -893,6 +949,16 @@
     <div class="reader-title">
       {#if editing || !score}<span class="eyebrow">{editing ? words.editor : words.title}</span>{/if}
       {#if score && !editing}<h2 title={score.title || filename}>{score.title || filename}{#if score.artist}<span> · {score.artist}</span>{/if}</h2>{/if}
+      <!-- Which track is being read and played. A score with several parts
+           looks the same whichever one is on the lectern, and the only place
+           that said so was a panel nobody opens while playing. -->
+      {#if score && !editing && score.tracks.length > 1}
+        <p class="following" class:silent={followingSilent} aria-label={(followingSilent ? words.followingSilent : words.following)(followingName)}>
+          <span class="following-lamp" aria-hidden="true"></span>
+          <span class="track-number" aria-hidden="true">{String(track + 1).padStart(2, '0')}</span>
+          <span class="following-name">{followingName}</span>
+        </p>
+      {/if}
     </div>
     {#if score}
       <div class="display">
@@ -1008,6 +1074,32 @@
   .eyebrow { font: 400 10px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-2); }
   h2 { margin: 0; overflow: hidden; font: 500 var(--type-title)/1.2 var(--body); color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
   h2 span { color: var(--text-2); font-weight: 400; }
+  /* Under the title, on the module step every name in the studio is set on.
+     A lamp, because that is what the studio uses to say a thing is live: lit
+     while the track is heard, dark while it is muted or soloed out. */
+  .following {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin: 0;
+    font: 400 10px/1 var(--display);
+    font-stretch: 125%;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-2);
+  }
+  .following-lamp {
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 5px #d6b6e399;
+  }
+  .following-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .following.silent .following-lamp { background: none; box-shadow: none; border: 1px solid var(--violet-700); }
+  .following.silent .following-name { color: var(--text-3); text-decoration: line-through; }
   .display { display: flex; align-items: center; gap: 14px; }
   .heading-actions { display: flex; gap: 10px; }
   .reader-heading > input { display: none; }
@@ -1058,7 +1150,10 @@
     max-height: calc(100dvh - 240px);
     margin: 0;
     padding: 16px 14px;
-    overflow: auto;
+    /* The panel itself does not scroll: its list does. Solo, mute, the jump to
+       the first bar and the counts under them are what the list is operated
+       with, and on a score of twenty parts they scrolled off the bottom of it. */
+    overflow: hidden;
     box-sizing: border-box;
   }
   aside:popover-open { display: flex; flex-direction: column; }
@@ -1066,7 +1161,9 @@
   @supports (position-anchor: --a) {
     aside { position-anchor: --tab-tracks; inset: auto; bottom: anchor(top); left: anchor(left); margin-bottom: 8px; position-try-fallbacks: flip-inline; }
   }
-  .tracks { display: grid; gap: 4px; margin-top: 14px; }
+  /* The one part that scrolls. `min-height: 0` because a grid in a flex column
+     takes its content's height by default and would push the tools out again. */
+  .tracks { flex: 1 1 auto; min-height: 0; display: grid; align-content: start; gap: 4px; margin-top: 14px; overflow-y: auto; overscroll-behavior: contain; }
   .track-row { display: grid; min-width: 0; }
   .tracks button { display: flex; align-items: baseline; gap: 10px; padding: 9px 8px; border-color: transparent; background: none; text-align: left; line-height: 1.5; overflow-wrap: anywhere; font-size: 13px; }
   .tracks button:hover:not(:disabled) { border-color: var(--line); background: var(--surface-2); }
@@ -1082,11 +1179,14 @@
   .flag.solo { background: var(--violet-600); color: var(--violet-50); }
   .tracks .muted .track-name, .tracks .silenced .track-name { opacity: .45; }
   .tracks .muted .track-name { text-decoration: line-through; }
-  .track-tools { display: flex; gap: 6px; margin: 12px 8px 0; }
+  /* Pinned under the list, with the light along its top lip that every other
+     edge in the studio has, so it reads as a foot rather than as a last row. */
+  .track-tools { flex-shrink: 0; display: flex; gap: 6px; margin: 0 8px; padding-top: 12px; border-top: 1px solid var(--line); box-shadow: 0 -1px 0 #ffffff0a; }
   .track-tools button { flex: 1; min-height: 30px; font-size: 11px; }
   aside p { margin: 0; padding: 0 8px; font: 11px/1.7 var(--mono); color: var(--text-2); }
   aside p span { color: var(--text-3); }
-  .plays { margin-top: 20px !important; padding-top: 14px !important; border-top: 1px solid var(--line); font: 12px/1.7 var(--body) !important; }
+  aside > p { flex-shrink: 0; }
+  .plays { margin-top: 14px !important; font: 12px/1.7 var(--body) !important; }
   .plays b { color: var(--text); font-weight: 500; }
   .jump { display: block; min-height: 28px; margin: 2px 0 6px -8px; padding: 0 8px; font-size: 12px; text-decoration: underline; text-decoration-color: var(--violet-500); text-underline-offset: 3px; }
 
