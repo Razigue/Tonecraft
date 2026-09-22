@@ -24,13 +24,13 @@ export interface TabTrackJob {
 
 export interface TabTrackAudio {
   readonly index: number;
-  readonly samples: Float32Array;
+  readonly samples: Float32Array<ArrayBuffer>;
   /** Present only where the doubler was on: that is the only stereo stage. */
-  readonly right?: Float32Array;
+  readonly right?: Float32Array<ArrayBuffer>;
 }
 
 /** Brings a DI to the level the presets are voiced against. */
-export function levelDi(di: Float32Array, rate: number): Float32Array {
+export function levelDi(di: Float32Array<ArrayBuffer>, rate: number): Float32Array<ArrayBuffer> {
   const rms = activeRms(di, rate);
   if (rms <= 0) return di;
   const gain = Math.pow(10, TARGET_RMS_DB / 20) / rms;

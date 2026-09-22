@@ -291,7 +291,7 @@ export interface RenderOptions {
 }
 
 /** Renders a track's events to a mono DI, at the DI level the presets expect. */
-export function renderDi(bank: Bank, track: TrackEvents, options: RenderOptions): Float32Array {
+export function renderDi(bank: Bank, track: TrackEvents, options: RenderOptions): Float32Array<ArrayBuffer> {
   const { rate, seconds, seed = 1, onProgress } = options;
   const rand = rng(seed * 31 + 7);
   const palm = new Palm(bank);

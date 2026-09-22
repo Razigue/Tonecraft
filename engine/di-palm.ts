@@ -50,7 +50,7 @@ export function fft(re: Float64Array, im: Float64Array, inverse = false): void {
  * Splits a note into bands that sum back to it exactly: complementary
  * raised-cosine crossovers, half an octave wide, in the frequency domain.
  */
-export function splitBands(x: Float32Array, rate: number): Float64Array[] {
+export function splitBands(x: Float32Array, rate: number): Float64Array<ArrayBuffer>[] {
   let n = 1;
   while (n < x.length) n <<= 1;
   const re = new Float64Array(n), im = new Float64Array(n);
@@ -63,7 +63,7 @@ export function splitBands(x: Float32Array, rate: number): Float64Array[] {
     if (f >= hi) return 1;
     return 0.5 - 0.5 * Math.cos(Math.PI * Math.log2(f / lo));
   };
-  const out: Float64Array[] = [];
+  const out: Float64Array<ArrayBuffer>[] = [];
   for (let b = 0; b < BAND_EDGES.length - 1; b++) {
     const r = new Float64Array(n), i = new Float64Array(n);
     const last = b + 2 === BAND_EDGES.length;
@@ -74,7 +74,7 @@ export function splitBands(x: Float32Array, rate: number): Float64Array[] {
       if (k > 0 && k < n / 2) { r[n - k] = re[n - k]! * w; i[n - k] = im[n - k]! * w; }
     }
     fft(r, i, true);
-    out.push(r.subarray(0, x.length) as Float64Array);
+    out.push(r.subarray(0, x.length));
   }
   return out;
 }
@@ -99,7 +99,7 @@ export function envelopes(data: Float32Array, attack: number, rate: number): num
  * takes do in 80 ms. Left at 1, running sixteenths on the high strings left a
  * hole before every note.
  */
-export function applyPalm(data: Float32Array, attack: number, rate: number, mask: PalmMask, decay: number, tone: number): Float32Array {
+export function applyPalm(data: Float32Array, attack: number, rate: number, mask: PalmMask, decay: number, tone: number): Float32Array<ArrayBuffer> {
   const frame = Math.round(FRAME_SECONDS * rate);
   const parts = splitBands(data, rate);
   const end = Math.min(data.length, attack + FRAMES * frame);

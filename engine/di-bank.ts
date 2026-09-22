@@ -40,7 +40,7 @@ export interface BankSample {
   readonly harmonic: number;
   /** Where the pick lands, in samples from the start of `data`. */
   readonly attack: number;
-  readonly data: Float32Array;
+  readonly data: Float32Array<ArrayBuffer>;
   readonly sustain: Sustain | null;
 }
 
@@ -82,7 +82,7 @@ export interface BankIndex {
 
 const INT16 = 32768;
 
-export function encodePcm(parts: readonly Float32Array[]): Int16Array {
+export function encodePcm(parts: readonly Float32Array[]): Int16Array<ArrayBuffer> {
   const total = parts.reduce((n, p) => n + p.length, 0);
   const out = new Int16Array(total);
   let at = 0;

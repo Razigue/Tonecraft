@@ -199,7 +199,7 @@ const palm = STRINGS.map((_, s) => {
 });
 
 const all: Cut[] = [...picked.flatMap((p) => p.cuts), ...dead, ...harmonics];
-const samples: BankIndex['samples'] = [];
+const samples: BankIndex['samples'][number][] = [];
 let at = 0;
 for (const c of all) {
   samples.push({
