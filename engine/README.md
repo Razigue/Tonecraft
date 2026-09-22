@@ -97,3 +97,51 @@ the headphones are.
 function in it is pure, and no verdict it can return stops anyone playing.
 Nothing displays those sentences at the moment; `engine.health` still computes
 them for whoever wants them back.
+
+## A tab through the amplifier
+
+`di-bank.ts`, `di-palm.ts`, `di-sampler.ts`, `tab-guitar.ts`, `tab-render.ts`,
+`tab-audio.ts`, `tab-audio-worker.ts`, `tab-playback.ts`.
+
+A tab can be played through the rig instead of through the soundfont. It is
+rendered first, never live:
+
+```
+score -> tab-guitar    the tab as gestures: string, fret, pick or hammer,
+                       palm mute, pinch, bend — read from the model, on
+                       alphaTab's own order of play, so repeats land where
+                       alphaTab puts them
+      -> di-sampler    one voice per string, playing real DI notes from the
+                       bank; a new pick stops the string, a hammer-on only
+                       moves its pitch
+      -> render-recording   the same offline chain an exported take goes
+                       through, so a tab sounds like the amp head says
+      -> tab-playback  one buffer per track, started together, with alphaTab
+                       in external-media mode following that clock
+```
+
+Everything that is not a guitar — bass, drums, keys — is rendered by alphaTab's
+own synthesiser and arrives as one more buffer. Every track keeps its own
+buffer and its own gain, so the reader's mixer, its solos and its mutes stay
+gains rather than another render.
+
+**Why it is rendered and not played live.** One amped track costs about what
+the player's own guitar costs: 28% of a core without reverb, 34% with, measured
+by `npm run bench` on a 2017 laptop. Three tracks live would be the CPU budget
+gone and the dropouts with it. Rendered in a worker, none of it touches the
+audio thread, and falling behind only means waiting.
+
+**What that costs, measured on that same machine:** the sampler runs at 7x real
+time and the chain at 3x, so a four-minute song is about two minutes per track,
+in parallel across tracks. The bank is 15 MB of 16-bit samples, fetched on the
+first tab played through the amp and never before.
+
+**What it gives up.** The playback speed is fixed while the amp plays a tab:
+slowing a render is another render, and resampling it would drop the song a
+tone. The reader says so and the control is disabled rather than silently
+ignored.
+
+**The bank is built, not committed** (`scripts/build-di-bank.ts`): attacks,
+sustain loops and the palm mask per string are all measured there, so nothing
+is analysed on the player's machine. The recordings it was developed against
+(IDMT-SMT-Guitar, CC BY-NC-ND) cannot be published with the site.

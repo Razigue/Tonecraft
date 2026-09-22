@@ -7,6 +7,11 @@
   import { STORES, dbGet, dbPut } from '../store/db.ts';
   import { restoreFadedVolume } from '../engine/tab-fades.ts';
   import { syncedSpeed } from '../engine/metronome.ts';
+  import { TabPlayback, externalMedia } from '../engine/tab-playback.ts';
+  import { renderTabMix } from '../engine/tab-audio.ts';
+  import type { RecordingTone } from '../engine/recording.ts';
+  import { builtInCabIRAt, type Engine } from '../engine/engine.ts';
+  import { PRESETS } from './presets.ts';
   import { lang } from './locale.svelte.ts';
   import type { TabDeck } from './tab-deck.svelte.ts';
   import {
@@ -16,9 +21,20 @@
   } from '../engine/tab-editor.ts';
 
   const words = $derived(lang.ui.reader);
-  let { deck, ontempo, onopen, onwrite, syncBpm = null, onsyncstart, onsyncstop }: {
+  let { deck, ontempo, onopen, onwrite, syncBpm = null, onsyncstart, onsyncstop, tone = null, cleanTone = null, engine = null }: {
     /** Where the studio's transport reads the playback and finds its controls. */
     deck: TabDeck;
+    /**
+     * The tone on the amp head. A tab played through the amplifier is played
+     * through *this* one, so dialling the rig and hearing the song under it are
+     * the same act; a clean track takes the clean preset instead, since a clean
+     * part through a metal capture is not what anybody wrote.
+     */
+    tone?: RecordingTone | null;
+    /** What a clean track is played through; the rig's own tone is for the loud ones. */
+    cleanTone?: RecordingTone | null;
+    /** For a cabinet the player loaded themselves, which only the engine can decode. */
+    engine?: Engine | null;
     ontempo?: (bpm: number) => void;
     /** A score the player chose was opened, or the editor was: the tab is wanted on screen. */
     onopen?: () => void;
@@ -95,6 +111,30 @@
   const muted = $derived(mutedTracks.has(track));
   let position = $state(0);
   let duration = $state(0);
+  /**
+   * The tab through the amplifier rather than through the soundfont.
+   *
+   * Off, nothing here costs anything: no bank is fetched, no worker starts and
+   * alphaTab plays as it always has. On, every track of the score is rendered
+   * before a note is heard — the guitars through the chain, the rest through
+   * alphaTab — and what plays is those buffers, on one clock.
+   */
+  let amped = $state(false);
+  /** 0 to 1 while rendering, -1 when there is nothing to wait for. */
+  let ampProgress = $state(-1);
+  let mixLoaded = $state(false);
+  /** The tone moved after the render: what is loaded is not what the amp says. */
+  let ampStale = $state(false);
+  let playback: TabPlayback | null = null;
+  let ampRun = 0;
+  let ampAbort: AbortController | null = null;
+  let following = 0;
+  /** Through the amplifier, ready means the render has arrived, not that alphaTab has. */
+  const playable = $derived(amped ? ready && mixLoaded : ready);
+  /** Everything about the tone that a render would come out differently for. */
+  const toneKey = $derived(tone ? `${tone.capture?.file ?? ''}|${tone.cab}|${tone.cabRevision ?? 0}|${Object.entries(tone.values).map(([k, v]) => `${k}=${v}`).sort().join(',')}` : '');
+  /** The one the loaded render was made with. */
+  let rendered = '';
   let tail = $state(0);
   /** What the hand is holding right now, on the track being read. */
   let lit = $state.raw<{ string: number; fret: number }[]>([]);
@@ -371,7 +411,9 @@
       notation: { elements: new Map([[alpha.NotationElement.ScoreCopyright, false]]) },
       player: {
         // The soundfont is loaded below rather than named here: see soundFont().
-        playerMode: alpha.PlayerMode.EnabledSynthesizer,
+        // Through the amplifier, alphaTab plays nothing at all: it follows the
+        // render on the clock below, and the cursor is what it contributes.
+        playerMode: amped ? alpha.PlayerMode.EnabledExternalMedia : alpha.PlayerMode.EnabledSynthesizer,
         scrollElement: viewport, enableCursor: true, enableUserInteraction: true,
       },
     });
@@ -381,6 +423,9 @@
     const created = api;
     void soundFont().then(bytes => {
       if (api !== created || disposed) return;
+      // In external media mode there is no synthesiser to load it into: the
+      // same bytes render the band into a buffer instead.
+      if (amped) return;
       if (!created.loadSoundFont(bytes, false)) error = words.noSynth;
     }).catch(e => {
       if (api === created) error = words.unavailable(e instanceof Error ? e.message : String(e));
@@ -471,6 +516,10 @@
     // alphaTab's own errors are for the console, not the player: a line like
     // "Cannot read properties of undefined" says nothing they can act on.
     api.error.on(e => { console.warn('[tab reader]', e); busy = false; rendering = false; });
+    // A player built while a render is loaded takes it: every path that
+    // replaces the player — a zoom, a layout, the editor — would otherwise
+    // leave the tab playing with no cursor on it.
+    if (amped && mixLoaded) attachPlayback();
     return api;
   }
 
@@ -504,6 +553,7 @@
       fresh.renderScore(parsed, [track]);
       applySpeed(fresh);
       ready = fresh.isReadyForPlayback;
+      if (amped) { mixLoaded = false; void renderAmp(); }
       if (remember) {
         // Only a file the player just opened: the one restored at start-up
         // would overwrite a tempo they may have changed since.
@@ -533,16 +583,19 @@
     if (!score || !api) return;
     trackVolumes = new Map(trackVolumes).set(index, level);
     api.changeTrackVolume([score.tracks[index]!], level);
+    applyMixGains();
   }
   function toggleSolo() {
     if (!score || !api) return;
     soloed = toggled(soloed);
     api.changeTrackSolo([score.tracks[track]!], soloed.has(track));
+    applyMixGains();
   }
   function toggleMute() {
     if (!score || !api) return;
     mutedTracks = toggled(mutedTracks);
     api.changeTrackMute([score.tracks[track]!], mutedTracks.has(track));
+    applyMixGains();
   }
 
   function updateDisplay() {
@@ -556,11 +609,149 @@
     });
   }
   /**
+   * The tab, rendered through the amplifier.
+   *
+   * Every guitar track of the score is played by the sample bank and run
+   * through the chain, and everything else by alphaTab, all of it before a
+   * note is heard and all of it off the main thread. What comes back is one
+   * buffer per track, which is what keeps the mixer working afterwards: a
+   * level, a solo or a mute is a gain, not another render.
+   *
+   * The tone is taken as it stands at the press. Turning a knob afterwards
+   * does not creep into what is already rendered — it says so, and offers to
+   * render again — because a tab that quietly disagreed with the amp head
+   * would be worse than one that waits.
+   */
+  async function renderAmp() {
+    if (!amped || !score || !api || !tone?.capture) return;
+    // The reader this render is for: a layout, a zoom or the editor can replace
+    // it while the worker is busy, and a mix loaded into a player that no longer
+    // exists is a tab that never plays.
+    const reader = api, sheet = score;
+    const run = ++ampRun;
+    ampAbort?.abort();
+    const abort = new AbortController();
+    ampAbort = abort;
+    ampProgress = 0;
+    ampStale = false;
+    mixLoaded = false;
+    try {
+      const alpha = await library();
+      // The player's own gesture opened the tab, so a context is allowed here.
+      playback ??= new TabPlayback();
+      const rate = playback.rate;
+      const cab = async (id: string) => (engine ? engine.cabIRAt(rate, id) : builtInCabIRAt(rate, id));
+      const clean = cleanTone ?? tone;
+      const [font, cabIR, cleanIR] = await Promise.all([soundFont(), cab(tone.cab), cab(clean.cab)]);
+      if (run !== ampRun || disposed || api !== reader) return;
+      const mix = await renderTabMix({
+        score: sheet, api: reader, alphaTab: alpha, soundFont: font,
+        tone: { ...tone, cabIR }, clean: { ...clean, cabIR: cleanIR },
+        rate, base: BASE,
+        onProgress: done => { if (run === ampRun) ampProgress = done; },
+        signal: abort.signal,
+      });
+      if (run !== ampRun || disposed || api !== reader) return;
+      playback.load(mix);
+      mixLoaded = true;
+      rendered = toneKey;
+      ampStale = false;
+      applyMixGains();
+      attachPlayback();
+    } catch (e) {
+      if (run !== ampRun || disposed || abort.signal.aborted) return;
+      console.warn('[tab amp]', e);
+      error = e instanceof Error ? e.message : words.unavailable(String(e));
+      amped = false;
+    } finally {
+      if (run === ampRun) ampProgress = -1;
+    }
+  }
+
+  /** alphaTab's side of it: play, pause and seek come here, and nothing else. */
+  function attachPlayback() {
+    const output = api?.player?.output as { handler?: unknown } | undefined;
+    if (!output || !playback) return;
+    output.handler = externalMedia(playback);
+  }
+
+  /**
+   * Where the audio is, told to alphaTab frame by frame while it runs — and
+   * only while it runs: a position pushed at a paused player drags the cursor
+   * off the beat it stopped on, and a frame loop that never ends keeps a tab
+   * awake for nothing.
+   */
+  $effect(() => {
+    if (!amped || !playing || !mixLoaded) { cancelAnimationFrame(following); following = 0; return; }
+    const follow = () => {
+      following = requestAnimationFrame(follow);
+      const port = api?.player?.output as { updatePosition?: (ms: number) => void } | undefined;
+      if (playback?.playing) port?.updatePosition?.(playback.position * 1000);
+    };
+    following = requestAnimationFrame(follow);
+    return () => { cancelAnimationFrame(following); following = 0; };
+  });
+
+  function dropPlayback() {
+    rendered = '';
+    cancelAnimationFrame(following);
+    following = 0;
+    ampAbort?.abort();
+    ampRun++;
+    mixLoaded = false;
+    ampProgress = -1;
+    ampStale = false;
+    void playback?.close();
+    playback = null;
+  }
+
+  /** Solo, mute and every track's level, as gains on what is already rendered. */
+  function applyMixGains() {
+    if (!playback || !score) return;
+    const anySolo = soloed.size > 0;
+    for (const t of score.tracks) {
+      const level = trackVolumes.get(t.index) ?? 1;
+      const heard = !mutedTracks.has(t.index) && (!anySolo || soloed.has(t.index));
+      playback.setTrackVolume(t.index, heard ? level : 0);
+    }
+    playback.setMasterVolume(deck.volume / 100);
+  }
+
+  /**
+   * Turning the amplifier on or off reloads the player: the mode is settled
+   * when alphaTab's own player is built, not after. The score on screen is
+   * kept — only what plays it changes.
+   */
+  async function setAmped(on: boolean) {
+    if (on === amped || busy || !score) return;
+    api?.stop();
+    amped = on;
+    if (!on) dropPlayback();
+    busy = true;
+    try {
+      const alpha = await library();
+      const fresh = await reader(alpha);
+      fresh.renderScore(score, [track]);
+      applySpeed(fresh);
+      ready = fresh.isReadyForPlayback;
+    } catch (e) {
+      console.warn('[tab amp]', e);
+      error = words.unavailable(e instanceof Error ? e.message : String(e));
+    } finally { busy = false; }
+    if (on) void renderAmp();
+  }
+
+  /**
    * Synced to the metronome, the score plays at the click's tempo: the speed
    * is the ratio between the two, and the Speed menu steps aside.
+   *
+   * Through the amplifier it stays at 1. A rendered tab can only be slowed by
+   * rendering it again — resampling it would drop the whole song a tone — and
+   * that is a change of speed the player asks for, not one a menu applies to
+   * a render that is already playing.
    */
   function applySpeed(reader: AlphaTabApi) {
-    reader.playbackSpeed = syncBpm !== null && score ? syncedSpeed(syncBpm, score.tempo) : deck.speed / 100;
+    reader.playbackSpeed = amped ? 1 : syncBpm !== null && score ? syncedSpeed(syncBpm, score.tempo) : deck.speed / 100;
   }
   $effect(() => {
     void syncBpm; void deck.speed; void score; void ready;
@@ -582,14 +773,24 @@
   // The transport shows this and presses these. Svelte writes a field only
   // when it changes, so the position ticking is the one write per update.
   $effect(() => {
-    deck.loaded = score !== null; deck.ready = ready; deck.busy = busy; deck.playing = playing; deck.cueing = cueing;
+    deck.loaded = score !== null; deck.ready = playable; deck.busy = busy || ampProgress >= 0; deck.playing = playing; deck.cueing = cueing;
+    deck.fixedSpeed = amped;
     deck.position = position; deck.duration = duration; deck.looping = looping; deck.selection = selection;
     deck.title = score ? (score.title || filename) : '';
     deck.bars = score?.masterBars.length ?? 0;
     deck.bar = score ? readBar() + 1 : 0;
     deck.bpm = score ? (syncBpm ?? Math.round(score.tempo * deck.speed / 100)) : 0;
   });
-  $effect(() => { const level = deck.volume / 100; if (api) api.masterVolume = level; });
+  $effect(() => { const level = deck.volume / 100; if (api) api.masterVolume = level; playback?.setMasterVolume(level); });
+  /**
+   * A tone dialled after the render is a tone the tab is not playing. Said,
+   * not silently applied: the render is what it is until it is redone.
+   *
+   * Compared against the tone the render was made with, rather than raised by
+   * anything that happens to change — landing a render moves `mixLoaded`, and
+   * an effect that watched it called its own render stale.
+   */
+  $effect(() => { const now = toneKey; if (rendered !== '') ampStale = now !== rendered; });
   $effect(() => {
     deck.open = file => void open(file);
     deck.write = () => { if (!editing) void startEditing(); };
@@ -600,7 +801,7 @@
     deck.clearSelection = () => { if (api) api.playbackRange = null; };
   });
   async function togglePlay() {
-    if (!ready || busy || !api) return;
+    if (!playable || busy || !api) return;
     // Cued but not yet playing: the player changed their mind before the first
     // beat, and the click started for the count-in goes with it.
     if (cueing) { cancelCue(); onsyncstop?.(); return; }
@@ -781,6 +982,9 @@
 
   async function startEditing() {
     if (busy) return;
+    // Writing a tab is the synthesiser's job: it plays the note under the
+    // cursor, and an external media player has no note to play.
+    if (amped) await setAmped(false);
     busy = true; error = ''; storageNote = '';
     try {
       const alpha = await library();
@@ -982,7 +1186,7 @@
     });
     void loadMedia('last-score').then(file => { if (file && !disposed && !busy && !score) void open(file, false); });
   });
-  onDestroy(() => { disposed = true; cancelCue(); cancelAnimationFrame(settling); signature.disconnect(); api?.destroy(); });
+  onDestroy(() => { disposed = true; cancelCue(); cancelAnimationFrame(settling); signature.disconnect(); dropPlayback(); api?.destroy(); });
 </script>
 
 <section class="reader" role="application" aria-label={words.region} tabindex="-1"
@@ -1008,6 +1212,14 @@
       <div class="display">
         <label>{words.view}<select aria-label={words.viewLabel} bind:value={notation} onchange={updateDisplay}><option value="tab">{words.viewTab}</option><option value="both">{words.viewBoth}</option></select></label>
         <label>{words.zoom}<select aria-label={words.zoomLabel} bind:value={zoom} onchange={updateDisplay}>{#each [75, 90, 100, 110, 125, 150] as n}<option value={n}>{n}%</option>{/each}</select></label>
+        <!-- The tab through the rig, or through the soundfont as it always was.
+             Without a capture there is no amplifier to play it in, and it says so. -->
+        <label>{words.plays}<select aria-label={words.playsLabel} disabled={busy || ampProgress >= 0 || !tone?.capture}
+          title={tone?.capture ? '' : words.ampNeedsCapture} value={amped ? 'amp' : 'soundfont'}
+          onchange={e => void setAmped(e.currentTarget.value === 'amp')}>
+          <option value="soundfont">{words.soundfont}</option>
+          <option value="amp">{words.amp}</option>
+        </select></label>
       </div>
     {/if}
     <div class="heading-actions">
@@ -1016,6 +1228,16 @@
     </div>
     <input bind:this={picker} type="file" accept={ACCEPT} aria-label={words.importLabel} onchange={e => { const f = e.currentTarget.files?.[0]; if (f) void open(f); e.currentTarget.value = ''; }} />
   </div>
+  {#if ampProgress >= 0}
+    <p class="amp-state" role="status">
+      <span class="amp-bar" aria-hidden="true"><span style:width={`${Math.round(ampProgress * 100)}%`}></span></span>
+      {words.ampRendering(Math.round(ampProgress * 100))}
+    </p>
+  {:else if ampStale && mixLoaded}
+    <p class="amp-state" role="status">{words.ampStale}
+      <button class="quiet" type="button" onclick={() => void renderAmp()}>{words.ampAgain}</button>
+    </p>
+  {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if storageNote}<p class="storage-note" role="status">{storageNote}</p>{/if}
   <div class="drop-surface" class:dragging role="region" aria-label={words.dropFile}
@@ -1171,8 +1393,14 @@
   .quiet { border-color: transparent; background: none; color: var(--text-2); }
   .quiet:hover:not(:disabled) { border-color: transparent; background: none; color: var(--text); }
   [aria-pressed='true'], .active { border-color: var(--accent-line); background: var(--violet-900); color: var(--violet-100); }
-  .error, .storage-note { margin: 0; padding: 0 20px 10px; font-size: 13px; }
+  .error, .storage-note, .amp-state { margin: 0; padding: 0 20px 10px; font-size: 13px; }
   .error { color: var(--ember); }
+  /* What the render is doing, on the row under the title: the transport says
+     the tab is not ready, and this says why and how far along it is. */
+  .amp-state { display: flex; align-items: center; gap: 10px; color: var(--text-2); }
+  .amp-bar { flex: 0 0 120px; height: 3px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+  .amp-bar span { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: width var(--fast, 120ms) linear; }
+  .amp-state button { color: var(--accent); }
   .storage-note { color: var(--text-2); }
 
   .drop-surface { display: flex; flex: 1; flex-direction: column; min-height: 0; }

@@ -55,6 +55,8 @@ export interface TabRenderOptions {
   readonly api: alpha.AlphaTabApi;
   /** The module the reader already loaded; nothing here loads a second copy. */
   readonly alphaTab: typeof import('@coderline/alphatab');
+  /** The corrected soundfont the reader already has, for everything that is not a guitar. */
+  readonly soundFont: Uint8Array;
   /** The tone the studio is on, for the distorted tracks. */
   readonly tone: RecordingTone;
   /** For the clean tracks, so a clean part is not run through a metal capture. */
@@ -72,12 +74,28 @@ export function scoreSeconds(score: alpha.model.Score): number {
   return last ? line.time(last.end) : 0;
 }
 
+/**
+ * A tone a worker can be given. What the rig holds is reactive state, and a
+ * proxy does not survive `postMessage` — it throws, and the tab quietly never
+ * renders.
+ */
+function plainTone(tone: RecordingTone): RecordingTone {
+  return {
+    values: { ...tone.values },
+    capture: tone.capture ? { ...tone.capture } : null,
+    cab: tone.cab,
+    cabRevision: tone.cabRevision,
+    cabIR: tone.cabIR,
+  };
+}
+
 function jobsFor(options: TabRenderOptions, tracks: readonly TabGuitarTrack[]): TabTrackJob[] {
   const { score, tone, clean } = options;
+  const loud = plainTone(tone), quiet = plainTone(clean);
   return tracks.map((t, seed) => ({
     index: t.index,
     track: trackEvents(score, t.index, seed + 1),
-    tone: t.clean ? clean : tone,
+    tone: t.clean ? quiet : loud,
     seed: seed + 1,
   })).filter((job) => job.track.events.length > 0);
 }
@@ -109,10 +127,12 @@ function renderGuitars(request: TabRenderRequest, onProgress: (done: number) => 
  * Exported rather than played live so it lands on the same clock as the
  * guitars: one set of buffers, started together, cannot drift apart.
  */
-export async function renderBand(alphaTab: typeof import('@coderline/alphatab'), api: alpha.AlphaTabApi, score: alpha.model.Score, guitars: readonly number[], rate: number, seconds: number): Promise<{ left: Float32Array<ArrayBuffer>; right: Float32Array<ArrayBuffer> } | undefined> {
+export async function renderBand(alphaTab: typeof import('@coderline/alphatab'), api: alpha.AlphaTabApi, score: alpha.model.Score, guitars: readonly number[], rate: number, seconds: number, soundFont: Uint8Array): Promise<{ left: Float32Array<ArrayBuffer>; right: Float32Array<ArrayBuffer> } | undefined> {
   const others = score.tracks.map((t) => t.index).filter((i) => !guitars.includes(i));
   if (others.length === 0) return undefined;
   const options = new alphaTab.synth.AudioExportOptions();
+  // Given, not taken from the player: in external media mode it has no synthesiser holding one.
+  options.soundFonts = [soundFont];
   options.sampleRate = rate;
   options.masterVolume = 1;
   options.metronomeVolume = 0;
@@ -145,7 +165,7 @@ export async function renderTabMix(options: TabRenderOptions): Promise<TabMix> {
   if (jobs.length === 0) throw new Error('This tab has no guitar track to play through the amplifier.');
   // The band is quick and the guitars are not, so they run side by side and
   // the bar the player watches is the guitars'.
-  const band = renderBand(options.alphaTab, api, score, jobs.map((j) => j.index), rate, seconds);
+  const band = renderBand(options.alphaTab, api, score, jobs.map((j) => j.index), rate, seconds, options.soundFont);
   const guitars = await renderGuitars({ jobs, rate, seconds: seconds + 1, base }, onProgress, signal);
   const buffers: TabTrackBuffer[] = guitars
     .sort((a, b) => a.index - b.index)
