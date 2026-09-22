@@ -104,7 +104,7 @@ class Reader {
   get done(): boolean { return this.level <= 0 && this.fade < 0 || (this.loopFrom < 0 && this.pos >= this.s.data.length); }
 }
 
-interface Playing { reader: Reader; srcPitch: number; ev: NoteEvent; /** Pitch the note is at, before bends. */ base: number; decay: number; aux?: Reader; auxPitch?: number; t: number }
+interface Playing { reader: Reader; srcPitch: number; ev: NoteEvent; /** Pitch the note is at, before bends. */ base: number; decay: number; aux?: Reader; auxPitch?: number; t: number; released?: boolean }
 
 const semisAt = (ev: NoteEvent, t: number): number => {
   let s = 0;
@@ -151,8 +151,11 @@ class StringVoice {
     if (ev.attack === 'legato' && prev && !prev.reader.done && prev.reader.level > 0.5) {
       // Same string, still vibrating: only the length of it changes.
       const hammer = pitch > prev.base;
-      prev.ev = ev; prev.base = pitch; prev.t = 0;
+      prev.ev = ev; prev.base = pitch; prev.t = 0; prev.released = false;
       prev.reader.gain *= hammer ? 1.0 : 0.95;
+      // The previous note had begun its release: the finger is back on the string.
+      prev.reader.fade = 1 / (0.002 * RATE);
+      if (prev.aux) prev.aux.fade = prev.reader.fade;
       return;
     }
     // The pick, or the tapping finger, stops the string before it plays it.
@@ -216,7 +219,8 @@ class StringVoice {
     const t = now - p.ev.start;
     const semis = p.base + semisAt(p.ev, t) + (p.ev.harmonic > 0 ? 0 : 0) - p.srcPitch;
     const step = SRC_RATE / RATE * Math.pow(2, semis / 12);
-    if (t > p.ev.end - p.ev.start && p.reader.fade >= 0) {
+    if (t > p.ev.end - p.ev.start && p.reader.fade >= 0 && !p.released) {
+      p.released = true;
       // The fretting hand lets go and the palm stops the string.
       p.reader.fade = -1 / (0.012 * RATE);
       if (p.aux) p.aux.fade = p.reader.fade;

@@ -45,23 +45,27 @@ function annotations(file: string): Annotated[] {
   return out;
 }
 
-/** The first sample, near the annotated onset, where the note actually starts. */
-function findAttack(x: Float32Array, around: number): number {
-  const from = Math.max(0, around - Math.round(0.04 * SRC_RATE)), to = Math.min(x.length, around + Math.round(0.06 * SRC_RATE));
-  let peak = 0;
-  for (let i = from; i < to; i++) peak = Math.max(peak, Math.abs(x[i]!));
-  // Ignore what is still ringing from the note before: look for the jump.
-  let env = 0;
-  for (let i = from; i < to; i++) {
-    const a = Math.abs(x[i]!);
-    if (a > 0.25 * peak && a > 3 * env + 1e-4) return i;
-    env = Math.max(a, env * 0.999);
-  }
-  return around;
+/**
+ * Where the pick actually hits. The dataset's onsets can be 100 ms early, so
+ * the note's peak is found first, in a wide window, and the attack is where
+ * the 1 ms envelope, walking back from that peak, falls under 5% of it.
+ */
+function findAttack(x: Float32Array, around: number, until: number): number {
+  const ms = Math.round(SRC_RATE / 1000);
+  const from = Math.max(ms, around - 60 * ms), to = Math.min(x.length - ms, around + 300 * ms, until);
+  const env = (i: number) => { let e = 0; for (let k = i; k < i + ms; k++) e += x[k]! ** 2; return Math.sqrt(e / ms); };
+  let peak = 0, at = around;
+  for (let i = from; i < to; i += ms) { const e = env(i); if (e > peak) { peak = e; at = i; } }
+  let i = at;
+  while (i - ms > from && env(i - ms) > 0.05 * peak) i -= ms;
+  // Down to the sample, within that millisecond.
+  const floor = 0.05 * peak;
+  for (let k = i - ms; k < i + ms; k++) if (Math.abs(x[k]!) > floor) return k;
+  return i;
 }
 
 function cut(x: Float32Array, a: Annotated, next: number, tech: Tech, guard = 0.002): Sample {
-  const attack = findAttack(x, Math.round(a.onset * SRC_RATE));
+  const attack = findAttack(x, Math.round(a.onset * SRC_RATE), Math.round((next - 0.01) * SRC_RATE));
   const pre = Math.round(guard * SRC_RATE);
   const start = Math.max(0, attack - pre);
   // The next note's pick must not be in this one: stop a little before it.
