@@ -1,7 +1,7 @@
 /** Clicks, NaNs and timing: what an ear would catch first, measured. */
 import fs from 'node:fs';
 import { readWav, toMono } from '../render/wav.ts';
-import { loadScore, trackEvents, tempoMap } from './tab-events.ts';
+import { loadScore, trackEvents, span } from './tab-events.ts';
 const [file, gp, track, from, to] = process.argv.slice(2);
 const x = toMono(readWav(file!));
 let nan = 0; for (const v of x) if (!Number.isFinite(v)) nan++;
@@ -17,7 +17,7 @@ for (let i = W; i < x.length - W; i++) {
 console.log(`NaN ${nan}, clicks ${clicks}`, at.join(' '));
 if (gp) {
   const score = loadScore(new Uint8Array(fs.readFileSync(gp)));
-  const time = tempoMap(score); const t0 = time(score.masterBars[+from!]!.start), t1 = time(score.masterBars[+to!]!.start);
+  const [t0, t1] = span(score, +from!, +to! - 1);
   const ev = trackEvents(score, +track!, 1).events.filter((e) => e.start >= t0 && e.start < t1 && e.attack === 'pick');
   // Onset: where the 1 ms envelope first exceeds 4x its level 10 ms earlier, near each event.
   const env = new Float32Array(Math.ceil(x.length / 48)); for (let i = 0; i < env.length; i++) { let s = 0; for (let k = i * 48; k < i * 48 + 48 && k < x.length; k++) s += x[k]! ** 2; env[i] = Math.sqrt(s / 48); }

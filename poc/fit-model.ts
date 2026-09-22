@@ -1,13 +1,12 @@
 /** Fits the physical model's voicing to the sampler's: same notes, same long-term spectrum. */
 import fs from 'node:fs';
-import { loadScore, trackEvents, tempoMap } from './tab-events.ts';
+import { loadScore, trackEvents, span } from './tab-events.ts';
 import { renderModel, DEFAULT_PARAMS, type ModelParams } from './string-model.ts';
 import { renderSampler } from './sampler.ts';
 import { ltas, bands } from './analysis.ts';
 const score = loadScore(new Uint8Array(fs.readFileSync('/home/shinkei/Downloads/First Fragment - De Chair Et De Haine.gp')));
-const time = tempoMap(score);
 const sections = [[0, 30, 34], [2, 22, 26]].map(([tr, a, b]) => {
-  const t0 = time(score.masterBars[a!]!.start), t1 = time(score.masterBars[b!]!.start);
+  const [t0, t1] = span(score, a!, b! - 1);
   const t = trackEvents(score, tr!, 1);
   const events = t.events.filter((e) => e.start >= t0 && e.start < t1).map((e) => ({ ...e, start: e.start - t0 + 0.1, end: Math.min(e.end, t1) - t0 + 0.1 }));
   return { track: { ...t, events }, seconds: t1 - t0 + 0.5 };

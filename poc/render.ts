@@ -9,7 +9,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadScore, trackEvents, tempoMap, type TrackEvents } from './tab-events.ts';
+import { loadScore, trackEvents, span, type TrackEvents } from './tab-events.ts';
 import { renderModel } from './string-model.ts';
 import { throughChain, rms, db, RATE } from './chain.ts';
 import { writeWav } from '../render/wav.ts';
@@ -40,9 +40,7 @@ async function engineFor(name: string): Promise<(t: TrackEvents, seconds: number
 }
 
 const score = loadScore(new Uint8Array(fs.readFileSync(file)));
-const time = tempoMap(score);
-const mbFrom = score.masterBars[barFrom]!, mbTo = score.masterBars[Math.min(barTo, score.masterBars.length - 1)]!;
-const t0 = time(mbFrom.start), t1 = time(mbTo.start + mbTo.calculateDuration());
+const [t0, t1] = span(score, barFrom, barTo);
 const seconds = t1 - t0 + 1.5;
 const render = await engineFor(engine);
 fs.mkdirSync(path.dirname(out), { recursive: true });

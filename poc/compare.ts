@@ -2,13 +2,14 @@
  * The listening set: the same passages through each candidate, level-matched,
  * plus a local page to switch between them.
  *
- *   npx tsx poc/compare.ts <file.gp>
+ *   npx tsx poc/compare.ts <file.gp> [--auto] [--out dir]
  *
  * Writes poc/out/listen/*.wav and poc/out/listen/index.html (open it locally:
  * the sampler's notes are CC BY-NC-ND and are not to be published).
  */
 import fs from 'node:fs';
-import { loadScore, trackEvents, tempoMap, type TrackEvents } from './tab-events.ts';
+import type * as alpha from '@coderline/alphatab';
+import { loadScore, trackEvents, span, timeline, type TrackEvents } from './tab-events.ts';
 import { renderModel, DEFAULT_PARAMS, type ModelParams } from './string-model.ts';
 import { renderSampler } from './sampler.ts';
 import { renderAlphaTab } from './baseline.ts';
@@ -18,18 +19,71 @@ import { writeWav } from '../render/wav.ts';
 
 const TARGET_DI_DB = -36.1;
 const LISTEN_DB = -20;
-const OUT = 'poc/out/listen';
+const OUT = process.argv.includes('--out') ? process.argv[process.argv.indexOf('--out') + 1]! : 'poc/out/listen';
 const file = process.argv[2]!;
 const score = loadScore(new Uint8Array(fs.readFileSync(file)));
-const time = tempoMap(score);
 const fitted: ModelParams = { ...DEFAULT_PARAMS, ...(fs.existsSync('poc/out/model-params.json') ? JSON.parse(fs.readFileSync('poc/out/model-params.json', 'utf8')) : {}) };
 
 interface Section { id: string; title: string; tracks: number[]; bars: [number, number]; band: boolean; /** Rhythm on Modern metal, leads on Lead: asked for. */ preset: string }
-const SECTIONS: Section[] = [
+const FIXED: Section[] = [
   { id: 'riff', title: 'Rythmique — deux guitares, gauche et droite (mesures 30-45)', tracks: [0, 1], bars: [30, 45], band: false, preset: 'Modern metal' },
   { id: 'solo', title: 'Leads en harmonie — legato, tapping, harmoniques (mesures 20-30)', tracks: [2, 3], bars: [20, 30], band: false, preset: 'Lead' },
   { id: 'mix', title: 'Dans le morceau — guitares + basse et batterie de la soundfont (mesures 30-45)', tracks: [0, 1], bars: [30, 45], band: true, preset: 'Modern metal' },
 ];
+
+/**
+ * Any tab. Guitar tracks are found by instrument (overdrive and distortion
+ * programs: the clean ones would want the Clean preset), then bars are
+ * classed, not tracks: a band often writes its solos in the rhythm tracks. A
+ * lead note is high and open; a rhythm note is low or palm muted. Each section
+ * is the busiest stretch of played bars for its kind, on the two tracks that
+ * carry most of it there.
+ */
+function autoSections(): Section[] {
+  const WINDOW = 16;
+  const bars = timeline(score).bars;
+  const guitars = score.tracks.filter((t) => {
+    const st = t.staves[0]!;
+    return !st.isPercussion && st.tuning.length >= 6 && Math.min(...st.tuning) < 45 && t.playbackInfo.program >= 29 && t.playbackInfo.program <= 30;
+  });
+  // [track][played bar] counts of lead-like and rhythm-like notes.
+  const count = (t: alpha.model.Track, lead: boolean) => bars.map((o) => {
+    const bar = t.staves[0]!.bars[o.bar.index];
+    let n = 0;
+    for (const v of bar?.voices ?? []) for (const b of v.beats) for (const x of b.notes) {
+      const isLead = !x.isPalmMute && x.realValue >= 62;
+      if (isLead === lead) n++;
+    }
+    return n;
+  });
+  const section = (lead: boolean): { tracks: number[]; bars: [number, number] } | null => {
+    const per = guitars.map((t) => ({ t, c: count(t, lead) }));
+    let best = 0, at = 0;
+    for (let i = 0; i + WINDOW <= bars.length; i++) {
+      // The strongest track in the window: a solo is one guitar, not the sum of four.
+      const n = Math.max(...per.map((p) => p.c.slice(i, i + WINDOW).reduce((a, b) => a + b, 0)));
+      if (n > best) { best = n; at = i; }
+    }
+    if (best < WINDOW * 2) return null;
+    const inWindow = per.map((p) => ({ i: p.t.index, n: p.c.slice(at, at + WINDOW).reduce((a, b) => a + b, 0) }))
+      .filter((p) => p.n > best * 0.25).sort((a, b) => b.n - a.n).slice(0, 2);
+    return { tracks: inWindow.map((p) => p.i), bars: [at, at + WINDOW - 1] };
+  };
+  const name = (tracks: number[]) => tracks.map((i) => score.tracks[i]!.name.trim()).join(' + ');
+  const out: Section[] = [];
+  const rhythm = section(false), lead = section(true);
+  if (rhythm) {
+    const b = `mesures jouées ${rhythm.bars[0] + 1}-${rhythm.bars[1] + 1}`;
+    out.push({ id: 'riff', title: `Rythmique — ${name(rhythm.tracks)} (${b})`, ...rhythm, band: false, preset: 'Modern metal' });
+    out.push({ id: 'mix', title: `Dans le morceau — rythmique + le reste du groupe en soundfont (${b})`, ...rhythm, band: true, preset: 'Modern metal' });
+  }
+  if (lead) out.push({ id: 'solo', title: `Lead — ${name(lead.tracks)} (mesures jouées ${lead.bars[0] + 1}-${lead.bars[1] + 1})`, ...lead, band: false, preset: 'Lead' });
+  console.log('sections:', out.map((x) => `${x.id} tracks ${x.tracks.join(',')} bars ${x.bars.join('-')}`).join(' | '));
+  return out;
+}
+const SECTIONS = process.argv.includes('--auto') ? autoSections() : FIXED;
+if (process.argv.includes('--dry')) process.exit(0);
+
 const ENGINES = [
   { id: 'soundfont', name: "Aujourd'hui : soundfont MuseScore (sans ampli)" },
   { id: 'model', name: 'B · Modèle physique → chaîne Tonecraft' },
@@ -46,7 +100,7 @@ const bandCache = new Map<string, [Float32Array, Float32Array]>();
 function band(s: Section, length: number): [Float32Array, Float32Array] {
   const key = s.bars.join('-');
   if (!bandCache.has(key)) {
-    const rest = score.tracks.map((t) => t.index).filter((i) => i >= 5);
+    const rest = score.tracks.map((t) => t.index).filter((i) => !SECTIONS.some((x) => x.tracks.includes(i)));
     const [l, r] = renderAlphaTab(score, rest, s.bars[0], s.bars[1]);
     const pad = Math.round(lead * RATE);
     const L = new Float32Array(length), R = new Float32Array(length);
@@ -58,9 +112,7 @@ function band(s: Section, length: number): [Float32Array, Float32Array] {
 
 const rows: { section: Section; files: { engine: string; name: string; file: string }[]; di: { name: string; file: string }[] }[] = [];
 for (const s of SECTIONS) {
-  const t0 = time(score.masterBars[s.bars[0]]!.start);
-  const mb = score.masterBars[s.bars[1]]!;
-  const t1 = time(mb.start + mb.calculateDuration());
+  const [t0, t1] = span(score, s.bars[0], s.bars[1]);
   const seconds = t1 - t0 + 1.5;
   const length = Math.ceil((seconds + 2) * RATE);
   const row = { section: s, files: [] as { engine: string; name: string; file: string }[], di: [] as { name: string; file: string }[] };
@@ -123,7 +175,7 @@ details{margin-top:10px;color:var(--mute)}kbd{border:1px solid var(--line);borde
 @media (max-width:560px){.row{grid-template-columns:1fr}}
 </style>
 <h1>Tablature → guitare → ampli</h1>
-<p>Même passage, même niveau d'écoute (${LISTEN_DB} dBFS RMS). Les versions A et B passent dans la vraie chaîne Tonecraft : rythmiques sur le preset Modern metal, leads sur Lead, aucune reverb. First Fragment, <em>De chair et de haine</em>, 7 cordes en F#. Lecture synchronisée : changer de lecteur reprend au même instant. <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pour basculer dans la section en cours.</p>
+<p>Même passage, même niveau d'écoute (${LISTEN_DB} dBFS RMS). Les versions A et B passent dans la vraie chaîne Tonecraft : rythmiques sur le preset Modern metal, leads sur Lead, aucune reverb. ${score.artist}, <em>${score.title}</em>. Lecture synchronisée : changer de lecteur reprend au même instant. <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pour basculer dans la section en cours.</p>
 ${rows.map((r) => `<section><h2>${r.section.title}</h2><p>Preset ${r.section.preset}, sans reverb.</p>
 ${r.files.map((f) => `<div class="row ${f.engine}"><span>${f.name}</span><audio controls preload="none" src="${f.file}"></audio></div>`).join('\n')}
 ${r.di.length ? `<details><summary>Le DI brut, avant l'ampli</summary>${r.di.map((d) => `<div class="row"><span>${d.name}</span><audio controls preload="none" src="${d.file}"></audio></div>`).join('')}</details>` : ''}

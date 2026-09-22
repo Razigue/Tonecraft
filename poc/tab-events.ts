@@ -52,26 +52,52 @@ const OVERLAP = 0.02;
 /** How long a palm mute rings past its written end, if nothing stops it sooner. */
 const PALM_RING = 0.12;
 
-/** Tick to seconds through every tempo automation. */
-export function tempoMap(score: alpha.model.Score): (tick: number) => number {
+export interface Occurrence {
+  /** The written bar. */
+  readonly bar: alpha.model.MasterBar;
+  /** Playback ticks: repeats and alternate endings unrolled, as alphaTab plays them. */
+  readonly start: number;
+  readonly end: number;
+}
+
+export interface Timeline {
+  readonly bars: Occurrence[];
+  /** Playback tick to seconds, through every tempo change. */
+  time(tick: number): number;
+}
+
+/** The score in the order it is played: the same unrolling alphaTab's player (and the band render) uses. */
+export function timeline(score: alpha.model.Score): Timeline {
+  const cached = timelines.get(score);
+  if (cached) return cached;
+  const midi = new alpha.midi.MidiFile();
+  const gen = new alpha.midi.MidiFileGenerator(score, new alpha.Settings(), new alpha.midi.AlphaSynthMidiFileHandler(midi));
+  gen.generate();
+  const bars = gen.tickLookup.masterBars.map((m) => ({ bar: m.masterBar, start: m.start, end: m.end }));
   const points: { tick: number; bpm: number }[] = [];
-  let bpm = score.tempo;
-  for (const mb of score.masterBars) {
-    const len = mb.calculateDuration();
-    for (const a of mb.tempoAutomations) points.push({ tick: mb.start + a.ratioPosition * len, bpm: a.value });
-    if (mb.index === 0 && mb.tempoAutomations.length === 0) points.push({ tick: 0, bpm });
-  }
+  for (const m of gen.tickLookup.masterBars) for (const c of m.tempoChanges) points.push({ tick: c.tick, bpm: c.tempo });
   points.sort((a, b) => a.tick - b.tick);
-  if (points.length === 0 || points[0]!.tick > 0) points.unshift({ tick: 0, bpm });
+  if (points.length === 0 || points[0]!.tick > 0) points.unshift({ tick: 0, bpm: score.tempo });
   const secs: number[] = [0];
   for (let i = 1; i < points.length; i++) {
     secs.push(secs[i - 1]! + (points[i]!.tick - points[i - 1]!.tick) / TICKS_PER_QUARTER * 60 / points[i - 1]!.bpm);
   }
-  return (tick) => {
-    let i = points.length - 1;
-    while (i > 0 && points[i]!.tick > tick) i--;
-    return secs[i]! + (tick - points[i]!.tick) / TICKS_PER_QUARTER * 60 / points[i]!.bpm;
+  const time = (tick: number) => {
+    let lo = 0, hi = points.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (points[mid]!.tick <= tick) lo = mid; else hi = mid - 1; }
+    return secs[lo]! + (tick - points[lo]!.tick) / TICKS_PER_QUARTER * 60 / points[lo]!.bpm;
   };
+  const t = { bars, time };
+  timelines.set(score, t);
+  return t;
+}
+const timelines = new WeakMap<alpha.model.Score, Timeline>();
+
+/** Seconds at the start and end of a range of played bars (indices into `timeline().bars`). */
+export function span(score: alpha.model.Score, from: number, to: number): [number, number] {
+  const tl = timeline(score);
+  const a = tl.bars[Math.max(0, from)]!, b = tl.bars[Math.min(tl.bars.length - 1, to)]!;
+  return [tl.time(a.start), tl.time(b.end)];
 }
 
 /** Harmonic number from a Guitar Pro harmonic "fret" (12 → 2, 7 → 3, 5 → 4, 3.9 → 5...). */
@@ -93,18 +119,22 @@ export function trackEvents(score: alpha.model.Score, trackIndex: number, seed =
   const track = score.tracks[trackIndex]!;
   const staff = track.staves[0]!;
   const tuning = [...staff.tuning].reverse().map((t) => t + staff.capo);
-  const time = tempoMap(score);
+  const tl = timeline(score);
+  const time = tl.time;
   const rand = rng(seed * 7919 + trackIndex);
   const gauss = () => (rand() + rand() + rand() - 1.5) / 1.5;
   const events: NoteEvent[] = [];
   const byNote = new Map<alpha.model.Note, NoteEvent>();
 
-  for (const bar of staff.bars) {
-    const barStart = bar.masterBar.start;
+  for (const occ of tl.bars) {
+    const bar = staff.bars[occ.bar.index];
+    if (!bar) continue;
+    const barStart = occ.start;
     for (const voice of bar.voices) {
       for (const beat of voice.beats) {
         if (beat.isRest || beat.notes.length === 0) continue;
-        const startTick = beat.absolutePlaybackStart;
+        // Where this pass through the bar puts the beat, repeats included.
+        const startTick = occ.start + (beat.absolutePlaybackStart - occ.bar.start);
         const durTick = beat.playbackDuration;
         // Alternate picking follows the grid: downstrokes on the beat's own subdivision.
         const sub = Math.max(60, Math.min(durTick, TICKS_PER_QUARTER / 2));
@@ -213,8 +243,8 @@ export function loadScore(bytes: Uint8Array): alpha.model.Score {
   return alpha.importer.ScoreLoader.loadScoreFromBytes(bytes, new alpha.Settings());
 }
 
-/** How long the score lasts, in seconds. */
+/** How long the score lasts, in seconds, repeats included. */
 export function scoreSeconds(score: alpha.model.Score): number {
-  const last = score.masterBars[score.masterBars.length - 1]!;
-  return tempoMap(score)(last.start + last.calculateDuration());
+  const tl = timeline(score);
+  return tl.time(tl.bars[tl.bars.length - 1]!.end);
 }
