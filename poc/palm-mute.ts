@@ -84,7 +84,13 @@ export function learnMask(bank: Bank, strings: number[], takes?: number[]): numb
 }
 
 /** A picked sample with the palm applied. The level ratio at the attack is kept: a mute is quieter. */
-export function applyMask(s: Sample, mask: number[][]): Sample {
+/**
+ * The mask is two things: how dark and quiet the palm makes the attack (its
+ * first frame) and how fast it kills the note after (the rest, relative to
+ * that frame). They are scaled apart: `tone` keeps the chug, `decay` sets how
+ * long it lasts. 1 and 1 is the dataset's average mute.
+ */
+export function applyMask(s: Sample, mask: number[][], decay = 1, tone = 1): Sample {
   const parts = bands(s.data);
   const out = new Float32Array(s.data.length);
   const end = Math.min(s.data.length, s.attack + FRAMES * FRAME);
@@ -92,7 +98,8 @@ export function applyMask(s: Sample, mask: number[][]): Sample {
     for (let k = 0; k < end; k++) {
       const pos = Math.max(0, (k - s.attack) / FRAME - 0.5);
       const f = Math.floor(pos), t = pos - f;
-      const g = Math.exp((mask[b]![Math.min(FRAMES - 1, f)]! * (1 - t) + mask[b]![Math.min(FRAMES - 1, f + 1)]! * t));
+      const m = mask[b]![Math.min(FRAMES - 1, f)]! * (1 - t) + mask[b]![Math.min(FRAMES - 1, f + 1)]! * t;
+      const g = Math.exp(tone * mask[b]![0]! + decay * (m - mask[b]![0]!));
       out[k]! += band[k]! * g;
     }
   });

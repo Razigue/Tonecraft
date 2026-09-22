@@ -47,6 +47,10 @@ export interface TrackEvents {
 }
 
 const TICKS_PER_QUARTER = 960;
+/** How long a note outlives the next attack: the damping hand is not faster than the picking one. */
+const OVERLAP = 0.02;
+/** How long a palm mute rings past its written end, if nothing stops it sooner. */
+const PALM_RING = 0.12;
 
 /** Tick to seconds through every tempo automation. */
 export function tempoMap(score: alpha.model.Score): (tick: number) => number {
@@ -156,8 +160,11 @@ export function trackEvents(score: alpha.model.Score, trackIndex: number, seed =
             if (slideType === alpha.model.SlideOutType.OutDown) slideOff = -Math.min(note.fret, 9);
             if (slideType === alpha.model.SlideOutType.OutUp) slideOff = 7;
 
-            let end = t1 - 0.004;
-            if (note.isStaccato || note.isPalmMute) end = Math.min(end, t0 + Math.max(0.06, noteLen * (note.isStaccato ? 0.5 : 0.95)));
+            // Written end for now; the phrasing pass below decides when the hand stops it.
+            let end = t1;
+            if (note.isStaccato) end = t0 + Math.max(0.06, noteLen * 0.5);
+            // The palm never lifts: a mute rings, damped, until the next stroke.
+            if (note.isPalmMute) end = t1 + PALM_RING;
             if (note.isLetRing) end = t1 + 4;
 
             const harmonics = note.harmonicType;
@@ -181,6 +188,17 @@ export function trackEvents(score: alpha.model.Score, trackIndex: number, seed =
   }
 
   events.sort((a, b) => a.start - b.start);
+  // A player stops a note as the next one sounds, not before it: in a running
+  // phrase, a note holds until just after the next attack on any string. After
+  // a rest it stops at its written end.
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i]!;
+    let j = i + 1;
+    while (j < events.length && events[j]!.start <= ev.start + 0.001) j++;
+    const next = events[j];
+    if (next && next.start <= ev.end + 0.05) ev.end = Math.max(ev.end, next.start + OVERLAP);
+    else ev.end = Math.max(ev.end, ev.end + OVERLAP);
+  }
   // One note per string: a new note on a string stops the one before it.
   const last: (NoteEvent | undefined)[] = [];
   for (const ev of events) {

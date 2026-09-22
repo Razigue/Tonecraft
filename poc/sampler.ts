@@ -14,23 +14,30 @@ import type { NoteEvent, TrackEvents } from './tab-events.ts';
 import { learnMask, applyMask } from './palm-mute.ts';
 
 /**
- * Palm mute: the picked note already at the right fret, with the palm of one
- * real muted take applied (its string's own, 5th fret against 5th fret). As
+ * Palm mute: the picked note already at the right fret, with the palm learned
+ * from its string's real mutes (5th fret against 5th fret) applied to it. As
  * close to a real mute as another real take is, where resampling the 5th-fret
  * mute down to a low B is not (poc/palm-mute-test.ts).
+ *
+ * The mask is the average of the string's five takes, never one take: three of
+ * the G string's are pressed so hard they are gone in 80 ms, which on running
+ * sixteenths left a hole before every note. It is applied at a palm pressure
+ * that varies a little from stroke to stroke, the way a hand does.
  */
-const masks = new Map<string, number[][]>();
+export const PALM_DECAY = Number(process.env.PALM_DECAY ?? 0.4);
+export const PALM_TONE = Number(process.env.PALM_TONE ?? 0.8);
+const PRESSURES = [-0.08, 0, 0.08];
+const masks = new Map<number, number[][]>();
 const mutedCache = new Map<string, Sample>();
 function mutedFor(src: number, fret: number, take: number): Sample {
   const key = `${src}:${fret}:${take}`;
   let s = mutedCache.get(key);
   if (!s) {
     const b = getBank();
-    const mk = `${src}:${take}`;
-    let mask = masks.get(mk);
-    if (!mask) { mask = learnMask(b, [src], [take]); masks.set(mk, mask); }
+    let mask = masks.get(src);
+    if (!mask) { mask = learnMask(b, [src]); masks.set(src, mask); }
     const row = b.picked[src]!;
-    s = applyMask(row.find((x) => x.fret === fret) ?? row[0]!, mask);
+    s = applyMask(row.find((x) => x.fret === fret) ?? row[0]!, mask, PALM_DECAY + PRESSURES[take % PRESSURES.length]!, PALM_TONE);
     mutedCache.set(key, s);
   }
   return s;
@@ -186,7 +193,7 @@ class StringVoice {
       } else gain *= 0.8;
     } else if (ev.palm) {
       const srcFret = Math.max(0, Math.min(20, pitch - SRC_OPEN[this.src]!));
-      sample = mutedFor(this.src, srcFret, this.rr++ % b.muted[this.src]!.length);
+      sample = mutedFor(this.src, srcFret, this.rr++ % PRESSURES.length);
       srcPitch = sample.pitch;
     } else {
       // Round robin: the same note, or its neighbour fret brought to pitch.
@@ -222,7 +229,8 @@ class StringVoice {
     if (t > p.ev.end - p.ev.start && p.reader.fade >= 0 && !p.released) {
       p.released = true;
       // The fretting hand lets go and the palm stops the string.
-      p.reader.fade = -1 / (0.012 * RATE);
+      // About as fast as a real fret hand damps a string.
+      p.reader.fade = -1 / (0.03 * RATE);
       if (p.aux) p.aux.fade = p.reader.fade;
     }
     out += p.reader.next(step);
