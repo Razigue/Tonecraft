@@ -25,7 +25,8 @@ export async function throughChain(di: Float32Array, presetName = 'Lead', overri
   const core = await instantiateChain(fs.readFileSync(path.join(ROOT, 'public/dsp/chain.wasm')));
   core.init(RATE, 1024);
   core.call('tc_set_input_channel', [0]);
-  const values: Record<string, number> = { ...preset.values, ...overrides };
+  // No reverb on any tone: asked for explicitly, whatever the preset says.
+  const values: Record<string, number> = { ...preset.values, ...overrides, reverb_bypass: 1, reverb_mix: 0 };
   PARAMS.forEach((p, i) => core.call('tc_set_param', [i, values[p.id] ?? p.default]));
   core.call('tc_set_capture_trim', [capture.trimDb]);
   const model = new Uint8Array(fs.readFileSync(path.join(ROOT, 'public/models', capture.file)));

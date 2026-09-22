@@ -69,46 +69,81 @@ function hermite(x: Float32Array, pos: number): number {
   return ((c3 * f + c2) * f + c1) * f + x0;
 }
 
-/** Plays one sample at a varying rate, looping pitch-synchronously past its end. */
+/**
+ * Where a sample can be held past its end. The dataset's notes last under a
+ * second and end with the player damping them, so the loop is not taken at
+ * the end: it is taken just before the release, where the note is still
+ * ringing, and past it the note goes on decaying at the rate it had.
+ */
+interface Sustain { from: number; len: number; xfade: number; /** Gain per source sample once looping. */ decay: number }
+const sustains = new WeakMap<Sample, Sustain | null>();
+function sustainOf(s: Sample): Sustain | null {
+  if (sustains.has(s)) return sustains.get(s)!;
+  const W = Math.round(0.01 * SRC_RATE);
+  const env: number[] = [];
+  for (let a = s.attack; a + W <= s.data.length; a += W) {
+    let e = 0; for (let k = a; k < a + W; k++) e += s.data[k]! ** 2;
+    env.push(10 * Math.log10(e / W + 1e-20));
+  }
+  // Smoothed over 30 ms: a low string's period must not read as a release.
+  const sm = env.map((_, i) => { let t = 0, c = 0; for (let k = Math.max(0, i - 1); k <= Math.min(env.length - 1, i + 1); k++) { t += env[k]!; c++; } return t / c; });
+  // The release: after 150 ms, the first fall faster than 50 dB/s.
+  let release = sm.length - 3;
+  for (let i = 15; i + 5 < sm.length; i++) if (sm[i + 5]! < sm[i]! - 2.5) { release = i; break; }
+  const f0 = 440 * Math.pow(2, (s.pitch - 69) / 12);
+  const period = SRC_RATE / f0;
+  const len = Math.max(1, Math.round(0.08 * SRC_RATE / period)) * period;
+  const end = s.attack + (release - 1) * W;
+  const from = end - len;
+  let result: Sustain | null = null;
+  if (from > s.attack + 0.06 * SRC_RATE) {
+    // The rate it was dying at, between 100 ms and the loop, kept within what a sustaining string into a high-gain amp does.
+    const i0 = 10, i1 = Math.max(i0 + 3, release - 2);
+    const slope = (sm[i1]! - sm[i0]!) / ((i1 - i0) * 0.01);
+    const dbPerSec = Math.max(-8, Math.min(-2, slope));
+    result = { from, len, xfade: Math.min(len * 0.5, 0.012 * SRC_RATE), decay: Math.pow(10, dbPerSec / 20 / SRC_RATE) };
+  }
+  sustains.set(s, result);
+  return result;
+}
+
+/** Plays one sample at a varying rate, holding it past its end with its sustain loop. */
 class Reader {
   pos = 0;
   gain = 1;
   /** Linear fade, per output sample; negative is a release. */
   fade = 0;
   level = 1;
-  loopFrom = -1; loopLen = 0; xfade = 0;
+  /** The decay that carries on once the loop has taken over. */
+  held = 1;
+  readonly sustain: Sustain | null;
   /** The rate it was last played at: a note dying keeps its pitch. */
   step = SRC_RATE / RATE;
   constructor(readonly s: Sample, start: number, readonly bright: number) {
     this.pos = start;
-    // A loop of whole periods of the note, taken from the steady part near the end.
-    const period = SRC_RATE / (440 * Math.pow(2, (s.pitch - 69) / 12)) / (s.harmonic > 1 ? 1 : 1);
-    const periods = Math.max(1, Math.round(0.06 * SRC_RATE / period));
-    this.loopLen = periods * period;
-    const end = s.data.length - 0.02 * SRC_RATE;
-    this.loopFrom = end - this.loopLen;
-    this.xfade = Math.min(this.loopLen * 0.5, 0.01 * SRC_RATE);
-    if (this.loopFrom < s.attack + 0.05 * SRC_RATE) this.loopFrom = -1;
+    this.sustain = s.tech === 'DN' ? null : sustainOf(s);
   }
   /** Advances by `step` source samples and returns the output. */
   next(step: number = this.step): number {
     this.step = step;
     const s = this.s.data;
     let v: number;
-    const end = this.loopFrom + this.loopLen;
-    if (this.loopFrom > 0 && this.pos >= end - this.xfade) {
-      if (this.pos >= end) this.pos -= this.loopLen;
-      const into = this.pos - (end - this.xfade);
+    const l = this.sustain;
+    if (l) {
+      const end = l.from + l.len;
+      if (this.pos >= end) { this.pos -= l.len; }
+      const into = this.pos - (end - l.xfade);
       if (into > 0) {
-        const k = into / this.xfade;
-        v = hermite(s, this.pos) * Math.cos(k * Math.PI / 2) + hermite(s, this.pos - this.loopLen) * Math.sin(k * Math.PI / 2);
+        const k = into / l.xfade;
+        v = hermite(s, this.pos) * Math.cos(k * Math.PI / 2) + hermite(s, this.pos - l.len) * Math.sin(k * Math.PI / 2);
       } else v = hermite(s, this.pos);
+      if (this.pos >= l.from && this.held < 1 || this.pos >= end - l.xfade) this.held *= Math.pow(l.decay, step);
     } else v = hermite(s, this.pos);
     this.pos += step;
     this.level = Math.max(0, Math.min(1, this.level + this.fade));
-    return v * this.gain * this.level;
+    return v * this.gain * this.level * this.held;
   }
-  get done(): boolean { return this.level <= 0 && this.fade < 0 || (this.loopFrom < 0 && this.pos >= this.s.data.length); }
+  get done(): boolean { return (this.level <= 0 && this.fade < 0) || (!this.sustain && this.pos >= this.s.data.length) || this.held < 1e-4; }
 }
 
 interface Playing { reader: Reader; srcPitch: number; ev: NoteEvent; /** Pitch the note is at, before bends. */ base: number; decay: number; aux?: Reader; auxPitch?: number; t: number; released?: boolean }

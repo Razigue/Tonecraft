@@ -24,16 +24,16 @@ const score = loadScore(new Uint8Array(fs.readFileSync(file)));
 const time = tempoMap(score);
 const fitted: ModelParams = { ...DEFAULT_PARAMS, ...(fs.existsSync('poc/out/model-params.json') ? JSON.parse(fs.readFileSync('poc/out/model-params.json', 'utf8')) : {}) };
 
-interface Section { id: string; title: string; tracks: number[]; bars: [number, number]; band: boolean }
+interface Section { id: string; title: string; tracks: number[]; bars: [number, number]; band: boolean; /** Rhythm on Modern metal, leads on Lead: asked for. */ preset: string }
 const SECTIONS: Section[] = [
-  { id: 'riff', title: 'Rythmique — deux guitares, gauche et droite (mesures 30-45)', tracks: [0, 1], bars: [30, 45], band: false },
-  { id: 'solo', title: 'Leads en harmonie — legato, tapping, harmoniques (mesures 20-30)', tracks: [2, 3], bars: [20, 30], band: false },
-  { id: 'mix', title: 'Dans le morceau — guitares + basse et batterie de la soundfont (mesures 30-45)', tracks: [0, 1], bars: [30, 45], band: true },
+  { id: 'riff', title: 'Rythmique — deux guitares, gauche et droite (mesures 30-45)', tracks: [0, 1], bars: [30, 45], band: false, preset: 'Modern metal' },
+  { id: 'solo', title: 'Leads en harmonie — legato, tapping, harmoniques (mesures 20-30)', tracks: [2, 3], bars: [20, 30], band: false, preset: 'Lead' },
+  { id: 'mix', title: 'Dans le morceau — guitares + basse et batterie de la soundfont (mesures 30-45)', tracks: [0, 1], bars: [30, 45], band: true, preset: 'Modern metal' },
 ];
 const ENGINES = [
   { id: 'soundfont', name: "Aujourd'hui : soundfont MuseScore (sans ampli)" },
-  { id: 'model', name: 'B · Modèle physique → chaîne Tonecraft (Lead)' },
-  { id: 'sampler', name: 'A · Sampler DI réel → chaîne Tonecraft (Lead)' },
+  { id: 'model', name: 'B · Modèle physique → chaîne Tonecraft' },
+  { id: 'sampler', name: 'A · Sampler DI réel → chaîne Tonecraft' },
 ];
 
 const lead = 0.25;
@@ -84,7 +84,7 @@ for (const s of SECTIONS) {
           writeWav(`${OUT}/${f}`, RATE, [scale(di.slice(), Math.pow(10, (LISTEN_DB - TARGET_DI_DB) / 20))]);
           row.di.push({ name: `${e.id === 'model' ? 'B · Modèle physique' : 'A · Sampler'} — DI brut, piste ${ti}`, file: f });
         }
-        const wet = await throughChain(di, 'Lead');
+        const wet = await throughChain(di, s.preset);
         const pan = s.tracks.length === 1 ? 0 : k === 0 ? -0.8 : 0.8;
         const gl = Math.cos((pan + 1) * Math.PI / 4) * Math.SQRT2, gr = Math.sin((pan + 1) * Math.PI / 4) * Math.SQRT2;
         for (let i = 0; i < wet.length && i < length; i++) { L[i]! += wet[i]! * gl; R[i]! += wet[i]! * gr; }
@@ -123,8 +123,8 @@ details{margin-top:10px;color:var(--mute)}kbd{border:1px solid var(--line);borde
 @media (max-width:560px){.row{grid-template-columns:1fr}}
 </style>
 <h1>Tablature → guitare → ampli</h1>
-<p>Même passage, même niveau d'écoute (${LISTEN_DB} dBFS RMS). Les versions A et B passent dans la vraie chaîne Tonecraft, preset Lead (ENGL E530). First Fragment, <em>De chair et de haine</em>, 7 cordes en F#. Lecture synchronisée : changer de lecteur reprend au même instant. <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pour basculer dans la section en cours.</p>
-${rows.map((r) => `<section><h2>${r.section.title}</h2>
+<p>Même passage, même niveau d'écoute (${LISTEN_DB} dBFS RMS). Les versions A et B passent dans la vraie chaîne Tonecraft : rythmiques sur le preset Modern metal, leads sur Lead, aucune reverb. First Fragment, <em>De chair et de haine</em>, 7 cordes en F#. Lecture synchronisée : changer de lecteur reprend au même instant. <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pour basculer dans la section en cours.</p>
+${rows.map((r) => `<section><h2>${r.section.title}</h2><p>Preset ${r.section.preset}, sans reverb.</p>
 ${r.files.map((f) => `<div class="row ${f.engine}"><span>${f.name}</span><audio controls preload="none" src="${f.file}"></audio></div>`).join('\n')}
 ${r.di.length ? `<details><summary>Le DI brut, avant l'ampli</summary>${r.di.map((d) => `<div class="row"><span>${d.name}</span><audio controls preload="none" src="${d.file}"></audio></div>`).join('')}</details>` : ''}
 </section>`).join('\n')}
