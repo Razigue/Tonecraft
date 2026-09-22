@@ -49,7 +49,7 @@ try {
   // Four bars: long enough to play, short enough that a render is a few seconds.
   const importer = new alpha.importer.AlphaTexImporter();
   importer.initFromString('\\title "Amp test" \\tempo 120 . '
-    + '\\track "Guitar" :8 0.6{pm} 0.6{pm} 3.6 5.6 0.6{pm} 0.6{pm} 3.6 5.6 | :8 0.6 2.6 3.6 5.6 7.6 5.6 3.6 2.6 | '
+    + '\\track "Guitar" \\instrument distortionguitar :8 0.6{pm} 0.6{pm} 3.6 5.6 0.6{pm} 0.6{pm} 3.6 5.6 | :8 0.6 2.6 3.6 5.6 7.6 5.6 3.6 2.6 | '
     + ':8 0.6{pm} 0.6{pm} 3.6 5.6 0.6{pm} 0.6{pm} 3.6 5.6 | :4 0.6 3.6 5.6 7.6 '
     + '\\track "Bass" \\tuning E1 A1 D2 G2 :4 0.4 0.4 0.4 0.4 | :4 0.4 0.4 0.4 0.4 | :4 0.4 0.4 0.4 0.4 | :4 0.4 0.4 0.4 0.4');
   const gp = Buffer.from(new alpha.exporter.Gp7Exporter().export(importer.readScore()));

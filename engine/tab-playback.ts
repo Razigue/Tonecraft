@@ -44,7 +44,12 @@ export class TabPlayback {
   #master: GainNode;
   #voices = new Map<number, Voice>();
   #band: Voice | null = null;
-  #mix: TabMix | null = null;
+  /**
+   * What is loaded, without the samples it was loaded from: those are copied
+   * into `AudioBuffer`s and let go. Keeping both doubles a four-minute song's
+   * 200 MB, for nothing — nothing ever reads them again.
+   */
+  #loaded: { seconds: number; rate: number } | null = null;
   /** Where the score was when playback last started, in seconds. */
   #offset = 0;
   #startedAt = 0;
@@ -60,7 +65,7 @@ export class TabPlayback {
 
   get rate(): number { return this.context.sampleRate; }
   get playing(): boolean { return this.#playing; }
-  get seconds(): number { return this.#mix?.seconds ?? 0; }
+  get seconds(): number { return this.#loaded?.seconds ?? 0; }
 
   /** Seconds into the score. */
   get position(): number {
@@ -77,7 +82,7 @@ export class TabPlayback {
 
   load(mix: TabMix): void {
     this.stop();
-    this.#mix = mix;
+    this.#loaded = { seconds: mix.seconds, rate: mix.rate };
     for (const voice of [...this.#voices.values(), ...(this.#band ? [this.#band] : [])]) voice.gain.disconnect();
     this.#voices.clear();
     this.#band = null;
@@ -93,7 +98,7 @@ export class TabPlayback {
     }
   }
 
-  get loaded(): boolean { return this.#mix !== null; }
+  get loaded(): boolean { return this.#loaded !== null; }
 
   setMasterVolume(level: number): void {
     this.#master.gain.value = Math.max(0, level);
@@ -124,8 +129,8 @@ export class TabPlayback {
   }
 
   play(): void {
-    if (this.#playing || !this.#mix) return;
-    if (this.#offset >= this.#mix.seconds) this.#offset = 0;
+    if (this.#playing || !this.#loaded) return;
+    if (this.#offset >= this.#loaded.seconds) this.#offset = 0;
     void this.context.resume();
     // One start time for every track: their alignment is the whole point.
     const when = this.context.currentTime + 0.03;
@@ -173,7 +178,7 @@ export class TabPlayback {
     this.stop();
     this.#voices.clear();
     this.#band = null;
-    this.#mix = null;
+    this.#loaded = null;
     await this.context.close();
   }
 }

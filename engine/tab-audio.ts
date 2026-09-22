@@ -19,7 +19,13 @@ import type { TabTrackAudio, TabTrackJob } from './tab-render.ts';
 import type { TabMix, TabTrackBuffer } from './tab-playback.ts';
 import type { TabRenderMessage, TabRenderRequest } from './tab-audio-worker.ts';
 
-/** General MIDI programs: 24-28 are the quiet guitars, 29-31 the loud ones. */
+/**
+ * General MIDI guitars, 24 to 31: the acoustics, the clean and jazz electrics,
+ * the muted one, and the loud ones. All of them, because a tab whose author
+ * never set a program is a guitar track all the same — alphaTab's own default
+ * is a steel acoustic — and a player who asked for the amplifier asked for it
+ * on the guitars they can see. The quiet half takes the clean preset.
+ */
 const GUITAR_PROGRAMS = { first: 24, clean: 28, last: 31 };
 /** Anything above this on a six-string is a bass line written on a guitar staff. */
 const LOWEST_GUITAR_STRING = 45;
@@ -100,8 +106,22 @@ function jobsFor(options: TabRenderOptions, tracks: readonly TabGuitarTrack[]): 
   })).filter((job) => job.track.events.length > 0);
 }
 
-/** The guitars, through the worker. */
-function renderGuitars(request: TabRenderRequest, onProgress: (done: number) => void, signal?: AbortSignal): Promise<TabTrackAudio[]> {
+/**
+ * How many tracks are rendered at once.
+ *
+ * One core is left to the page, and to the player's own guitar if it is
+ * plugged in — this is the export path, and it has no business making the live
+ * chain share a core. Three at most whatever the machine claims: each worker
+ * holds its own copy of the bank, and a fourth buys less than the memory it
+ * costs.
+ */
+function workerCount(jobs: number): number {
+  const cores = typeof navigator === 'undefined' ? 4 : navigator.hardwareConcurrency || 4;
+  return Math.max(1, Math.min(jobs, cores - 1, 3));
+}
+
+/** One worker's share of the tracks. */
+function renderShare(request: TabRenderRequest, onProgress: (done: number) => void, signal?: AbortSignal): Promise<TabTrackAudio[]> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./tab-audio-worker.ts', import.meta.url), { type: 'module' });
     const done: TabTrackAudio[] = [];
@@ -112,13 +132,38 @@ function renderGuitars(request: TabRenderRequest, onProgress: (done: number) => 
     worker.onmessage = (e: MessageEvent<TabRenderMessage>) => {
       const data = e.data;
       if ('error' in data) { finish(); reject(new Error(data.error)); }
-      else if ('track' in data) { done.push(data.track); onProgress(done.length / request.jobs.length); }
+      else if ('track' in data) { done.push(data.track); onProgress(done.length); }
       else if ('done' in data) { finish(); resolve(done); }
-      else onProgress((done.length + data.progress) / request.jobs.length);
+      else onProgress(done.length + data.progress);
     };
     worker.onerror = () => { finish(); reject(new Error('The tab could not be played through the amplifier.')); };
     worker.postMessage(request);
   });
+}
+
+/** Every guitar track, a few at a time. */
+async function renderGuitars(request: TabRenderRequest, onProgress: (done: number) => void, signal?: AbortSignal): Promise<TabTrackAudio[]> {
+  const count = workerCount(request.jobs.length);
+  const shares: TabTrackJob[][] = Array.from({ length: count }, () => []);
+  // Dealt round robin: the tracks of a song are not the same size, and the
+  // longest should not all land on one worker.
+  request.jobs.forEach((job, i) => shares[i % count]!.push(job));
+  const progress = new Array<number>(count).fill(0);
+  const total = request.jobs.length;
+  // One failure stops the rest: without this the others keep a core busy
+  // rendering a tab nobody will hear.
+  const stop = new AbortController();
+  const onAbort = (): void => stop.abort();
+  signal?.addEventListener('abort', onAbort, { once: true });
+  try {
+    const shared = await Promise.all(shares.map((jobs, i) => renderShare({ ...request, jobs }, (done) => {
+      progress[i] = done;
+      onProgress(progress.reduce((a, b) => a + b, 0) / total);
+    }, stop.signal).catch((e: unknown) => { stop.abort(); throw e; })));
+    return shared.flat();
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
+  }
 }
 
 /**

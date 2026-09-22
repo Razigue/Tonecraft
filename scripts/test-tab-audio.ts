@@ -74,6 +74,10 @@ const score = (tex: string): alpha.model.Score => {
   const guitars = guitarTracks(band);
   check('the guitars are the guitar tracks, and the bass is not one', guitars.map((g) => g.name).join(',') === 'Rhythm,Clean', guitars.map((g) => g.name).join(',') || 'none');
   check('and a clean program asks for the clean amplifier', guitars.find((g) => g.name === 'Clean')?.clean === true && guitars.find((g) => g.name === 'Rhythm')?.clean === false);
+  // alphaTab's own default program is a steel acoustic: a tab whose author
+  // never chose one still has a guitar in it, and it had better be playable.
+  const plain = guitarTracks(score('\\title "P" \\tempo 120 . \\track "Guitar" :4 0.6 0.6 0.6 0.6'));
+  check('a track with no instrument set is still a guitar', plain.length === 1 && plain[0]!.clean, plain.length === 0 ? 'none found' : `clean: ${plain[0]!.clean}`);
 }
 
 const bankFile = path.join(ROOT, 'public/di-bank/bank.json');
