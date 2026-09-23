@@ -261,8 +261,11 @@ check('the tuner exposes a centred accuracy meter',
 await page.waitForTimeout(400);
 const tuningIn = await meterPeak('in', 2200);
 const tuningOut = await meterPeak('out', 1200);
+// Silent, not exactly zero: the meter is a bar height in pixels, and a chain
+// coasting to a stop leaves a millionth of one behind. Read as `=== 0` this
+// went red once in a while for 8e-16 px, which is -300 dB.
 check('the tuner keeps the guitar input alive while muting all monitoring',
-  tuningIn > 1 && tuningOut === 0, `in ${tuningIn}, out ${tuningOut}, of 96`);
+  tuningIn > 1 && tuningOut < 0.01, `in ${tuningIn}, out ${tuningOut}, of 96`);
 await page.getByRole('button', { name: 'Close tuner' }).click();
 const restoredOut = await meterPeak('out', 5000);
 check('closing the tuner restores the audio chain', restoredOut > 1, `out ${restoredOut} of 96`);

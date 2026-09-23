@@ -1,4 +1,5 @@
 # Dependencies
+node_modules
 node_modules/
 
 # Astro / Vite build output
@@ -71,3 +72,6 @@ tonecraft-poc.zip
 # commercial plugin on the same guitar. Not ours to redistribute, tens of
 # megabytes, and audio in git history is there forever (AD-15). Kept locally.
 sample_guitar/
+
+# The DI bank is built from recordings that are not in the repository.
+public/di-bank/
