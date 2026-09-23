@@ -8,7 +8,6 @@
   import { restoreFadedVolume } from '../engine/tab-fades.ts';
   import { syncedSpeed } from '../engine/metronome.ts';
   import { TabPlayback, externalMedia } from '../engine/tab-playback.ts';
-  import { bankAvailable } from '../engine/di-bank.ts';
   import { startTabRender } from '../engine/tab-audio.ts';
   import type { RecordingTone } from '../engine/recording.ts';
   import { builtInCabIRAt, type Engine } from '../engine/engine.ts';
@@ -133,11 +132,11 @@
   /** Playback has caught up with the render and is holding for it. */
   let waiting = $state(false);
   /**
-   * Whether this deploy has the guitar samples. Asked once, when a score is
-   * first opened: without them there is no amplifier to offer, and an option
-   * that can only fail is worse than one that is not there.
+   * Whether this build shipped the guitar samples. Settled at build time
+   * (`astro.config.mjs`): without them there is no amplifier to offer, and an
+   * option that can only fail is worse than one that is not there.
    */
-  let ampOffered = $state(false);
+  const ampOffered = __DI_BANK__;
   /**
    * The least head start a rendered tab is played on, in seconds of music.
    * Under this there is nothing to listen to yet.
@@ -1238,7 +1237,6 @@
 
   onMount(() => {
     signature.observe(surface, { childList: true, subtree: true });
-    void bankAvailable(BASE).then(there => { if (!disposed) ampOffered = there; });
     void dbGet<{ scaleId?: unknown; scaleRoot?: unknown }>(STORES.state, SCALE_KEY).then(saved => {
       if (disposed || !saved) return;
       if (typeof saved.scaleId === 'string' && (saved.scaleId === '' || scaleById(saved.scaleId))) scaleId = saved.scaleId;
