@@ -7,8 +7,8 @@
   import { STORES, dbGet, dbPut } from '../store/db.ts';
   import { restoreFadedVolume } from '../engine/tab-fades.ts';
   import { syncedSpeed } from '../engine/metronome.ts';
-  import { TabPlayback, externalMedia } from '../engine/tab-playback.ts';
-  import { renderTabMix } from '../engine/tab-audio.ts';
+  import { TabPlayback, externalMedia, BAND } from '../engine/tab-playback.ts';
+  import { startTabRender } from '../engine/tab-audio.ts';
   import type { RecordingTone } from '../engine/recording.ts';
   import { builtInCabIRAt, type Engine } from '../engine/engine.ts';
   import { PRESETS } from './presets.ts';
@@ -129,6 +129,37 @@
   let ampRun = 0;
   let ampAbort: AbortController | null = null;
   let following = 0;
+  /** Playback has caught up with the render and is holding for it. */
+  let waiting = $state(false);
+  /**
+   * The least head start a rendered tab is played on, in seconds of music.
+   * Under this there is nothing to listen to yet.
+   */
+  const HEAD_START = 20;
+  /** Wall-clock start of the render, for how fast it is going. */
+  let ampStartedAt = 0;
+
+  /**
+   * When a tab can be played without catching up with its own render.
+   *
+   * A track through the amplifier costs about what the player's own guitar
+   * costs, so a machine renders a few of them faster than they play and a
+   * seven-guitar song on two cores renders at half speed. Waiting out the
+   * whole render would be minutes; starting too early is a tab that stops
+   * every few bars. So the render's own measured speed decides: if it makes
+   * `v` seconds of music per second, starting with `r` rendered is safe when
+   * what is left to render, at that speed, finishes before the playhead gets
+   * there — `r >= (1 - v) * total`. Above real time that is nothing at all,
+   * and the head start alone applies.
+   */
+  function headStart(ready: number, total: number): number {
+    const elapsed = (performance.now() - ampStartedAt) / 1000;
+    // Too early to tell: the bank and the amplifier are still being fetched.
+    if (ready < 8 || elapsed <= 0) return Math.min(HEAD_START, total);
+    const speed = ready / elapsed;
+    const safe = speed >= 1 ? 0 : (1 - speed) * total + 2;
+    return Math.min(total, Math.max(HEAD_START, safe));
+  }
   /** Through the amplifier, ready means the render has arrived, not that alphaTab has. */
   const playable = $derived(amped ? ready && mixLoaded : ready);
   /** Everything about the tone that a render would come out differently for. */
@@ -625,8 +656,8 @@
   async function renderAmp() {
     if (!amped || !score || !api || !tone?.capture) return;
     // The reader this render is for: a layout, a zoom or the editor can replace
-    // it while the worker is busy, and a mix loaded into a player that no longer
-    // exists is a tab that never plays.
+    // it while the worker is busy, and a render handed to a player that no
+    // longer exists is a tab that never plays.
     const reader = api, sheet = score;
     const run = ++ampRun;
     ampAbort?.abort();
@@ -635,29 +666,44 @@
     ampProgress = 0;
     ampStale = false;
     mixLoaded = false;
+    ampStartedAt = performance.now();
     try {
       const alpha = await library();
       // The player's own gesture opened the tab, so a context is allowed here.
       playback ??= new TabPlayback();
-      const rate = playback.rate;
+      const player = playback;
+      const rate = player.rate;
       const cab = async (id: string) => (engine ? engine.cabIRAt(rate, id) : builtInCabIRAt(rate, id));
       const clean = cleanTone ?? tone;
       const [font, cabIR, cleanIR] = await Promise.all([soundFont(), cab(tone.cab), cab(clean.cab)]);
       if (run !== ampRun || disposed || api !== reader) return;
-      const mix = await renderTabMix({
+      const render = startTabRender({
         score: sheet, api: reader, alphaTab: alpha, soundFont: font,
         tone: { ...tone, cabIR }, clean: { ...clean, cabIR: cleanIR },
         rate, base: BASE,
-        onProgress: done => { if (run === ampRun) ampProgress = done; },
+        onChunk: chunk => { if (run === ampRun) player.append(chunk.index, chunk.at, chunk.samples, chunk.right); },
+        onBand: (at, left, right) => { if (run === ampRun) player.append(BAND, at, left, right); },
+        onReady: seconds => {
+          if (run !== ampRun) return;
+          player.ready = seconds;
+          ampProgress = Math.min(1, seconds / Math.max(1, player.seconds));
+          // Playable as soon as there is a head start on it, not when it is
+          // finished: the render runs faster than the song, so what is ahead
+          // stays ahead.
+          if (!mixLoaded && seconds >= headStart(seconds, player.seconds)) {
+            mixLoaded = true;
+            rendered = toneKey;
+            ampStale = false;
+          }
+        },
         signal: abort.signal,
       });
-      if (run !== ampRun || disposed || api !== reader) return;
-      playback.load(mix);
-      mixLoaded = true;
-      rendered = toneKey;
-      ampStale = false;
+      player.open(render.seconds, render.tracks, render.hasBand);
       applyMixGains();
       attachPlayback();
+      await render.finished;
+      if (run !== ampRun || disposed) return;
+      mixLoaded = true;
     } catch (e) {
       if (run !== ampRun || disposed || abort.signal.aborted) return;
       console.warn('[tab amp]', e);
@@ -682,11 +728,16 @@
    * awake for nothing.
    */
   $effect(() => {
-    if (!amped || !playing || !mixLoaded) { cancelAnimationFrame(following); following = 0; return; }
+    if (!amped || !playing || !mixLoaded) { cancelAnimationFrame(following); following = 0; waiting = false; return; }
     const follow = () => {
       following = requestAnimationFrame(follow);
       const port = api?.player?.output as { updatePosition?: (ms: number) => void } | undefined;
-      if (playback?.playing) port?.updatePosition?.(playback.position * 1000);
+      if (!playback) return;
+      // Caught up with the render: hold, rather than play the silence that has
+      // not been rendered yet, and carry on once there is a second of it.
+      if (playback.starved) { playback.pause(); waiting = true; }
+      else if (waiting && playback.ready > playback.position + 1) { playback.play(); waiting = false; }
+      if (playback.playing) port?.updatePosition?.(playback.position * 1000);
     };
     following = requestAnimationFrame(follow);
     return () => { cancelAnimationFrame(following); following = 0; };
@@ -694,6 +745,7 @@
 
   function dropPlayback() {
     rendered = '';
+    waiting = false;
     cancelAnimationFrame(following);
     following = 0;
     ampAbort?.abort();
@@ -773,7 +825,7 @@
   // The transport shows this and presses these. Svelte writes a field only
   // when it changes, so the position ticking is the one write per update.
   $effect(() => {
-    deck.loaded = score !== null; deck.ready = playable; deck.busy = busy || ampProgress >= 0; deck.playing = playing; deck.cueing = cueing;
+    deck.loaded = score !== null; deck.ready = playable; deck.busy = busy || (ampProgress >= 0 && !mixLoaded); deck.playing = playing; deck.cueing = cueing;
     deck.fixedSpeed = amped;
     deck.position = position; deck.duration = duration; deck.looping = looping; deck.selection = selection;
     deck.title = score ? (score.title || filename) : '';
@@ -1214,7 +1266,7 @@
         <label>{words.zoom}<select aria-label={words.zoomLabel} bind:value={zoom} onchange={updateDisplay}>{#each [75, 90, 100, 110, 125, 150] as n}<option value={n}>{n}%</option>{/each}</select></label>
         <!-- The tab through the rig, or through the soundfont as it always was.
              Without a capture there is no amplifier to play it in, and it says so. -->
-        <label>{words.plays}<select aria-label={words.playsLabel} disabled={busy || ampProgress >= 0 || !tone?.capture}
+        <label>{words.plays}<select aria-label={words.playsLabel} disabled={busy || !tone?.capture}
           title={tone?.capture ? '' : words.ampNeedsCapture} value={amped ? 'amp' : 'soundfont'}
           onchange={e => void setAmped(e.currentTarget.value === 'amp')}>
           <option value="soundfont">{words.soundfont}</option>
@@ -1231,7 +1283,7 @@
   {#if ampProgress >= 0}
     <p class="amp-state" role="status">
       <span class="amp-bar" aria-hidden="true"><span style:width={`${Math.round(ampProgress * 100)}%`}></span></span>
-      {words.ampRendering(Math.round(ampProgress * 100))}
+      {waiting ? words.ampWaiting : words.ampRendering(Math.round(ampProgress * 100))}
     </p>
   {:else if ampStale && mixLoaded}
     <p class="amp-state" role="status">{words.ampStale}

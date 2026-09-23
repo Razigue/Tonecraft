@@ -29,8 +29,12 @@ const PALM_DECAY = 0.4;
 const PALM_TONE = 0.8;
 /** The palm presses a little differently every stroke. */
 const PALM_PRESSURES = [-0.08, 0, 0.08];
-/** Masked notes kept around, in samples: about 40 MB at 44.1 kHz. */
-const PALM_CACHE_LIMIT = 10_000_000;
+/**
+ * Masked notes kept around, in samples: about 8 MB at 44.1 kHz, where a song
+ * uses maybe a quarter of that. Several of these run at once, one per worker,
+ * so the headroom is memory nobody gets back.
+ */
+const PALM_CACHE_LIMIT = 2_000_000;
 
 const RELEASE_SECONDS = 0.03;
 const PICK_STOP_SECONDS = 0.004;
@@ -290,31 +294,64 @@ export interface RenderOptions {
   readonly onProgress?: (done: number) => void;
 }
 
-/** Renders a track's events to a mono DI, at the DI level the presets expect. */
+/**
+ * A track's DI, rendered as it is asked for.
+ *
+ * Kept as an object rather than a function because a tab is played while it is
+ * still being rendered: the strings carry on ringing across the boundary
+ * between one chunk and the next, exactly as they would if the whole track
+ * had been rendered in one go.
+ */
+export class DiRenderer {
+  readonly #voices: StringVoice[];
+  readonly #events: readonly NoteEvent[];
+  readonly #starts: number[];
+  readonly #ratio: number;
+  #next = 0;
+  #at = 0;
+
+  constructor(bank: Bank, track: TrackEvents, readonly rate: number, seed = 1) {
+    const rand = rng(seed * 31 + 7);
+    const palm = new Palm(bank);
+    this.#voices = track.strings.map((open) => new StringVoice(bank, palm, sourceString(bank, open), rate, rand));
+    this.#events = track.events;
+    // The attack lands on the event's time, not the sample's pre-roll.
+    this.#starts = track.events.map((e) => Math.round((e.start - LEAD_SECONDS) * rate));
+    this.#ratio = bank.rate / rate;
+  }
+
+  /** Where the next sample rendered will land, in samples. */
+  get at(): number { return this.#at; }
+
+  /** Renders the next `frames` samples into `out`, from its offset. */
+  render(out: Float32Array, offset: number, frames: number): void {
+    for (let i = 0; i < frames; i++) {
+      const n = this.#at;
+      while (this.#next < this.#events.length && this.#starts[this.#next]! <= n) {
+        const ev = this.#events[this.#next]!;
+        this.#voices[ev.string]?.start(ev);
+        this.#next++;
+      }
+      let s = 0;
+      const now = n / this.rate;
+      for (const v of this.#voices) s += v.tick(now, this.#ratio);
+      out[offset + i] = s;
+      this.#at++;
+    }
+  }
+}
+
+/** Renders a track's events to a mono DI, in one go. */
 export function renderDi(bank: Bank, track: TrackEvents, options: RenderOptions): Float32Array<ArrayBuffer> {
   const { rate, seconds, seed = 1, onProgress } = options;
-  const rand = rng(seed * 31 + 7);
-  const palm = new Palm(bank);
-  const voices = track.strings.map((open) => new StringVoice(bank, palm, sourceString(bank, open), rate, rand));
   const total = Math.ceil(seconds * rate);
   const out = new Float32Array(total);
-  const ratio = bank.rate / rate;
-  const events = track.events;
-  // The attack lands on the event's time, not the sample's pre-roll.
-  const starts = events.map((e) => Math.round((e.start - LEAD_SECONDS) * rate));
+  const renderer = new DiRenderer(bank, track, rate, seed);
   const block = Math.max(1, Math.round(rate / 4));
-  let next = 0;
-  for (let n = 0; n < total; n++) {
-    while (next < events.length && starts[next]! <= n) {
-      const ev = events[next]!;
-      voices[ev.string]?.start(ev);
-      next++;
-    }
-    let s = 0;
-    const now = n / rate;
-    for (const v of voices) s += v.tick(now, ratio);
-    out[n] = s;
-    if (onProgress && n % block === 0) onProgress(n / total);
+  for (let at = 0; at < total; at += block) {
+    const n = Math.min(block, total - at);
+    renderer.render(out, at, n);
+    onProgress?.(at / total);
   }
   onProgress?.(1);
   return out;
@@ -341,4 +378,42 @@ export function activeRms(x: Float32Array, rate: number): number {
   levels.sort((a, b) => b - a);
   const loud = levels.slice(0, Math.max(1, Math.floor(levels.length * 0.8)));
   return Math.sqrt(loud.reduce((s, r) => s + r * r, 0) / loud.length);
+}
+
+/**
+ * What that level will be, from the notes alone.
+ *
+ * A tab is heard while it is still rendering, so the gain into the amplifier
+ * cannot wait for the whole track to exist — and a gain that changed halfway
+ * would change the tone, because what follows it is not linear. The same
+ * "loudest 80% of the windows" rule is applied to the energy the events
+ * themselves carry, which lands within about a dB of the rendered level on
+ * rhythm and lead alike (`poc/estimate-level.ts`: 0.8 dB of spread, 1.25 dB at
+ * worst over two songs).
+ */
+const ESTIMATE_CALIBRATION_DB = -18.25;
+const ESTIMATE_STEP = 0.05;
+
+export function estimateRms(track: TrackEvents): number {
+  const last = track.events.reduce((t, e) => Math.max(t, e.end), 0);
+  const grid = new Float64Array(Math.ceil(last / ESTIMATE_STEP) + 2);
+  for (const e of track.events) {
+    // A mute is quieter and dies sooner; a dead note is a knock; a harmonic
+    // and anything not picked start lower.
+    const level = e.velocity ** 2 * (e.palm ? 0.1 : 1) * (e.dead ? 0.15 : 1) * (e.harmonic ? 0.4 : 1) * (e.attack === 'pick' ? 1 : 0.4);
+    const decay = e.palm ? 0.12 : 0.9;
+    const from = Math.max(0, Math.floor(e.start / ESTIMATE_STEP));
+    const to = Math.min(grid.length - 1, Math.ceil(e.end / ESTIMATE_STEP));
+    for (let i = from; i <= to; i++) grid[i]! += level * Math.exp(-(i * ESTIMATE_STEP - e.start) / decay);
+  }
+  const levels = Array.from(grid).filter((v) => v > 1e-9).map(Math.sqrt).sort((a, b) => b - a);
+  if (levels.length === 0) return 0;
+  const loud = levels.slice(0, Math.max(1, Math.floor(levels.length * 0.8)));
+  return Math.sqrt(loud.reduce((s, v) => s + v * v, 0) / loud.length) * Math.pow(10, ESTIMATE_CALIBRATION_DB / 20);
+}
+
+/** The gain that puts a track where the presets expect a guitar, before a sample of it exists. */
+export function estimatedGain(track: TrackEvents): number {
+  const rms = estimateRms(track);
+  return rms > 0 ? Math.pow(10, TARGET_RMS_DB / 20) / rms : 1;
 }

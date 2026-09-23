@@ -46,12 +46,13 @@ try {
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await page.locator('.capture-info[data-capture="loaded"]').waitFor({ state: 'attached', timeout: 30000 });
 
-  // Four bars: long enough to play, short enough that a render is a few seconds.
+  // Forty bars, eighty seconds at 120: long enough that the render cannot be
+  // over before playback starts, which is the thing being tested.
   const importer = new alpha.importer.AlphaTexImporter();
+  const bars = (pattern, n) => Array.from({ length: n }, () => pattern).join(' | ');
   importer.initFromString('\\title "Amp test" \\tempo 120 . '
-    + '\\track "Guitar" \\instrument distortionguitar :8 0.6{pm} 0.6{pm} 3.6 5.6 0.6{pm} 0.6{pm} 3.6 5.6 | :8 0.6 2.6 3.6 5.6 7.6 5.6 3.6 2.6 | '
-    + ':8 0.6{pm} 0.6{pm} 3.6 5.6 0.6{pm} 0.6{pm} 3.6 5.6 | :4 0.6 3.6 5.6 7.6 '
-    + '\\track "Bass" \\tuning E1 A1 D2 G2 :4 0.4 0.4 0.4 0.4 | :4 0.4 0.4 0.4 0.4 | :4 0.4 0.4 0.4 0.4 | :4 0.4 0.4 0.4 0.4');
+    + `\\track "Guitar" \\instrument distortionguitar ${bars(':8 0.6{pm} 0.6{pm} 3.6 5.6 7.6 5.6 3.6 0.6', 40)} `
+    + `\\track "Bass" \\tuning E1 A1 D2 G2 ${bars(':4 0.4 0.4 0.4 0.4', 40)}`);
   const gp = Buffer.from(new alpha.exporter.Gp7Exporter().export(importer.readScore()));
   await page.getByLabel('Open a tab', { exact: true }).setInputFiles({ name: 'amp-test.gp', mimeType: 'application/octet-stream', buffer: gp });
   await page.locator('.score-paper svg').first().waitFor({ timeout: 30000 });
@@ -63,16 +64,23 @@ try {
   await plays.selectOption('amp');
   await page.locator('.amp-bar').waitFor({ timeout: 15000 });
   console.log('ok  the render starts and says so');
-  // The render is the slow part on a modest machine: two tracks of eight seconds.
-  await page.locator('.amp-bar').waitFor({ state: 'detached', timeout: 240000 });
-  assert.equal(await page.locator('.amp-state').count(), 0, 'a fresh render is not announced as stale');
+  // A whole song through the amplifier is minutes of work on a modest machine,
+  // so what the player waits for is a head start, not the end of the render.
+  const play = page.getByRole('button', { name: 'Play tablature', exact: true });
+  await page.waitForFunction(() => {
+    const button = [...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Play tablature');
+    return button && !button.disabled;
+  }, undefined, { timeout: 180000 });
+  const ahead = await page.evaluate(() => {
+    const bar = document.querySelector('.amp-bar');
+    const fill = document.querySelector('.amp-bar span');
+    return bar && fill ? fill.getBoundingClientRect().width / (bar.getBoundingClientRect().width || 1) : 1;
+  });
+  assert(ahead < 0.95, `playing starts on a head start, not on the whole render (${(ahead * 100).toFixed(0)}% rendered)`);
+  console.log(`ok  playable at ${(ahead * 100).toFixed(0)}% rendered, while the rest keeps coming`);
   assert(bank.some(p => p.endsWith('bank.pcm')) && bank.some(p => p.endsWith('bank.json')),
     `the bank is fetched once the amplifier is asked for (${bank.join(', ')})`);
   console.log('ok  the bank arrives only when the amplifier is chosen');
-
-  const play = page.getByRole('button', { name: 'Play tablature', exact: true });
-  await play.waitFor({ timeout: 30000 });
-  assert(await play.isEnabled(), 'the transport is ready once the render has landed');
 
   // What plays is ours: a rendered buffer on the reader's own context, with
   // alphaTab's cursor following it. Both have to move.
@@ -94,6 +102,11 @@ try {
   const still = await page.evaluate(() => document.querySelector('.at-cursor-beat')?.getBoundingClientRect().x ?? -1);
   assert.equal(stopped, still, 'paused, the cursor stays where the audio stopped');
   console.log('ok  pause holds the cursor');
+
+  // The rest of the song lands behind it, and the row goes when it is all there.
+  await page.locator('.amp-bar').waitFor({ state: 'detached', timeout: 300000 });
+  assert.equal(await page.locator('.amp-state').count(), 0, 'a fresh render is not announced as stale');
+  console.log('ok  the render finishes behind the playing tab');
 
   // The speed cannot move while a render is playing, and says why.
   const speed = page.getByRole('combobox', { name: 'Playback speed' });

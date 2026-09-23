@@ -17,6 +17,10 @@ import { decodeBank, encodePcm, BANK_VERSION, type BankIndex } from '../engine/d
 import { renderDi, activeRms, sourceString } from '../engine/di-sampler.ts';
 import { trackEvents, timeline, span } from '../engine/tab-guitar.ts';
 import { guitarTracks, scoreSeconds } from '../engine/tab-audio.ts';
+import { TabTrackRenderer } from '../engine/tab-render.ts';
+import { PRESETS } from '../app/presets.ts';
+import { CABS, shapeCabIR } from '../engine/ir.ts';
+import { readWav, toMono } from '../render/wav.ts';
 import { prepareSoundFont } from '../engine/soundfont.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -171,6 +175,48 @@ if (!fs.existsSync(bankFile)) {
     });
     check('a hammer-on sounds', legato.length > 0 && heard.length === legato.length, `${heard.length} of ${legato.length}`);
   }
+}
+
+if (fs.existsSync(bankFile)) {
+  /*
+   * A tab is heard while it is still rendering, so it comes out in chunks —
+   * and a chunk boundary must not be audible. Rendered in one piece and in
+   * half-second pieces, the same track has to come out the same, which it only
+   * does if the strings and the chain carry their state across.
+   */
+  const index = JSON.parse(fs.readFileSync(bankFile, 'utf8')) as BankIndex;
+  const pcmBytes = fs.readFileSync(path.join(ROOT, 'public/di-bank/bank.pcm'));
+  const bank = decodeBank(index, new Int16Array(pcmBytes.buffer, pcmBytes.byteOffset, pcmBytes.byteLength / 2));
+  const tab = score('\\title "C" \\tempo 120 . \\track "G" \\instrument distortionguitar '
+    + ':8 0.6{pm} 0.6{pm} 3.6 5.6 7.6 5.6 3.6 0.6 | :2 7.6 12.6');
+  const catalog = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/models/index.json'), 'utf8')) as { models: { file: string; trimDb: number }[] };
+  const preset = PRESETS.find((p) => p.name === 'Modern metal')!;
+  const capture = catalog.models.find((m) => m.file === preset.capture)!;
+  const wasm = fs.readFileSync(path.join(ROOT, 'public/dsp/chain.wasm'));
+  const model = new Uint8Array(fs.readFileSync(path.join(ROOT, 'public/models', capture.file)));
+  // A recorded cabinet is a file, and only the page decodes it: give the tone
+  // the samples, as the reader's worker is given them.
+  const irFile = CABS.find((c) => c.id === preset.cab)?.file;
+  const cabIR = irFile ? shapeCabIR(toMono(readWav(path.join(ROOT, 'public', irFile))), RATE) ?? undefined : undefined;
+  const tone = { values: { ...preset.values }, capture: capture as never, cab: preset.cab, cabIR };
+  const job = { index: 0, track: trackEvents(tab, 0, 1), tone, seed: 1 };
+  const seconds = scoreSeconds(tab);
+  const whole = await TabTrackRenderer.open(bank, job, wasm, model, RATE, seconds);
+  const inOne = whole.next(whole.frames);
+  const piecemeal = await TabTrackRenderer.open(bank, job, wasm, model, RATE, seconds);
+  const joined = new Float32Array(piecemeal.frames);
+  while (!piecemeal.done) {
+    const chunk = piecemeal.next(Math.round(RATE * 0.5));
+    joined.set(chunk.samples, chunk.at);
+  }
+  let worst = 0;
+  for (let i = 0; i < joined.length; i++) worst = Math.max(worst, Math.abs(joined[i]! - inOne.samples[i]!));
+  check('a chunk boundary is not audible', worst === 0, `worst sample apart: ${worst.toExponential(1)}`);
+
+  // And the gain into the amplifier is the same whichever way it was rendered.
+  let energy = 0;
+  for (const v of inOne.samples) energy += v * v;
+  check('the track is rendered at all', energy > 0, `${(10 * Math.log10(energy / inOne.samples.length + 1e-20)).toFixed(1)} dB`);
 }
 
 {

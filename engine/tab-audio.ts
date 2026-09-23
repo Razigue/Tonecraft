@@ -15,8 +15,7 @@
 import type * as alpha from '@coderline/alphatab';
 import type { RecordingTone } from './recording.ts';
 import { trackEvents, timeline } from './tab-guitar.ts';
-import type { TabTrackAudio, TabTrackJob } from './tab-render.ts';
-import type { TabMix, TabTrackBuffer } from './tab-playback.ts';
+import type { TabChunk, TabTrackJob } from './tab-render.ts';
 import type { TabRenderMessage, TabRenderRequest } from './tab-audio-worker.ts';
 
 /**
@@ -57,7 +56,7 @@ export function guitarTracks(score: alpha.model.Score): TabGuitarTrack[] {
 
 export interface TabRenderOptions {
   readonly score: alpha.model.Score;
-  /** The reader's api, for the band: its synthesiser already has the soundfont. */
+  /** The reader's api, for the band: its exporter runs in alphaTab's own worker. */
   readonly api: alpha.AlphaTabApi;
   /** The module the reader already loaded; nothing here loads a second copy. */
   readonly alphaTab: typeof import('@coderline/alphatab');
@@ -69,7 +68,12 @@ export interface TabRenderOptions {
   readonly clean: RecordingTone;
   readonly rate: number;
   readonly base: string;
-  readonly onProgress?: (done: number) => void;
+  /** A chunk of a guitar track, as soon as it exists. */
+  readonly onChunk: (chunk: TabChunk) => void;
+  /** The band, in its own chunks; `at` is in samples, as the guitars' is. */
+  readonly onBand: (at: number, left: Float32Array<ArrayBuffer>, right: Float32Array<ArrayBuffer>) => void;
+  /** How many seconds of the score every track has been rendered up to. */
+  readonly onReady: (seconds: number) => void;
   readonly signal?: AbortSignal;
 }
 
@@ -111,109 +115,131 @@ function jobsFor(options: TabRenderOptions, tracks: readonly TabGuitarTrack[]): 
  *
  * One core is left to the page, and to the player's own guitar if it is
  * plugged in — this is the export path, and it has no business making the live
- * chain share a core. Three at most whatever the machine claims: each worker
- * holds its own copy of the bank, and a fourth buys less than the memory it
- * costs.
+ * chain share a core. Five at most whatever the machine claims: each worker
+ * holds its own copy of the bank, about 40 MB, and past five that memory buys
+ * less than it costs.
  */
 function workerCount(jobs: number): number {
   const cores = typeof navigator === 'undefined' ? 4 : navigator.hardwareConcurrency || 4;
-  return Math.max(1, Math.min(jobs, cores - 1, 3));
+  return Math.max(1, Math.min(jobs, cores - 1, 5));
 }
 
-/** One worker's share of the tracks. */
-function renderShare(request: TabRenderRequest, onProgress: (done: number) => void, signal?: AbortSignal): Promise<TabTrackAudio[]> {
+/** How much music a chunk carries: small enough to start soon, large enough not to chatter. */
+const CHUNK_SECONDS = 4;
+
+/** One worker's share of the tracks, streaming its chunks back. */
+function renderShare(request: TabRenderRequest, onChunk: (chunk: TabChunk) => void, onRendered: (seconds: number) => void, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./tab-audio-worker.ts', import.meta.url), { type: 'module' });
-    const done: TabTrackAudio[] = [];
-    const finish = (): void => { worker.terminate(); signal?.removeEventListener('abort', cancel); };
+    const finish = (): void => { worker.terminate(); signal.removeEventListener('abort', cancel); };
     const cancel = (): void => { finish(); reject(new Error('Rendering cancelled.')); };
-    if (signal?.aborted) { cancel(); return; }
-    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal.aborted) { cancel(); return; }
+    signal.addEventListener('abort', cancel, { once: true });
     worker.onmessage = (e: MessageEvent<TabRenderMessage>) => {
       const data = e.data;
       if ('error' in data) { finish(); reject(new Error(data.error)); }
-      else if ('track' in data) { done.push(data.track); onProgress(done.length); }
-      else if ('done' in data) { finish(); resolve(done); }
-      else onProgress(done.length + data.progress);
+      else if ('done' in data) { finish(); resolve(); }
+      else { onChunk(data.chunk); onRendered(data.rendered); }
     };
     worker.onerror = () => { finish(); reject(new Error('The tab could not be played through the amplifier.')); };
     worker.postMessage(request);
   });
 }
 
-/** Every guitar track, a few at a time. */
-async function renderGuitars(request: TabRenderRequest, onProgress: (done: number) => void, signal?: AbortSignal): Promise<TabTrackAudio[]> {
-  const count = workerCount(request.jobs.length);
+/**
+ * Everything that is not a guitar, from alphaTab's synthesiser, in chunks of
+ * its own. Exported rather than played live so it lands on the same clock as
+ * the guitars: buffers started together cannot drift apart.
+ */
+async function renderBand(
+  options: TabRenderOptions,
+  guitars: readonly number[],
+  seconds: number,
+  onRendered: (seconds: number) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const { alphaTab, api, score, rate, soundFont, onBand } = options;
+  const others = score.tracks.map((t) => t.index).filter((i) => !guitars.includes(i));
+  if (others.length === 0) { onRendered(Number.POSITIVE_INFINITY); return; }
+  const settings = new alphaTab.synth.AudioExportOptions();
+  // Given, not taken from the player: in external media mode it has no
+  // synthesiser holding one.
+  settings.soundFonts = [soundFont];
+  settings.sampleRate = rate;
+  settings.masterVolume = 1;
+  settings.metronomeVolume = 0;
+  for (const track of score.tracks) settings.trackVolume.set(track.index, guitars.includes(track.index) ? 0 : 1);
+  const exporter = await api.exportAudio(settings);
+  const total = Math.ceil(seconds * rate);
+  let at = 0;
+  try {
+    for (let chunk = await exporter.render(CHUNK_SECONDS * 1000); chunk && at < total; chunk = await exporter.render(CHUNK_SECONDS * 1000)) {
+      if (signal.aborted) return;
+      const frames = Math.min(chunk.samples.length >> 1, total - at);
+      const left = new Float32Array(frames), right = new Float32Array(frames);
+      for (let i = 0; i < frames; i++) {
+        left[i] = chunk.samples[i * 2]!;
+        right[i] = chunk.samples[i * 2 + 1]!;
+      }
+      onBand(at, left, right);
+      at += frames;
+      onRendered(at / rate);
+    }
+  } finally {
+    exporter.destroy();
+  }
+  onRendered(Number.POSITIVE_INFINITY);
+}
+
+export interface TabRender {
+  /** The score tracks that will arrive as guitars, in order. */
+  readonly tracks: readonly number[];
+  readonly seconds: number;
+  readonly hasBand: boolean;
+  /** Resolves when every chunk has been handed over. */
+  readonly finished: Promise<void>;
+}
+
+/**
+ * Renders the whole tab, handing over chunks as they are made.
+ *
+ * Nothing is returned in one piece: a four-minute song with seven guitar
+ * tracks is minutes of work on a modest machine, and a player who pressed the
+ * amplifier should be listening long before that. What the page waits for is
+ * the front — the point every track has been rendered up to — not the end.
+ */
+export function startTabRender(options: TabRenderOptions): TabRender {
+  const { score, rate, base, signal } = options;
+  const tracks = guitarTracks(score);
+  const jobs = jobsFor(options, tracks);
+  const seconds = scoreSeconds(score);
+  if (jobs.length === 0) throw new Error('This tab has no guitar track to play through the amplifier.');
+
+  const count = workerCount(jobs.length);
   const shares: TabTrackJob[][] = Array.from({ length: count }, () => []);
   // Dealt round robin: the tracks of a song are not the same size, and the
   // longest should not all land on one worker.
-  request.jobs.forEach((job, i) => shares[i % count]!.push(job));
-  const progress = new Array<number>(count).fill(0);
-  const total = request.jobs.length;
+  jobs.forEach((job, i) => shares[i % count]!.push(job));
+
   // One failure stops the rest: without this the others keep a core busy
   // rendering a tab nobody will hear.
   const stop = new AbortController();
   const onAbort = (): void => stop.abort();
   signal?.addEventListener('abort', onAbort, { once: true });
-  try {
-    const shared = await Promise.all(shares.map((jobs, i) => renderShare({ ...request, jobs }, (done) => {
-      progress[i] = done;
-      onProgress(progress.reduce((a, b) => a + b, 0) / total);
-    }, stop.signal).catch((e: unknown) => { stop.abort(); throw e; })));
-    return shared.flat();
-  } finally {
-    signal?.removeEventListener('abort', onAbort);
-  }
-}
 
-/**
- * Everything that is not a guitar, from alphaTab's synthesiser.
- *
- * Exported rather than played live so it lands on the same clock as the
- * guitars: one set of buffers, started together, cannot drift apart.
- */
-export async function renderBand(alphaTab: typeof import('@coderline/alphatab'), api: alpha.AlphaTabApi, score: alpha.model.Score, guitars: readonly number[], rate: number, seconds: number, soundFont: Uint8Array): Promise<{ left: Float32Array<ArrayBuffer>; right: Float32Array<ArrayBuffer> } | undefined> {
-  const others = score.tracks.map((t) => t.index).filter((i) => !guitars.includes(i));
-  if (others.length === 0) return undefined;
-  const options = new alphaTab.synth.AudioExportOptions();
-  // Given, not taken from the player: in external media mode it has no synthesiser holding one.
-  options.soundFonts = [soundFont];
-  options.sampleRate = rate;
-  options.masterVolume = 1;
-  options.metronomeVolume = 0;
-  for (const track of score.tracks) options.trackVolume.set(track.index, guitars.includes(track.index) ? 0 : 1);
-  const exporter = await api.exportAudio(options);
-  const left = new Float32Array(Math.ceil((seconds + 1) * rate));
-  const right = new Float32Array(left.length);
-  let at = 0;
-  try {
-    for (let chunk = await exporter.render(1000); chunk; chunk = await exporter.render(1000)) {
-      const samples = chunk.samples;
-      for (let i = 0; i + 1 < samples.length && at < left.length; i += 2, at++) {
-        left[at] = samples[i]!;
-        right[at] = samples[i + 1]!;
-      }
-      if (at >= left.length) break;
-    }
-  } finally {
-    exporter.destroy();
-  }
-  return { left, right };
-}
+  const fronts = new Array<number>(count + 1).fill(0);
+  const advance = (which: number) => (front: number): void => {
+    fronts[which] = front;
+    options.onReady(Math.min(...fronts));
+  };
+  const request = { rate, seconds, base, chunkSeconds: CHUNK_SECONDS };
+  const running = shares.map((share, i) => renderShare({ ...request, jobs: share }, options.onChunk, advance(i), stop.signal)
+    .catch((e: unknown) => { stop.abort(); throw e; }));
+  running.push(renderBand(options, jobs.map((j) => j.index), seconds, advance(count), stop.signal)
+    .catch((e: unknown) => { stop.abort(); throw e; }));
 
-/** The whole tab, ready to hand to `TabPlayback`. */
-export async function renderTabMix(options: TabRenderOptions): Promise<TabMix> {
-  const { score, api, rate, base, onProgress = () => {}, signal } = options;
-  const tracks = guitarTracks(score);
-  const jobs = jobsFor(options, tracks);
-  const seconds = scoreSeconds(score);
-  if (jobs.length === 0) throw new Error('This tab has no guitar track to play through the amplifier.');
-  // The band is quick and the guitars are not, so they run side by side and
-  // the bar the player watches is the guitars'.
-  const band = renderBand(options.alphaTab, api, score, jobs.map((j) => j.index), rate, seconds, options.soundFont);
-  const guitars = await renderGuitars({ jobs, rate, seconds: seconds + 1, base }, onProgress, signal);
-  const buffers: TabTrackBuffer[] = guitars
-    .sort((a, b) => a.index - b.index)
-    .map((t) => ({ index: t.index, samples: t.samples, right: t.right }));
-  return { rate, seconds, tracks: buffers, band: await band };
+  const finished = Promise.all(running)
+    .then(() => { options.onReady(Number.POSITIVE_INFINITY); })
+    .finally(() => signal?.removeEventListener('abort', onAbort));
+  return { tracks: jobs.map((j) => j.index), seconds, hasBand: score.tracks.length > jobs.length, finished };
 }
