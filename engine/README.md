@@ -173,7 +173,21 @@ candidates through the same amplifier — live on the `poc/tab-di` branch, with 
 README of their own. Nothing there is imported by the site; it is the bench,
 kept off `main` because it holds a second copy of what `engine/` now does.
 
-**The bank is built, not committed** (`scripts/build-di-bank.ts`): attacks,
-sustain loops and the palm mask per string are all measured there, so nothing
-is analysed on the player's machine. The recordings it was developed against
-(IDMT-SMT-Guitar, CC BY-NC-ND) cannot be published with the site.
+**The bank is built, not committed** (`scripts/build-di-bank.ts`): which note
+each file sounds, where its pick lands, how loud it is against its neighbours,
+where it can be looped, and what the palm does to each string are all measured
+there, so nothing is analysed on the player's machine.
+
+It is built from **EG-IPT** (Fiorini, Brochec, Borg, Pasini,
+zenodo.org/records/15205644), **CC BY-4.0**: a 2005 Gibson SG through a BSS
+AR-133 DI box at 96 kHz, one file per note. The bridge humbucker's DI channel
+gives 138 picked notes and **a real palm mute at every fret of every string**,
+plus the guitar's own harmonics. The licence is why it is this dataset: a bank
+cut from a no-derivatives one could never be published, whatever it sounded
+like. Attribution is owed and is carried in `assets/README.md`.
+
+What the bank cannot hold is a string the guitar does not have — a
+seven-string's low B, an eight's F#. Past three semitones the palm mask takes
+over from the recorded mute, because dragging one that far down takes its pick
+click and its pickup resonance with it: 14.9 dB from a real mute, where two
+real takes of the same mute are 12.2 dB apart.

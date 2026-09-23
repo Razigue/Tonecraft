@@ -20,22 +20,6 @@ import type { NoteEvent, TrackEvents } from './tab-guitar.ts';
 /** The shipped DI loop's level while it is playing, which is what the presets are set for. */
 export const TARGET_RMS_DB = -36.1;
 
-/**
- * How much of the learned palm is applied: its tone nearly whole, its decay
- * well short of it. The dataset's hardest mutes are gone in 80 ms, and copied
- * as they are they left a hole before every note of a run of sixteenths.
- */
-const PALM_DECAY = 0.4;
-const PALM_TONE = 0.8;
-/** The palm presses a little differently every stroke. */
-const PALM_PRESSURES = [-0.08, 0, 0.08];
-/**
- * Masked notes kept around, in samples: about 8 MB at 44.1 kHz, where a song
- * uses maybe a quarter of that. Several of these run at once, one per worker,
- * so the headroom is memory nobody gets back.
- */
-const PALM_CACHE_LIMIT = 2_000_000;
-
 const RELEASE_SECONDS = 0.03;
 const PICK_STOP_SECONDS = 0.004;
 /** The pre-roll before the attack the bank cut into every note. */
@@ -54,12 +38,41 @@ function hermite(x: Float32Array, pos: number): number {
   return ((c3 * f + c2) * f + c1) * f + x0;
 }
 
-/** Palm mutes, made on demand from the picked note at that fret and kept. */
+/**
+ * The palm mute for a note.
+ *
+ * The bank holds a real one at every fret of every string, so most notes are
+ * simply that recording. What it cannot hold is a string this guitar does not
+ * have: a seven-string's low B, an eight's F#. Dragging a mute that far down
+ * takes its pick click and its pickup resonance with it — 14.9 dB from a real
+ * mute, where two real takes of the same mute are 12.2 dB apart — so past a
+ * few semitones the palm is applied to the picked note at the right pitch
+ * instead, from the mask learned on this string's own pairs.
+ */
+const FAR = 3;
+/**
+ * The mask is learned from pairs of the same fret on the same string, so it is
+ * applied whole. It was scaled down when the only mutes available were five
+ * crushed takes at one fret; with a mute recorded at every fret there is
+ * nothing to correct for.
+ */
+const PALM_DECAY = 1;
+const PALM_TONE = 1;
+/** The palm presses a little differently every stroke. */
+const PALM_PRESSURES = [-0.08, 0, 0.08];
+/**
+ * Masked notes kept around, in samples: about 8 MB, where a song uses a
+ * fraction of it. Several of these run at once, one per worker, so the
+ * headroom is memory nobody gets back.
+ */
+const PALM_CACHE_LIMIT = 2_000_000;
+
 class Palm {
   #cache = new Map<string, BankSample>();
   #samples = 0;
   constructor(private readonly bank: Bank) {}
 
+  /** A picked note at `fret`, with this string's palm on it. */
   at(string: number, fret: number, take: number): BankSample {
     const key = `${string}:${fret}:${take}`;
     const held = this.#cache.get(key);
@@ -68,12 +81,23 @@ class Palm {
     const open = row.find((s) => s.fret === fret) ?? row[0]!;
     const data = applyPalm(open.data, open.attack, this.bank.rate, this.bank.palm[string]!,
       PALM_DECAY + PALM_PRESSURES[take % PALM_PRESSURES.length]!, PALM_TONE);
-    const muted: BankSample = { ...open, data, sustain: null };
+    const muted: BankSample = { ...open, kind: 'mute', data, sustain: null };
     if (this.#samples > PALM_CACHE_LIMIT) { this.#cache.clear(); this.#samples = 0; }
     this.#cache.set(key, muted);
     this.#samples += data.length;
     return muted;
   }
+}
+
+/** The sample of a set whose own note is closest to the one wanted. */
+function nearestPitch(row: readonly BankSample[], pitch: number): BankSample | undefined {
+  let best: BankSample | undefined;
+  let closest = Infinity;
+  for (const sample of row) {
+    const off = Math.abs(sample.pitch - pitch);
+    if (off < closest) { closest = off; best = sample; }
+  }
+  return best;
 }
 
 /** Plays one note at a varying rate, holding it past its recording on its sustain loop. */
@@ -172,6 +196,20 @@ class StringVoice {
     private readonly rand: () => number,
   ) {}
 
+  /**
+   * The palm mute for a note: this string's own recording of that fret where
+   * the string can reach it, the learned palm on the picked note where it
+   * cannot — a low B or an F# on a guitar that has neither.
+   */
+  #muted(pitch: number): BankSample {
+    const row = this.bank.muted[this.source]!;
+    const real = nearestPitch(row, pitch);
+    if (real && Math.abs(real.pitch - pitch) <= FAR) return real;
+    const picked = this.bank.picked[this.source]!;
+    const fret = Math.max(0, Math.min(picked.length - 1, pitch - this.bank.strings[this.source]!));
+    return this.palm.at(this.source, fret, this.#rr++ % PALM_PRESSURES.length);
+  }
+
   #picked(pitch: number, rrOffset: number): BankSample {
     const row = this.bank.picked[this.source]!;
     const want = pitch - this.bank.strings[this.source]! + rrOffset;
@@ -207,31 +245,34 @@ class StringVoice {
     let gain = ev.velocity;
     let aux: Reader | undefined;
     let auxPitch: number | undefined;
-    const open = this.bank.strings[this.source]!;
+    let dead = false;
+    let base = pitch;
     if (ev.dead) {
-      const row = this.bank.dead[this.source]!;
-      const closest = Math.min(...row.map((d) => Math.abs(d.fret - ev.fret)));
-      const near = row.filter((d) => Math.abs(d.fret - ev.fret) === closest);
-      sample = near[Math.floor(this.rand() * near.length)] ?? row[0]!;
+      // A dead note is a muted one with nothing left of it: the same knock,
+      // stopped where a pitch would start. The bank holds no separate take —
+      // a dead note is a gesture, not a different string.
+      sample = this.#muted(pitch);
       srcPitch = sample.pitch;
+      dead = true;
+      gain *= 0.8;
     } else if (ev.harmonic > 0) {
-      const row = this.bank.harmonics[this.source]!;
-      const n = Math.min(5, ev.harmonic);
-      sample = row.find((h) => h.harmonic === n) ?? row[row.length - 1]!;
-      // The sample is the open string's harmonic, so moving it by the fretted
-      // note's distance from that open string gives the fretted one's.
-      srcPitch = open;
+      // The ring wanted, by the note it sounds. Which harmonic of which fret
+      // the guitarist used to get it there does not survive into the audio.
+      const sounding = pitch + 12 * Math.log2(ev.harmonic);
+      sample = nearestPitch(this.bank.harmonics, sounding) ?? this.#picked(pitch, 0);
+      srcPitch = sample.pitch;
       if (ev.pinch) {
+        // What the thumb does not quite kill: the fretted note itself, low.
         const fundamental = this.#picked(pitch, 0);
         aux = new Reader(fundamental, this.rate);
         aux.gain = ev.velocity * 0.18;
         auxPitch = fundamental.pitch;
         gain *= 0.9;
       } else gain *= 0.8;
+      // The sampler asks for `base`, so the shift has to carry the harmonic.
+      base = sounding;
     } else if (ev.palm) {
-      const row = this.bank.picked[this.source]!;
-      const fret = Math.max(0, Math.min(row.length - 1, pitch - open));
-      sample = this.palm.at(this.source, fret, this.#rr++ % PALM_PRESSURES.length);
+      sample = this.#muted(pitch);
       srcPitch = sample.pitch;
     } else {
       // Round robin: the note itself, or a neighbouring fret brought to pitch.
@@ -250,7 +291,11 @@ class StringVoice {
       reader.fade = 1 / (0.0025 * this.rate);
       reader.pos = sample.attack * 0.5;
     }
-    this.playing = { reader, srcPitch, ev, base: pitch, aux, auxPitch, released: false };
+    if (dead) {
+      // Stopped before a pitch can settle: what is left is the knock.
+      reader.fade = -1 / (0.045 * this.rate);
+    }
+    this.playing = { reader, srcPitch, ev, base, aux, auxPitch, released: dead };
   }
 
   /** One output sample, `now` being the time in the track. */

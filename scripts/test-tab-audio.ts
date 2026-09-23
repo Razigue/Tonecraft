@@ -92,8 +92,10 @@ if (!fs.existsSync(bankFile)) {
   const pcmBytes = fs.readFileSync(path.join(ROOT, 'public/di-bank/bank.pcm'));
   const bank = decodeBank(index, new Int16Array(pcmBytes.buffer, pcmBytes.byteOffset, pcmBytes.byteLength / 2));
   check('the bank is the version this engine reads', index.version === BANK_VERSION);
-  check('every string has its picked notes, its dead notes and its harmonics',
-    bank.picked.every((r) => r.length > 12) && bank.dead.every((r) => r.length > 0) && bank.harmonics.every((r) => r.length > 0));
+  check('every string is recorded picked and muted, fret by fret',
+    bank.picked.every((r) => r.length > 12) && bank.muted.every((r) => r.length > 12),
+    `picked ${bank.picked.map((r) => r.length).join('/')}, muted ${bank.muted.map((r) => r.length).join('/')}`);
+  check('and the guitar was recorded ringing in harmonics', bank.harmonics.length > 20, `${bank.harmonics.length}`);
   check('and its palm, learned frame by frame', bank.palm.length === bank.strings.length && bank.palm.every((m) => m.length === 8 && m[0]!.length === 160));
 
   {

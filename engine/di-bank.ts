@@ -17,7 +17,11 @@ import type { PalmMask } from './di-palm.ts';
 
 export const BANK_VERSION = 1;
 
-export type SampleKind = 'pick' | 'dead' | 'harmonic';
+/**
+ * What was played, not what it sounds like: a mute is a mute because the palm
+ * was there, and a harmonic because the finger was.
+ */
+export type SampleKind = 'pick' | 'mute' | 'harmonic';
 
 /** How a note is held past its recorded end (`null`: it cannot be). */
 export interface Sustain {
@@ -36,7 +40,7 @@ export interface BankSample {
   readonly fret: number;
   /** MIDI note it sounds, the harmonic's own pitch for a harmonic. */
   readonly pitch: number;
-  /** 2 is the octave harmonic; 1 for everything else. */
+  /** 2 on a harmonic, 1 on everything else: which one it is comes from `pitch`. */
   readonly harmonic: number;
   /** Where the pick lands, in samples from the start of `data`. */
   readonly attack: number;
@@ -51,10 +55,10 @@ export interface Bank {
   readonly strings: readonly number[];
   /** [string][fret]. */
   readonly picked: readonly (readonly BankSample[])[];
-  /** [string][take]. */
-  readonly dead: readonly (readonly BankSample[])[];
-  /** [string][take], one per harmonic number. */
-  readonly harmonics: readonly (readonly BankSample[])[];
+  /** [string][fret]: the same neck, played with the palm on it. */
+  readonly muted: readonly (readonly BankSample[])[];
+  /** Every harmonic the guitar was recorded ringing, by the note it sounds. */
+  readonly harmonics: readonly BankSample[];
   /** [string]. */
   readonly palm: readonly PalmMask[];
 }
@@ -97,16 +101,18 @@ export function encodePcm(parts: readonly Float32Array[]): Int16Array<ArrayBuffe
 export function decodeBank(index: BankIndex, pcm: Int16Array): Bank {
   if (index.version !== BANK_VERSION) throw new Error(`DI bank version ${index.version}, expected ${BANK_VERSION}`);
   const rows = (): BankSample[][] => index.strings.map(() => []);
-  const picked = rows(), dead = rows(), harmonics = rows();
+  const picked = rows(), muted = rows();
+  const harmonics: BankSample[] = [];
   for (const s of index.samples) {
     const data = new Float32Array(s.length);
     for (let i = 0; i < s.length; i++) data[i] = pcm[s.at + i]! / INT16;
     const sample: BankSample = { kind: s.kind, string: s.string, fret: s.fret, pitch: s.pitch, harmonic: s.harmonic, attack: s.attack, data, sustain: s.sustain };
-    const into = s.kind === 'pick' ? picked : s.kind === 'dead' ? dead : harmonics;
-    (into[s.string] ??= []).push(sample);
+    if (s.kind === 'harmonic') harmonics.push(sample);
+    else (s.kind === 'pick' ? picked : muted)[s.string]!.push(sample);
   }
-  for (const row of picked) row.sort((a, b) => a.fret - b.fret);
-  return { rate: index.rate, guitar: index.guitar, strings: index.strings, picked, dead, harmonics, palm: index.palm };
+  for (const row of [...picked, ...muted]) row.sort((a, b) => a.fret - b.fret);
+  harmonics.sort((a, b) => a.pitch - b.pitch);
+  return { rate: index.rate, guitar: index.guitar, strings: index.strings, picked, muted, harmonics, palm: index.palm };
 }
 
 /**
