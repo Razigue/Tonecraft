@@ -148,6 +148,15 @@ of Incarnation*, seven guitar tracks over 4:17, renders at about half real time
 are playable after a fifth of the render. A modern four- or eight-core machine
 runs several tracks at once and starts on the 20-second minimum.
 
+**Speed is a render, not a resampling.** Slowing a tab down — the practice move
+the reader exists for — renders it again at that speed: the guitars' events are
+stretched and the band is exported from a score whose tempo marks are scaled
+for the microseconds it takes to generate its MIDI. Resampling instead would
+drop the whole song a tone. alphaTab is told the speed in both modes, since its
+own time-to-tick conversion is scaled by it, and the tab picks up where it was
+as soon as that far is rendered again. Syncing to the metronome is the same
+thing with the ratio the click asks for.
+
 **What that costs elsewhere.** The gain into the amplifier cannot wait for the
 whole track to exist, and one that changed halfway would change the tone, since
 what follows it is not linear — so it is estimated from the notes themselves

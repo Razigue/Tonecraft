@@ -14,7 +14,7 @@
  */
 import type * as alpha from '@coderline/alphatab';
 import type { RecordingTone } from './recording.ts';
-import { trackEvents, timeline } from './tab-guitar.ts';
+import { trackEvents, timeline, type TrackEvents } from './tab-guitar.ts';
 import type { TabChunk, TabTrackJob } from './tab-render.ts';
 import type { TabRenderMessage, TabRenderRequest } from './tab-audio-worker.ts';
 
@@ -68,6 +68,12 @@ export interface TabRenderOptions {
   readonly clean: RecordingTone;
   readonly rate: number;
   readonly base: string;
+  /**
+   * How fast the tab is played, 1 being the score's own tempo. A slowed tab is
+   * rendered slowly rather than resampled: resampling would drop the whole
+   * song a tone, and what a player slows a solo down for is to hear it.
+   */
+  readonly speed: number;
   /** A chunk of a guitar track, as soon as it exists. */
   readonly onChunk: (chunk: TabChunk) => void;
   /**
@@ -103,12 +109,26 @@ function plainTone(tone: RecordingTone): RecordingTone {
   };
 }
 
+/** The same playing, taking longer: every time stretched, every pitch left alone. */
+function slowed(track: TrackEvents, speed: number): TrackEvents {
+  if (speed === 1) return track;
+  return {
+    ...track,
+    events: track.events.map((e) => ({
+      ...e,
+      start: e.start / speed,
+      end: e.end / speed,
+      pitch: e.pitch.map((p) => ({ ...p, t: p.t / speed })),
+    })),
+  };
+}
+
 function jobsFor(options: TabRenderOptions, tracks: readonly TabGuitarTrack[]): TabTrackJob[] {
-  const { score, tone, clean } = options;
+  const { score, tone, clean, speed } = options;
   const loud = plainTone(tone), quiet = plainTone(clean);
   return tracks.map((t, seed) => ({
     index: t.index,
-    track: trackEvents(score, t.index, seed + 1),
+    track: slowed(trackEvents(score, t.index, seed + 1), speed),
     tone: t.clean ? quiet : loud,
     seed: seed + 1,
   })).filter((job) => job.track.events.length > 0);
@@ -167,7 +187,7 @@ async function renderBand(
   onRendered: (seconds: number) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const { alphaTab, api, score, rate, soundFont, onBand } = options;
+  const { alphaTab, api, score, rate, soundFont, onBand, speed } = options;
   if (others.length === 0) { onRendered(Number.POSITIVE_INFINITY); return; }
   const total = Math.ceil(seconds * rate);
   for (const index of others) {
@@ -180,7 +200,17 @@ async function renderBand(
     settings.masterVolume = 1;
     settings.metronomeVolume = 0;
     for (const track of score.tracks) settings.trackVolume.set(track.index, track.index === index ? 1 : 0);
-    const exporter = await api.exportAudio(settings);
+    /*
+     * alphaTab's exporter builds its MIDI from the score as it stands, so a
+     * slowed tab is a score whose tempo marks are slowed — for the few
+     * microseconds it takes to generate that MIDI, which the call does before
+     * its first await. Any longer and a redraw landing in the middle of it
+     * would print a tempo nobody chose.
+     */
+    const restore = takeTempoDown(alphaTab, score, speed);
+    const exporting = api.exportAudio(settings);
+    restore();
+    const exporter = await exporting;
     let at = 0;
     try {
       for (let chunk = await exporter.render(CHUNK_SECONDS * 1000); chunk && at < total; chunk = await exporter.render(CHUNK_SECONDS * 1000)) {
@@ -201,6 +231,35 @@ async function renderBand(
     }
   }
   onRendered(Number.POSITIVE_INFINITY);
+}
+
+/**
+ * Scales every tempo in the score by `speed`, and hands back the way out.
+ *
+ * The score's own `tempo` is the first bar's first tempo automation, so the
+ * automations are the only thing to touch — except in a score that carries
+ * none at all, where one is added for the length of the export and taken away
+ * again.
+ */
+function takeTempoDown(alphaTab: typeof import('@coderline/alphatab'), score: alpha.model.Score, speed: number): () => void {
+  if (speed === 1) return () => {};
+  const marks: { automation: alpha.model.Automation; was: number }[] = [];
+  for (const bar of score.masterBars) {
+    for (const automation of bar.tempoAutomations) marks.push({ automation, was: automation.value });
+  }
+  const first = score.masterBars[0];
+  const added = marks.length === 0 && first
+    ? alphaTab.model.Automation.buildTempoAutomation(false, 0, score.tempo * speed, 4, false)
+    : null;
+  if (added && first) first.tempoAutomations.push(added);
+  for (const mark of marks) mark.automation.value = mark.was * speed;
+  return () => {
+    for (const mark of marks) mark.automation.value = mark.was;
+    if (added && first) {
+      const at = first.tempoAutomations.indexOf(added);
+      if (at >= 0) first.tempoAutomations.splice(at, 1);
+    }
+  };
 }
 
 export interface TabRender {

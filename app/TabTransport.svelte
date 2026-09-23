@@ -93,8 +93,7 @@
       </button>
       {#if deck.selection}<button class="tc-button quiet" onclick={() => deck.clearSelection()}>{words.clearSelection}</button>{/if}
       {#if syncBpm !== null}<span class="synced-note" title={words.syncedTitle}>{words.synced(syncBpm)}</span>
-      {:else}<select class="tc-button" aria-label={words.speedLabel} disabled={deck.fixedSpeed}
-        title={deck.fixedSpeed ? words.speedFixed : words.speed} bind:value={deck.speed}>{#each SPEEDS as n}<option value={n}>{n}%</option>{/each}</select>{/if}
+      {:else}<select class="tc-button" aria-label={words.speedLabel} title={words.speed} bind:value={deck.speed}>{#each SPEEDS as n}<option value={n}>{n}%</option>{/each}</select>{/if}
       {#if view === 'play'}
         <button class="tc-button tracks" popovertarget="tab-tracks">{t.tracks}</button>
       {/if}

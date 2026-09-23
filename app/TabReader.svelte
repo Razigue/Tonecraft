@@ -144,6 +144,9 @@
   const HEAD_START = 20;
   /** Wall-clock start of the render, for how fast it is going. */
   let ampStartedAt = 0;
+  /** The speed the loaded render was made at, and where to pick it up again. */
+  let renderedSpeed = 0;
+  let resumeAt = 0;
 
   /**
    * When a tab can be played without catching up with its own render.
@@ -693,6 +696,8 @@
     ampStale = false;
     mixLoaded = false;
     ampStartedAt = performance.now();
+    const speed = playbackRate();
+    renderedSpeed = speed;
     try {
       const alpha = await library();
       // The player's own gesture opened the tab, so a context is allowed here.
@@ -706,7 +711,7 @@
       const render = startTabRender({
         score: sheet, api: reader, alphaTab: alpha, soundFont: font,
         tone: { ...tone, cabIR }, clean: { ...clean, cabIR: cleanIR },
-        rate, base: BASE,
+        rate, base: BASE, speed,
         onChunk: chunk => { if (run === ampRun) player.append(chunk.index, chunk.at, chunk.samples, chunk.right); },
         onBand: (index, at, left, right) => { if (run === ampRun) player.append(index, at, left, right); },
         onReady: seconds => {
@@ -720,11 +725,16 @@
             mixLoaded = true;
             rendered = toneKey;
             ampStale = false;
+            // A change of speed is a new render: pick the tab up where it was
+            // rather than at the top of the song.
+            if (resumeAt > 0 && resumeAt < seconds) { player.seek(resumeAt); resumeAt = 0; }
           }
         },
         signal: abort.signal,
       });
-      player.open(render.seconds, render.tracks);
+      // The score's own length; a slowed render is longer, and the clock the
+      // cursor reads is that longer one.
+      player.open(render.seconds / speed, render.tracks);
       applyMixGains();
       attachPlayback();
       await render.finished;
@@ -820,20 +830,34 @@
   }
 
   /**
-   * Synced to the metronome, the score plays at the click's tempo: the speed
-   * is the ratio between the two, and the Speed menu steps aside.
-   *
-   * Through the amplifier it stays at 1. A rendered tab can only be slowed by
-   * rendering it again — resampling it would drop the whole song a tone — and
-   * that is a change of speed the player asks for, not one a menu applies to
-   * a render that is already playing.
+   * How fast the tab is played: synced to the metronome, the ratio between the
+   * click and the score; otherwise what the Speed menu says.
+   */
+  const playbackRate = (): number => (syncBpm !== null && score ? syncedSpeed(syncBpm, score.tempo) : deck.speed / 100);
+
+  /**
+   * alphaTab is told the speed in both modes. Through the amplifier it is not
+   * playing anything, but it still turns our clock into ticks, and that
+   * conversion is scaled by the speed — so the cursor lands on the beat of a
+   * tab rendered slowly just as it does on one played slowly.
    */
   function applySpeed(reader: AlphaTabApi) {
-    reader.playbackSpeed = amped ? 1 : syncBpm !== null && score ? syncedSpeed(syncBpm, score.tempo) : deck.speed / 100;
+    reader.playbackSpeed = playbackRate();
   }
   $effect(() => {
     void syncBpm; void deck.speed; void score; void ready;
     if (api) applySpeed(api);
+  });
+  /**
+   * Slowing a rendered tab means rendering it again: nothing else can, short
+   * of resampling it, which would drop the whole song a tone. It picks up
+   * where it was, as soon as that far is rendered.
+   */
+  $effect(() => {
+    const speed = playbackRate();
+    if (!amped || !mixLoaded || speed === renderedSpeed) return;
+    resumeAt = playback?.position ?? 0;
+    void renderAmp();
   });
 
   /**
@@ -852,7 +876,6 @@
   // when it changes, so the position ticking is the one write per update.
   $effect(() => {
     deck.loaded = score !== null; deck.ready = playable; deck.busy = busy || (ampProgress >= 0 && !mixLoaded); deck.playing = playing; deck.cueing = cueing;
-    deck.fixedSpeed = amped;
     deck.position = position; deck.duration = duration; deck.looping = looping; deck.selection = selection;
     deck.title = score ? (score.title || filename) : '';
     deck.bars = score?.masterBars.length ?? 0;

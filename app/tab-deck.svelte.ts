@@ -29,11 +29,6 @@ export class TabDeck {
   selection = $state(false);
   /** Percent. Owned here: the transport sets it and the reader follows. */
   speed = $state(100);
-  /**
-   * The speed cannot move: the tab is rendered audio, and slowing a render is
-   * another render, not a resampling — that would drop the whole song a tone.
-   */
-  fixedSpeed = $state(false);
   /** The score player's level, percent. Owned here, like the speed. */
   volume = $state(60);
 

@@ -112,11 +112,75 @@ try {
   assert.equal(await page.locator('.amp-state').count(), 0, 'a fresh render is not announced as stale');
   console.log('ok  the render finishes behind the playing tab');
 
-  // The speed cannot move while a render is playing, and says why.
+  /*
+   * Seeking, looping and stopping are alphaTab's, answered by our clock: the
+   * handler is the only way in, so anything that moves the player has to come
+   * back out as audio moving with it.
+   */
+  const position = () => page.evaluate(() => {
+    const bar = document.querySelector('.tc-display .bar, .display .bar')?.textContent ?? '';
+    const cursor = document.querySelector('.at-cursor-beat')?.getBoundingClientRect().x ?? -1;
+    return { bar: bar.trim(), cursor };
+  });
+  const slider = page.getByRole('slider', { name: 'Position' });
+  if (await slider.count()) {
+    await slider.fill('40000');
+    await page.waitForTimeout(800);
+    const jumped = await position();
+    assert(jumped.cursor >= 0, 'seeking lands somewhere');
+    await page.getByRole('button', { name: 'Play tablature', exact: true }).click();
+    await page.waitForTimeout(1500);
+    const moved = await position();
+    assert(moved.cursor !== jumped.cursor, `it plays on from where it was put (${jumped.cursor} → ${moved.cursor})`);
+    await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
+    console.log('ok  seeking moves the audio, not just the cursor');
+  }
+  const loop = page.getByRole('button', { name: 'Loop song', exact: true });
+  if (await loop.count()) {
+    await loop.click();
+    assert.equal(await loop.getAttribute('aria-pressed'), 'true', 'the song loops');
+    await loop.click();
+    console.log('ok  the loop is the transport\u2019s, in either mode');
+  }
+
+  /*
+   * Synced to the click, the tab plays at the click's tempo — which through
+   * the amplifier is a render at that tempo, not a resampling. Before the
+   * speed reached the render, syncing a rendered tab quietly left it at its
+   * own tempo while the click ran at another.
+   */
+  await page.getByRole('button', { name: 'Open metronome' }).click();
+  const sync = page.locator('dialog.metronome .sync');
+  // The click took the score's tempo when the tab was opened, and a sync at
+  // the same tempo is no change at all: put it somewhere else first.
+  const clickTempo = page.locator('dialog.metronome input[type=number]');
+  await clickTempo.fill('90');
+  await clickTempo.press('Enter');
+  if (await sync.getAttribute('aria-pressed') !== 'true') await sync.click();
+  await page.getByRole('button', { name: 'Close metronome' }).click();
+  await page.locator('.amp-bar').waitFor({ timeout: 20000 });
+  console.log('ok  syncing to the click renders the tab at the click\u2019s tempo');
+  await page.getByRole('button', { name: 'Open metronome' }).click();
+  await sync.click();
+  await page.getByRole('button', { name: 'Close metronome' }).click();
+  await page.locator('.amp-bar').waitFor({ state: 'detached', timeout: 300000 });
+
+  // Slowing a rendered tab renders it again, at that speed, and picks it up
+  // where it was: the practice move the reader exists for.
   const speed = page.getByRole('combobox', { name: 'Playback speed' });
-  assert(await speed.isDisabled(), 'the speed is fixed while the amp plays the tab');
-  assert.match(await speed.getAttribute('title') ?? '', /soundfont/i, 'and the tooltip says what to do about it');
-  console.log('ok  the speed is held, not silently ignored');
+  assert(await speed.isEnabled(), 'the speed can be changed while the amp plays the tab');
+  await speed.selectOption('70');
+  await page.locator('.amp-bar').waitFor({ timeout: 15000 });
+  await page.waitForFunction(() => {
+    const button = [...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Play tablature');
+    return button && !button.disabled;
+  }, undefined, { timeout: 180000 });
+  console.log('ok  slowing the tab renders it again at that speed');
+  // Back to full speed, and let that render land: what follows is about the
+  // tone, and a render still running would be showing its own progress.
+  await speed.selectOption('100');
+  await page.locator('.amp-bar').waitFor({ timeout: 15000 });
+  await page.locator('.amp-bar').waitFor({ state: 'detached', timeout: 300000 });
 
   // A tone dialled after the render is said, not applied behind the player's back.
   // The knobs are on the amp head, which stands in the Tone view; the tab is in Play.
