@@ -236,7 +236,14 @@
   const NECK_ROOM = 480;
   let stage: HTMLDivElement;
   let stageHeight = $state(0);
-  const roomForNeck = $derived(stageHeight >= NECK_ROOM);
+  /**
+   * Narrow enough that the page scrolls rather than being one fixed window
+   * (the same 760 px the stylesheet below uses). There the stage has no height
+   * of its own to run out of, so the neck stays under the tab — and the editor,
+   * which writes notes by picking frets on it, still has one.
+   */
+  let scrolls = $state(false);
+  const roomForNeck = $derived(scrolls || stageHeight >= NECK_ROOM);
   /** The neck's own window, when there is no room for it under the tab. */
   let neckOpen = $state(false);
   function toggleNeck() {
@@ -1284,6 +1291,10 @@
     // tracks, the window — never by what it holds, so measuring it cannot loop.
     const room = new ResizeObserver(([entry]) => { stageHeight = entry?.contentRect.height ?? 0; });
     room.observe(stage);
+    const narrow = matchMedia('(max-width: 760px)');
+    scrolls = narrow.matches;
+    const follows = () => { scrolls = narrow.matches; };
+    narrow.addEventListener('change', follows);
     void dbGet<{ open?: unknown }>(STORES.state, NECK_KEY).then(saved => {
       if (!disposed && typeof saved?.open === 'boolean') neckOpen = saved.open;
     });
@@ -1293,6 +1304,7 @@
       if (typeof saved.scaleRoot === 'number' && Number.isInteger(saved.scaleRoot) && saved.scaleRoot >= 0 && saved.scaleRoot < 12) scaleRoot = saved.scaleRoot;
     });
     void loadMedia('last-score').then(file => { if (file && !disposed && !busy && !score) void open(file, false); });
+    return () => { room.disconnect(); narrow.removeEventListener('change', follows); };
   });
   onDestroy(() => { disposed = true; cancelCue(); cancelAnimationFrame(settling); signature.disconnect(); dropPlayback(); api?.destroy(); });
 </script>
