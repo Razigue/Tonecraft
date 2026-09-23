@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as alpha from '@coderline/alphatab';
 
-import { decodeBank, encodePcm, BANK_VERSION, type BankIndex } from '../engine/di-bank.ts';
+import { bankAvailable, decodeBank, encodePcm, BANK_VERSION, type BankIndex } from '../engine/di-bank.ts';
 import { renderDi, activeRms, sourceString } from '../engine/di-sampler.ts';
 import { trackEvents, timeline, span } from '../engine/tab-guitar.ts';
 import { guitarTracks, scoreSeconds } from '../engine/tab-audio.ts';
@@ -82,6 +82,28 @@ const score = (tex: string): alpha.model.Score => {
   // never chose one still has a guitar in it, and it had better be playable.
   const plain = guitarTracks(score('\\title "P" \\tempo 120 . \\track "Guitar" :4 0.6 0.6 0.6 0.6'));
   check('a track with no instrument set is still a guitar', plain.length === 1 && plain[0]!.clean, plain.length === 0 ? 'none found' : `clean: ${plain[0]!.clean}`);
+}
+
+{
+  /*
+   * A deploy without samples must not offer an amplifier that cannot be fed:
+   * the repository has no bank in it, and a site built from it has none either.
+   */
+  const asked: string[] = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    asked.push(`${String(url)} ${init?.method ?? 'GET'}`);
+    return { ok: String(url).includes('there') } as Response;
+  }) as typeof fetch;
+  try {
+    check('a deploy with samples offers the amplifier', await bankAvailable('/there/'));
+    check('one without them does not', !(await bankAvailable('/nothing/')));
+    check('and it costs one HEAD request', asked.every((a) => a.endsWith('HEAD')) && asked.length === 2, asked.join(', '));
+    globalThis.fetch = (() => Promise.reject(new Error('offline'))) as unknown as typeof fetch;
+    check('offline, it is a no, not a crash', !(await bankAvailable('/there/')));
+  } finally {
+    globalThis.fetch = real;
+  }
 }
 
 const bankFile = path.join(ROOT, 'public/di-bank/bank.json');

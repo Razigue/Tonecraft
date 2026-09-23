@@ -110,6 +110,23 @@ export function decodeBank(index: BankIndex, pcm: Int16Array): Bank {
 }
 
 /**
+ * Whether a bank is deployed at all.
+ *
+ * The samples are not in the repository — the ones this was built against
+ * cannot be published — so a deploy may have none, and an amplifier that
+ * cannot be fed is not an amplifier to offer. One HEAD request, once, when a
+ * tab is opened.
+ */
+export async function bankAvailable(base: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${base}di-bank/bank.json`, { method: 'HEAD' });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Fetches the bank. Called from the tab render worker on the first tab
  * played, never on page load: it is the same deal the soundfont has.
  */

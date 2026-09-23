@@ -38,7 +38,7 @@ const errors = [];
 page.on('pageerror', e => { errors.push(e.message); console.log('pageerror:', e.stack ?? e.message); });
 page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning' || process.env.VERBOSE) console.log(`browser[${m.type()}]:`, m.text()); });
 const bank = [];
-page.on('response', r => { if (r.url().includes('/di-bank/')) bank.push(new URL(r.url()).pathname); });
+page.on('response', r => { if (r.url().includes('/di-bank/')) bank.push(`${r.request().method()} ${new URL(r.url()).pathname}`); });
 
 try {
   await page.goto(`http://127.0.0.1:${server.address().port}${base}app/`);
@@ -56,9 +56,13 @@ try {
   const gp = Buffer.from(new alpha.exporter.Gp7Exporter().export(importer.readScore()));
   await page.getByLabel('Open a tab', { exact: true }).setInputFiles({ name: 'amp-test.gp', mimeType: 'application/octet-stream', buffer: gp });
   await page.locator('.score-paper svg').first().waitFor({ timeout: 30000 });
-  assert.deepEqual(bank, [], 'nothing of the sample bank is fetched while the soundfont plays the tab');
+  // A HEAD is allowed — that is how the reader knows whether to offer the
+  // amplifier at all — but not one byte of samples.
+  assert(bank.every(r => r.startsWith('HEAD ')), `no samples are downloaded while the soundfont plays the tab (${bank.join(', ')})`);
 
   const plays = page.getByRole('combobox', { name: 'What plays the tab' });
+  // Offered at all only where the samples are deployed, which this dist has.
+  await plays.waitFor({ timeout: 15000 });
   assert.equal(await plays.inputValue(), 'soundfont', 'a tab opens on the soundfont, as it always did');
   assert(await plays.isEnabled(), 'with a capture loaded, the amplifier is on offer');
   await plays.selectOption('amp');
@@ -78,7 +82,7 @@ try {
   });
   assert(ahead < 0.95, `playing starts on a head start, not on the whole render (${(ahead * 100).toFixed(0)}% rendered)`);
   console.log(`ok  playable at ${(ahead * 100).toFixed(0)}% rendered, while the rest keeps coming`);
-  assert(bank.some(p => p.endsWith('bank.pcm')) && bank.some(p => p.endsWith('bank.json')),
+  assert(bank.includes('GET /di-bank/bank.pcm') && bank.includes('GET /di-bank/bank.json'),
     `the bank is fetched once the amplifier is asked for (${bank.join(', ')})`);
   console.log('ok  the bank arrives only when the amplifier is chosen');
 
