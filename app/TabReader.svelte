@@ -220,6 +220,26 @@
    * layers). Kept on this device like the last score, and never part of a tone.
    */
   const SCALE_KEY = 'reader-scale';
+  const NECK_KEY = 'reader-neck';
+  /**
+   * The height the stage needs before the neck can sit under the tab: the tab,
+   * the scale bar and a neck worth looking at. Under it the neck would be a
+   * line, and what is being read is the tab — so it moves into a window of its
+   * own instead, opened from a handle (see `.neck-window`).
+   *
+   * Measured here rather than in a container query, because the handle and the
+   * window need the same answer, and two sources of it would disagree.
+   */
+  const NECK_ROOM = 480;
+  let stage: HTMLDivElement;
+  let stageHeight = $state(0);
+  const roomForNeck = $derived(stageHeight >= NECK_ROOM);
+  /** The neck's own window, when there is no room for it under the tab. */
+  let neckOpen = $state(false);
+  function toggleNeck() {
+    neckOpen = !neckOpen;
+    void dbPut(STORES.state, { open: neckOpen }, NECK_KEY);
+  }
   let scaleId = $state('');
   let scaleRoot = $state(0);
   const scaleDef = $derived(scaleById(scaleId) ?? null);
@@ -1237,6 +1257,13 @@
 
   onMount(() => {
     signature.observe(surface, { childList: true, subtree: true });
+    // The stage is sized by what surrounds it — the transport, the recorder's
+    // tracks, the window — never by what it holds, so measuring it cannot loop.
+    const room = new ResizeObserver(([entry]) => { stageHeight = entry?.contentRect.height ?? 0; });
+    room.observe(stage);
+    void dbGet<{ open?: unknown }>(STORES.state, NECK_KEY).then(saved => {
+      if (!disposed && typeof saved?.open === 'boolean') neckOpen = saved.open;
+    });
     void dbGet<{ scaleId?: unknown; scaleRoot?: unknown }>(STORES.state, SCALE_KEY).then(saved => {
       if (disposed || !saved) return;
       if (typeof saved.scaleId === 'string' && (saved.scaleId === '' || scaleById(saved.scaleId))) scaleId = saved.scaleId;
@@ -1358,7 +1385,7 @@
           <p>{deck.bpm} BPM <span>· {words.bars(score.masterBars.length)}</span></p>
         </aside>
       {/if}
-      <div class="stage">
+      <div class="stage" class:cramped={!roomForNeck} bind:this={stage}>
       <div class="score-viewport" class:has-score={!!score} bind:this={viewport}>
         {#if !score}
           <div class="empty-state">
@@ -1370,7 +1397,7 @@
         {#if stringMark}<span class="string-cursor" aria-hidden="true" style:transform={`translate(${stringMark.x}px, ${stringMark.y}px)`}></span>{/if}
         {#if tail > 0}<div class="score-tail" style:width={`${tail}px`}></div>{/if}
       </div>
-      {#if score && stave}
+      {#if score && stave && roomForNeck}
         <div class="scale-bar">
           <span class="eyebrow">{words.scale}</span>
           <label>{words.key}<select aria-label={words.scaleKey} bind:value={scaleRoot} onchange={rememberScale}>{#each KEYS as k}<option value={k.root}>{k.label}</option>{/each}</select></label>
@@ -1384,6 +1411,26 @@
           {/if}
         </div>
         <Fretboard strings={stave.tuning} {lit} capo={stave.capo} scale={scaleNotes} onpick={editing && !playing ? pickOnNeck : undefined} />
+      {:else if score && stave}
+        <!-- No room under the tab: the neck becomes a window over it, opened
+             and closed at will. Same neck, same lights, same paper — only the
+             room it is given changes (CLAUDE.md section 4). -->
+        {#if neckOpen}
+          <div class="neck-window">
+            <Fretboard strings={stave.tuning} {lit} capo={stave.capo} scale={scaleNotes} onpick={editing && !playing ? pickOnNeck : undefined} />
+            <button class="neck-close" aria-label={words.hideNeck} title={words.hideNeck} onclick={toggleNeck}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" /></svg>
+            </button>
+          </div>
+        {:else}
+          <button class="neck-handle" aria-label={words.showNeck} title={words.showNeck} onclick={toggleNeck}>
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+              <path d="M2 3.5h12M2 6h12M2 8.5h12M2 11h12" />
+              <path d="M5.5 2v11M10.5 2v11" stroke-opacity="0.5" />
+            </svg>
+            <span>{words.neck}</span>
+          </button>
+        {/if}
       {/if}
       </div>
     </div>
@@ -1525,17 +1572,41 @@
   /* The lectern: paper under a lamp, framed and set into the plate, fading in
      when a score lands on it. The paper stays light because notation is read. */
   /* The line sits in the middle of the height it is given, the neck under it. */
-  .stage { display: flex; flex: 1; flex-direction: column; justify-content: center; gap: 14px; min-width: 0; min-height: 0; padding: 16px; overflow: hidden; container: lectern / size; }
-  /* Under a neck's worth of room, the neck goes rather than shrinking to a
-     line: the tab is what is being read. 480 px is the tab, the scale bar
-     and a 120 px neck. */
-  @container lectern (max-height: 480px) {
-    .stage > :global(.neck), .scale-bar { display: none; }
-    /* Alone, the paper is a whole sheet: no dark band above and below a line —
-       and it takes the stage's height, never more: at `0 auto` a tall system
-       overflowed a stage that clips, and the tab lost its top and bottom. */
-    .score-viewport.has-score { flex: 1 1 auto; }
+  .stage { position: relative; display: flex; flex: 1; flex-direction: column; justify-content: center; gap: 14px; min-width: 0; min-height: 0; padding: 16px; overflow: hidden; container: lectern / size; }
+  /* Under a neck's worth of room the neck is not drawn under the tab at all
+     (see NECK_ROOM): alone, the paper is a whole sheet — no dark band above and
+     below a line — and it takes the stage's height, never more. At `0 auto` a
+     tall system overflowed a stage that clips, and the tab lost its top and
+     bottom. */
+  .stage.cramped .score-viewport.has-score { flex: 1 1 auto; }
+  /* The neck's window: the same neck, over the tab rather than under it, with
+     a handle in the corner it rises from. Both sit above the paper and below
+     anything the studio opens over the whole stage. */
+  /* Closed, a handle in the corner the window rises from; open, the window
+     carries its own way out. Both are plate on the stage, never on the paper:
+     a button the colour of the neck it sits on is a button nobody finds. */
+  .neck-handle, .neck-close {
+    position: absolute; z-index: 3;
+    display: flex; align-items: center; gap: 7px;
+    border: 1px solid var(--line-strong); border-radius: var(--radius);
+    background: var(--surface-2); color: var(--text-2);
+    box-shadow: 0 6px 16px #0008;
+    font: 400 9px/1 var(--display); font-stretch: 125%; letter-spacing: 0.16em; text-transform: uppercase;
   }
+  .neck-handle { right: 16px; bottom: 14px; padding: 9px 12px; }
+  .neck-close { top: 8px; right: 8px; padding: 6px; }
+  .neck-handle:hover, .neck-close:hover { color: var(--text); border-color: var(--accent-line); }
+  .neck-window {
+    position: absolute; left: 16px; right: 16px; bottom: 14px; z-index: 2;
+    display: flex; padding: 5px;
+    border: 1px solid var(--line-strong); border-radius: var(--radius);
+    background: var(--faceplate), var(--surface-1);
+    box-shadow: 0 18px 40px #000b, inset 0 1px 0 #ffffff0a;
+    animation: neck-in var(--dur-settle) var(--ease-out);
+  }
+  .neck-window > :global(.neck) { flex: 1; min-height: 104px; max-height: 40cqh; }
+  @keyframes neck-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .neck-window { animation: none; } }
   /* The paper takes what it needs and gives back the rest: a system alphaTab
      lays out taller than the lectern — a header, a tempo mark and a section
      name above one staff — used to push the neck out of the stage, which

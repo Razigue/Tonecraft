@@ -571,6 +571,33 @@ try {
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
   console.log('ok the neck matches the track and lights the note being played');
 
+  /*
+   * Under a neck's worth of room the neck is not squeezed into a line: it
+   * leaves the stage and comes back as a window over the tab, opened from a
+   * handle in the corner. The tab is what is being read; the neck is what is
+   * asked for.
+   */
+  const viewport = page.viewportSize();
+  await page.setViewportSize({ width: viewport.width, height: 760 });
+  await page.waitForFunction(() => document.querySelector('.reader .neck') === null, { timeout: 10000 });
+  assert.equal(await page.locator('.neck-window').count(), 0, 'and it does not open by itself');
+  await page.getByRole('button', { name: 'Show the neck', exact: true }).click();
+  await page.locator('.neck-window .neck').waitFor({ timeout: 10000 });
+  assert.equal(await page.locator('.neck-window .string').count(), 6, 'the window draws the track\u2019s own neck');
+  const over = await page.evaluate(() => {
+    const neck = document.querySelector('.neck-window')?.getBoundingClientRect();
+    const paper = document.querySelector('.score-viewport')?.getBoundingClientRect();
+    return neck && paper ? neck.top < paper.bottom && neck.bottom > paper.top : false;
+  });
+  assert(over, 'the window sits over the tab rather than taking room from it');
+  assert(await fits(), 'and the studio still fits the window');
+  await page.getByRole('button', { name: 'Hide the neck', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.neck-window') === null, { timeout: 10000 });
+  await page.setViewportSize(viewport);
+  await page.waitForFunction(() => document.querySelector('.reader .stage > .neck') !== null, { timeout: 10000 });
+  assert.equal(await page.locator('.neck-handle').count(), 0, 'with the room back, the neck is under the tab and the handle is gone');
+  console.log('ok with no room under the tab, the neck is a window over it, opened and closed at will');
+
   // Scales: every key, rings on the neck, and the note being played drawn
   // inside them rather than hidden by them — or hiding them.
   const keySelect = page.getByRole('combobox', { name: 'Scale key', exact: true });

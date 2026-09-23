@@ -314,6 +314,11 @@ const en = {
     scaleKey: 'Scale key',
     none: 'None',
     scaleNotes: 'Notes of the scale',
+    /* Where the neck goes when the stage is too short for it to sit under the
+       tab: a window over it, opened from a handle in the corner. */
+    neck: 'Neck',
+    showNeck: 'Show the neck',
+    hideNeck: 'Hide the neck',
     root: 'Root',
     scaleTone: 'Scale',
     playing: 'Playing',
@@ -737,6 +742,9 @@ const fr: Ui = {
     scaleKey: 'Tonique de la gamme',
     none: 'Aucune',
     scaleNotes: 'Notes de la gamme',
+    neck: 'Manche',
+    showNeck: 'Afficher le manche',
+    hideNeck: 'Masquer le manche',
     root: 'Tonique',
     scaleTone: 'Gamme',
     playing: 'Jouée',
