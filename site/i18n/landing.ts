@@ -36,7 +36,7 @@ export interface LandingCopy {
   readonly requirements: { readonly title: string; readonly items: readonly string[]; readonly browsers: string; readonly table: readonly (readonly [string, string, string])[]; readonly head: readonly [string, string, string] };
   readonly faq: { readonly title: string; readonly items: readonly (readonly [string, string])[] };
   readonly cta: { readonly title: string; readonly body: string; readonly open: string };
-  readonly footer: { readonly tagline: string; readonly product: string; readonly source: string; readonly license: string };
+  readonly footer: { readonly tagline: string; readonly product: string; readonly source: string; readonly license: string; readonly credits: string };
   readonly alt: Record<string, string>;
 }
 
@@ -174,7 +174,7 @@ const en: LandingCopy = {
     ],
   },
   cta: { title: 'Your next cover starts here.', body: 'Open the studio, plug in, load the tab.', open: 'Open the studio' },
-  footer: { tagline: 'The all-in-one toolbox for guitar covers.', product: 'Product', source: 'Source code', license: 'Tonecraft Engine is GPL-3.0.' },
+  footer: { tagline: 'The all-in-one toolbox for guitar covers.', product: 'Product', source: 'Source code', license: 'Tonecraft Engine is GPL-3.0.', credits: 'Credits' },
   alt: {
     hero: 'The GUILT amplifier head in Tonecraft, with its purple stained-glass window',
     overview: 'The Tonecraft studio: global controls, amplifier head and session tools',
@@ -324,7 +324,7 @@ const fr: LandingCopy = {
     ],
   },
   cta: { title: 'Votre prochaine cover commence ici.', body: 'Ouvrez le studio, branchez, chargez la tab.', open: 'Ouvrir le studio' },
-  footer: { tagline: 'La boîte à outils tout-en-un pour vos covers guitare.', product: 'Produit', source: 'Code source', license: 'Tonecraft Engine est sous GPL-3.0.' },
+  footer: { tagline: 'La boîte à outils tout-en-un pour vos covers guitare.', product: 'Produit', source: 'Code source', license: 'Tonecraft Engine est sous GPL-3.0.', credits: 'Crédits' },
   alt: {
     hero: 'La tête d’ampli GUILT dans Tonecraft, avec son vitrail violet',
     overview: 'Le studio Tonecraft : réglages globaux, tête d’ampli et outils de session',

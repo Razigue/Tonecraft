@@ -173,10 +173,13 @@ candidates through the same amplifier — live on the `poc/tab-di` branch, with 
 README of their own. Nothing there is imported by the site; it is the bench,
 kept off `main` because it holds a second copy of what `engine/` now does.
 
-**The bank is built, not committed** (`scripts/build-di-bank.ts`): which note
+**The bank is built and committed** (`scripts/build-di-bank.ts`, 47 MB under
+`public/di-bank/`): the deploy stays a pure function of the commit, as the
+40 MB soundfont beside it already decided, and CI neither needs a 23 GB dataset
+nor a network call to produce it. Building it measures which note
 each file sounds, where its pick lands, how loud it is against its neighbours,
-where it can be looped, and what the palm does to each string are all measured
-there, so nothing is analysed on the player's machine.
+where it can be looped, and what the palm does to each string, so nothing is
+analysed on the player's machine.
 
 It is built from **EG-IPT** (Fiorini, Brochec, Borg, Pasini,
 zenodo.org/records/15205644), **CC BY-4.0**: a 2005 Gibson SG through a BSS

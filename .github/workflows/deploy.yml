@@ -90,6 +90,12 @@ jobs:
       - name: The tab reader and the recorder in a browser
         run: npm run test:studio
 
+      # The tab through the amplifier: the sample bank ships with the site, so
+      # CI can render a tab the way a visitor's browser will — the worker, the
+      # chain, the head start playback begins on, and the cursor riding it.
+      - name: A tab through the amplifier
+        run: npm run test:tab-amp
+
       # The home page ships no JavaScript, so nothing about it throws: a shot
       # that 404s, a face that was removed and is still fetched, or the CSS
       # minifier folding `animation-timeline` into the `animation` shorthand —

@@ -272,6 +272,15 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
           <p class="eyebrow">{t.footer.source}</p>
           <a href={source} rel="noopener">GitHub</a>
         </nav>
+        <!-- What Tonecraft is built on and did not record itself. The sample
+             bank is CC BY: naming it here is the licence's own condition, and
+             the others are owed the same courtesy. -->
+        <nav aria-label={t.footer.credits}>
+          <p class="eyebrow">{t.footer.credits}</p>
+          <a href="https://alphatab.net" rel="noopener">alphaTab · MPL-2.0</a>
+          <a href="https://musescore.org/en/handbook/soundfonts-and-sfz-files" rel="noopener">MuseScore_General · MIT</a>
+          <a href="https://zenodo.org/records/15205644" rel="noopener">EG-IPT guitar samples · CC BY-4.0</a>
+        </nav>
       </div>
       <div class="foot-bottom">
         <p class="muted">© {new Date().getFullYear()} Tonecraft · {t.footer.license}</p>
@@ -543,7 +552,7 @@ const sync = `try{var k='tonecraft-locale',q=new URLSearchParams(location.search
   .cta p { margin: calc(var(--step) * 2) 0 calc(var(--step) * 3.5); color: var(--text-2); }
 
   .foot { padding: 48px clamp(16px, 4vw, 48px) 28px; }
-  .foot-grid { width: min(100%, var(--page-max)); margin: 0 auto 32px; display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 32px; }
+  .foot-grid { width: min(100%, var(--page-max)); margin: 0 auto 32px; display: grid; grid-template-columns: 2fr 1fr 1fr 1.4fr; gap: 32px; }
   .foot nav { display: grid; gap: 11px; align-content: start; font-size: 14px; }
   /* The wordmark and the two column labels are set on different faces and
      sizes: matching their cap heights is what puts them on one line. */
