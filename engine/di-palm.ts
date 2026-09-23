@@ -12,7 +12,8 @@
  * every fret, and resampling one from the 5th fret down to a 7-string's low B
  * drags its pick click and its pickup resonance down with it. Leave-one-string-
  * out, the masked note lands as close to a real mute as another take of that
- * same mute does (12.6 dB against 12.2; resampling by ten semitones, 14.9).
+ * same mute does — 12.6 dB against 12.2, where resampling by ten semitones is
+ * 14.9 (`poc/palm-mute-test.ts`, on the `poc/tab-di` branch).
  */
 
 /** Octave bands, Hz. The top one runs to Nyquist. */

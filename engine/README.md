@@ -157,6 +157,13 @@ before. The playback speed is fixed while the amp plays a tab: slowing a render
 is another render, and resampling it would drop the song a tone. The reader
 says so and disables the control rather than ignoring it.
 
+**Where the candidates were compared.** The sampler was chosen by ear against a
+physical model of the strings, and the measurements that settled it — the palm
+mask against real mutes, the level estimate against rendered tracks, the two
+candidates through the same amplifier — live on the `poc/tab-di` branch, with a
+README of their own. Nothing there is imported by the site; it is the bench,
+kept off `main` because it holds a second copy of what `engine/` now does.
+
 **The bank is built, not committed** (`scripts/build-di-bank.ts`): attacks,
 sustain loops and the palm mask per string are all measured there, so nothing
 is analysed on the player's machine. The recordings it was developed against

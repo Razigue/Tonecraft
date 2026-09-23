@@ -388,8 +388,8 @@ export function activeRms(x: Float32Array, rate: number): number {
  * would change the tone, because what follows it is not linear. The same
  * "loudest 80% of the windows" rule is applied to the energy the events
  * themselves carry, which lands within about a dB of the rendered level on
- * rhythm and lead alike (`poc/estimate-level.ts`: 0.8 dB of spread, 1.25 dB at
- * worst over two songs).
+ * rhythm and lead alike (0.8 dB of spread, 1.25 dB at worst over two
+ * songs, measured by `poc/estimate-level.ts` on the `poc/tab-di` branch).
  */
 const ESTIMATE_CALIBRATION_DB = -18.25;
 const ESTIMATE_STEP = 0.05;
