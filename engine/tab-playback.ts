@@ -2,11 +2,12 @@
  * Playing a rendered tab, with alphaTab's cursor riding on it.
  *
  * The reader's audio has its own `AudioContext` and never touches the rig's
- * (CLAUDE.md §4), so what plays here is a set of buffers: one per guitar track,
- * each already through the amplifier, plus one for everything that is not a
- * guitar, rendered by alphaTab's own synthesiser. They are placed on one
- * clock, which is what keeps a drum hit and a chug on the same millisecond —
- * two clocks could not.
+ * (CLAUDE.md §4), so what plays here is a set of buffers: one voice per track
+ * of the score — the guitars already through the amplifier, the bass, the
+ * drums and the keys through alphaTab's synthesiser. One voice per track and
+ * not one for "the band", so muting the bass in the reader's mixer mutes the
+ * bass. They are placed on one clock, which is what keeps a drum hit and a
+ * chug on the same millisecond — two clocks could not.
  *
  * They arrive in chunks while the song is already playing, because rendering a
  * whole tab takes minutes. A chunk is a buffer scheduled at the second it
@@ -18,9 +19,6 @@
  * the score's tempo map exactly, so a tick of the cursor is a tick of the
  * audio. Seeking, pausing and looping all come back through the handler.
  */
-
-/** The band is one more track, under a key no score track can have. */
-export const BAND = -1;
 
 interface Chunk {
   /** Seconds from the start of the score. */
@@ -68,13 +66,13 @@ export class TabPlayback {
   }
 
   /** Starts a new render: the tracks it will bring, and how long the score is. */
-  open(seconds: number, tracks: readonly number[], band: boolean): void {
+  open(seconds: number, tracks: readonly number[]): void {
     this.stop();
     for (const voice of this.#voices.values()) voice.gain.disconnect();
     this.#voices.clear();
     this.#seconds = seconds;
     this.ready = 0;
-    for (const index of band ? [...tracks, BAND] : tracks) {
+    for (const index of tracks) {
       const gain = this.context.createGain();
       gain.connect(this.#master);
       this.#voices.set(index, { gain, chunks: [], playing: [] });

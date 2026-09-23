@@ -70,8 +70,12 @@ export interface TabRenderOptions {
   readonly base: string;
   /** A chunk of a guitar track, as soon as it exists. */
   readonly onChunk: (chunk: TabChunk) => void;
-  /** The band, in its own chunks; `at` is in samples, as the guitars' is. */
-  readonly onBand: (at: number, left: Float32Array<ArrayBuffer>, right: Float32Array<ArrayBuffer>) => void;
+  /**
+   * A chunk of a track that is not a guitar, by score index; `at` is in
+   * samples, as the guitars' is. `right` is absent where the two channels came
+   * out identical, which is most of a bass line and half the memory.
+   */
+  readonly onBand: (index: number, at: number, left: Float32Array<ArrayBuffer>, right?: Float32Array<ArrayBuffer>) => void;
   /** How many seconds of the score every track has been rendered up to. */
   readonly onReady: (seconds: number) => void;
   readonly signal?: AbortSignal;
@@ -147,55 +151,62 @@ function renderShare(request: TabRenderRequest, onChunk: (chunk: TabChunk) => vo
 }
 
 /**
- * Everything that is not a guitar, from alphaTab's synthesiser, in chunks of
- * its own. Exported rather than played live so it lands on the same clock as
- * the guitars: buffers started together cannot drift apart.
+ * Everything that is not a guitar, from alphaTab's synthesiser — one track at
+ * a time, so that muting the bass in the reader's mixer mutes the bass and not
+ * "the band". It is cheap enough to do that way: a four-minute track exports
+ * in about five seconds, fifty times faster than it plays, where one guitar
+ * through the amplifier takes minutes.
+ *
+ * Exported rather than played live so it lands on the same clock as the
+ * guitars: buffers placed together cannot drift apart.
  */
 async function renderBand(
   options: TabRenderOptions,
-  guitars: readonly number[],
+  others: readonly number[],
   seconds: number,
   onRendered: (seconds: number) => void,
   signal: AbortSignal,
 ): Promise<void> {
   const { alphaTab, api, score, rate, soundFont, onBand } = options;
-  const others = score.tracks.map((t) => t.index).filter((i) => !guitars.includes(i));
   if (others.length === 0) { onRendered(Number.POSITIVE_INFINITY); return; }
-  const settings = new alphaTab.synth.AudioExportOptions();
-  // Given, not taken from the player: in external media mode it has no
-  // synthesiser holding one.
-  settings.soundFonts = [soundFont];
-  settings.sampleRate = rate;
-  settings.masterVolume = 1;
-  settings.metronomeVolume = 0;
-  for (const track of score.tracks) settings.trackVolume.set(track.index, guitars.includes(track.index) ? 0 : 1);
-  const exporter = await api.exportAudio(settings);
   const total = Math.ceil(seconds * rate);
-  let at = 0;
-  try {
-    for (let chunk = await exporter.render(CHUNK_SECONDS * 1000); chunk && at < total; chunk = await exporter.render(CHUNK_SECONDS * 1000)) {
-      if (signal.aborted) return;
-      const frames = Math.min(chunk.samples.length >> 1, total - at);
-      const left = new Float32Array(frames), right = new Float32Array(frames);
-      for (let i = 0; i < frames; i++) {
-        left[i] = chunk.samples[i * 2]!;
-        right[i] = chunk.samples[i * 2 + 1]!;
+  for (const index of others) {
+    if (signal.aborted) return;
+    const settings = new alphaTab.synth.AudioExportOptions();
+    // Given, not taken from the player: in external media mode it has no
+    // synthesiser holding one.
+    settings.soundFonts = [soundFont];
+    settings.sampleRate = rate;
+    settings.masterVolume = 1;
+    settings.metronomeVolume = 0;
+    for (const track of score.tracks) settings.trackVolume.set(track.index, track.index === index ? 1 : 0);
+    const exporter = await api.exportAudio(settings);
+    let at = 0;
+    try {
+      for (let chunk = await exporter.render(CHUNK_SECONDS * 1000); chunk && at < total; chunk = await exporter.render(CHUNK_SECONDS * 1000)) {
+        if (signal.aborted) return;
+        const frames = Math.min(chunk.samples.length >> 1, total - at);
+        const left = new Float32Array(frames), right = new Float32Array(frames);
+        let wide = false;
+        for (let i = 0; i < frames; i++) {
+          left[i] = chunk.samples[i * 2]!;
+          right[i] = chunk.samples[i * 2 + 1]!;
+          if (!wide && Math.abs(left[i]! - right[i]!) > 1e-4) wide = true;
+        }
+        onBand(index, at, left, wide ? right : undefined);
+        at += frames;
       }
-      onBand(at, left, right);
-      at += frames;
-      onRendered(at / rate);
+    } finally {
+      exporter.destroy();
     }
-  } finally {
-    exporter.destroy();
   }
   onRendered(Number.POSITIVE_INFINITY);
 }
 
 export interface TabRender {
-  /** The score tracks that will arrive as guitars, in order. */
+  /** Every score track that will arrive, guitars and band alike. */
   readonly tracks: readonly number[];
   readonly seconds: number;
-  readonly hasBand: boolean;
   /** Resolves when every chunk has been handed over. */
   readonly finished: Promise<void>;
 }
@@ -235,11 +246,13 @@ export function startTabRender(options: TabRenderOptions): TabRender {
   const request = { rate, seconds, base, chunkSeconds: CHUNK_SECONDS };
   const running = shares.map((share, i) => renderShare({ ...request, jobs: share }, options.onChunk, advance(i), stop.signal)
     .catch((e: unknown) => { stop.abort(); throw e; }));
-  running.push(renderBand(options, jobs.map((j) => j.index), seconds, advance(count), stop.signal)
+  const guitars = jobs.map((j) => j.index);
+  const others = score.tracks.map((t) => t.index).filter((i) => !guitars.includes(i));
+  running.push(renderBand(options, others, seconds, advance(count), stop.signal)
     .catch((e: unknown) => { stop.abort(); throw e; }));
 
   const finished = Promise.all(running)
     .then(() => { options.onReady(Number.POSITIVE_INFINITY); })
     .finally(() => signal?.removeEventListener('abort', onAbort));
-  return { tracks: jobs.map((j) => j.index), seconds, hasBand: score.tracks.length > jobs.length, finished };
+  return { tracks: [...guitars, ...others], seconds, finished };
 }

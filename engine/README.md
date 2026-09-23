@@ -114,32 +114,48 @@ score -> tab-guitar    the tab as gestures: string, fret, pick or hammer,
       -> di-sampler    one voice per string, playing real DI notes from the
                        bank; a new pick stops the string, a hammer-on only
                        moves its pitch
-      -> render-recording   the same offline chain an exported take goes
-                       through, so a tab sounds like the amp head says
-      -> tab-playback  one buffer per track, started together, with alphaTab
-                       in external-media mode following that clock
+      -> tab-render    the same chain an exported take goes through, kept open
+                       across chunks so a ringing note and a reverb tail cross
+                       the boundary intact
+      -> tab-playback  a row of buffers per track, placed on one clock, with
+                       alphaTab in external-media mode following it
 ```
 
 Everything that is not a guitar — bass, drums, keys — is rendered by alphaTab's
-own synthesiser and arrives as one more buffer. Every track keeps its own
-buffer and its own gain, so the reader's mixer, its solos and its mutes stay
+own synthesiser and arrives as one more track. Every track keeps its own
+buffers and its own gain, so the reader's mixer, its solos and its mutes stay
 gains rather than another render.
 
 **Why it is rendered and not played live.** One amped track costs about what
 the player's own guitar costs: 28% of a core without reverb, 34% with, measured
 by `npm run bench` on a 2017 laptop. Three tracks live would be the CPU budget
-gone and the dropouts with it. Rendered in a worker, none of it touches the
+gone and the dropouts with it. Rendered in workers, none of it touches the
 audio thread, and falling behind only means waiting.
 
-**What that costs, measured on that same machine:** the sampler runs at 7x real
-time and the chain at 3x, so a four-minute song is about two minutes per track,
-in parallel across tracks. The bank is 15 MB of 16-bit samples, fetched on the
-first tab played through the amp and never before.
+**Why it plays before it is finished.** A whole song is minutes of work, and
+nobody should watch a bar move for that long. Tracks are rendered a chunk at a
+time, in the order they will be heard, across as many workers as the machine
+has cores to spare (one is always left; five at most, since each holds its own
+40 MB of bank). Playback starts on a head start rather than on the end of the
+render, and how much of one is decided by the render's own measured speed: if
+it makes `v` seconds of music per second, starting with `r` rendered is safe
+when `r >= (1 - v) * total`. Above real time that is nothing, and the 20-second
+minimum applies.
 
-**What it gives up.** The playback speed is fixed while the amp plays a tab:
-slowing a render is another render, and resampling it would drop the song a
-tone. The reader says so and the control is disabled rather than silently
-ignored.
+**Measured on that 2017 dual-core laptop**, worst case first: Archspire's *Drain
+of Incarnation*, seven guitar tracks over 4:17, renders at about half real time
+— playable after 4.3 minutes, all there in 8.2. Two tracks of an 80-second tab
+are playable after a fifth of the render. A modern four- or eight-core machine
+runs several tracks at once and starts on the 20-second minimum.
+
+**What that costs elsewhere.** The gain into the amplifier cannot wait for the
+whole track to exist, and one that changed halfway would change the tone, since
+what follows it is not linear — so it is estimated from the notes themselves
+(`estimateRms`), within about a dB of the rendered level. The bank is 15 MB of
+16-bit samples, fetched on the first tab played through the amp and never
+before. The playback speed is fixed while the amp plays a tab: slowing a render
+is another render, and resampling it would drop the song a tone. The reader
+says so and disables the control rather than ignoring it.
 
 **The bank is built, not committed** (`scripts/build-di-bank.ts`): attacks,
 sustain loops and the palm mask per string are all measured there, so nothing

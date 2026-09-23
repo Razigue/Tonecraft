@@ -7,7 +7,7 @@
   import { STORES, dbGet, dbPut } from '../store/db.ts';
   import { restoreFadedVolume } from '../engine/tab-fades.ts';
   import { syncedSpeed } from '../engine/metronome.ts';
-  import { TabPlayback, externalMedia, BAND } from '../engine/tab-playback.ts';
+  import { TabPlayback, externalMedia } from '../engine/tab-playback.ts';
   import { startTabRender } from '../engine/tab-audio.ts';
   import type { RecordingTone } from '../engine/recording.ts';
   import { builtInCabIRAt, type Engine } from '../engine/engine.ts';
@@ -682,7 +682,7 @@
         tone: { ...tone, cabIR }, clean: { ...clean, cabIR: cleanIR },
         rate, base: BASE,
         onChunk: chunk => { if (run === ampRun) player.append(chunk.index, chunk.at, chunk.samples, chunk.right); },
-        onBand: (at, left, right) => { if (run === ampRun) player.append(BAND, at, left, right); },
+        onBand: (index, at, left, right) => { if (run === ampRun) player.append(index, at, left, right); },
         onReady: seconds => {
           if (run !== ampRun) return;
           player.ready = seconds;
@@ -698,7 +698,7 @@
         },
         signal: abort.signal,
       });
-      player.open(render.seconds, render.tracks, render.hasBand);
+      player.open(render.seconds, render.tracks);
       applyMixGains();
       attachPlayback();
       await render.finished;
