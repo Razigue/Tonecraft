@@ -41,6 +41,19 @@ const bank = [];
 page.on('response', r => { if (r.url().includes('/di-bank/')) bank.push(`${r.request().method()} ${new URL(r.url()).pathname}`); });
 
 try {
+  await page.addInitScript(() => {
+    window.__tabAudio = { starts: 0, stops: 0 };
+    const start = AudioBufferSourceNode.prototype.start;
+    const stop = AudioBufferSourceNode.prototype.stop;
+    AudioBufferSourceNode.prototype.start = function (...args) {
+      window.__tabAudio.starts++;
+      return start.apply(this, args);
+    };
+    AudioBufferSourceNode.prototype.stop = function (...args) {
+      window.__tabAudio.stops++;
+      return stop.apply(this, args);
+    };
+  });
   await page.goto(`http://127.0.0.1:${server.address().port}${base}app/`);
   await page.getByRole('button', { name: 'Musician' }).click();
   await page.getByRole('button', { name: 'Done', exact: true }).click();
@@ -89,8 +102,11 @@ try {
   // What plays is ours: a rendered buffer on the reader's own context, with
   // alphaTab's cursor following it. Both have to move.
   const before = await page.evaluate(() => document.querySelector('.at-cursor-beat')?.getBoundingClientRect().x ?? -1);
+  await page.evaluate(() => { window.__tabAudio = { starts: 0, stops: 0 }; });
   await play.click();
-  await page.waitForTimeout(2500);
+  // Cross three bars: an unchanged speed used to trigger a seek on each bar,
+  // stopping and rescheduling every buffer even though the cursor kept moving.
+  await page.waitForTimeout(6500);
   const running = await page.evaluate(() => {
     const cursor = document.querySelector('.at-cursor-beat')?.getBoundingClientRect().x ?? -1;
     const clock = document.querySelector('.transport .position, .time, [aria-label="Position"]')?.textContent ?? '';
@@ -98,8 +114,13 @@ try {
   });
   assert(running.cursor > before, `the cursor moves while the rendered tab plays (${before} → ${running.cursor})`);
   console.log('ok  the cursor rides on the rendered audio');
+  const audio = await page.evaluate(() => window.__tabAudio);
+  assert(audio.starts > 0, 'rendered audio sources actually started');
+  assert.equal(audio.stops, 0, 'crossing bars does not stop and restart the rendered audio');
+  console.log('ok  audio stays continuous across bar changes');
 
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
+  assert(await page.evaluate(() => window.__tabAudio.stops > 0), 'an explicit pause still stops the audio');
   await page.waitForTimeout(300);
   const stopped = await page.evaluate(() => document.querySelector('.at-cursor-beat')?.getBoundingClientRect().x ?? -1);
   await page.waitForTimeout(700);

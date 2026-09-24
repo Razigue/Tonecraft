@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy, tick, untrack } from 'svelte';
   import type { AlphaTabApi, model } from '@coderline/alphatab';
   import { loadMedia, saveMedia } from '../store/media.ts';
   import Fretboard from './Fretboard.svelte';
@@ -849,11 +849,14 @@
    * tab rendered slowly just as it does on one played slowly.
    */
   function applySpeed(reader: AlphaTabApi) {
-    reader.playbackSpeed = playbackRate();
+    const rate = playbackRate();
+    if (reader.playbackSpeed !== rate) reader.playbackSpeed = rate;
   }
   $effect(() => {
     void syncBpm; void deck.speed; void score; void ready;
-    if (api) applySpeed(api);
+    // Setting speed seeks synchronously. Reads in playerPositionChanged must
+    // not make this effect depend on the current bar and seek again each bar.
+    untrack(() => { if (api) applySpeed(api); });
   });
   /**
    * Slowing a rendered tab means rendering it again: nothing else can, short
