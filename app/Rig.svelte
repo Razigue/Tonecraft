@@ -714,16 +714,8 @@
   let frame = 0;
 
   const capture = $derived(captures.find((c) => c.file === captureFile) ?? null);
-  /** The tone as the head stands: what a take is exported through, and what a tab is played through. */
-  const tabTone = $derived({ values, capture, cab, cabRevision });
-  /**
-   * And for a tab's clean tracks, the clean preset instead. A clean part run
-   * through a metal capture is not the song, whatever the head is set to.
-   */
-  const cleanTabTone = $derived.by(() => {
-    const preset = PRESETS.find((p) => p.pack === 'clean') ?? PRESETS[0]!;
-    return { values: { ...preset.values }, capture: captures.find((c) => c.file === preset.capture) ?? capture, cab: preset.cab, cabRevision };
-  });
+  /** The tone as the head stands: what a take is exported through. */
+  const recordingTone = $derived({ values, capture, cab, cabRevision });
   const level = (v: number): number => Math.min(1, Math.sqrt(Math.max(0, v)) * 1.6);
   const isGuilt = $derived(captureFile === PRESETS[0]?.capture);
   const ampIlluminated = $derived(engineState === 'running' && !poweredOff);
@@ -1383,7 +1375,7 @@
         {#if deck.loaded}<div class="tab-row"><TabTransport {deck} view="play" syncBpm={metronomeSync ? metronomeBpm : null} /></div>{/if}
         <div class="tab-stage">
           <TabReader {deck} ontempo={takeScoreTempo} syncBpm={metronomeSync ? metronomeBpm : null} onsyncstart={syncTabStart} onsyncstop={syncTabStop}
-            tone={tabTone} cleanTone={cleanTabTone} engine={engineState === 'running' ? engine : null} onwrite={() => { if (touring) wroteNote = true; }} />
+            onwrite={() => { if (touring) wroteNote = true; }} />
         </div>
       </section>
     {:else}
@@ -1391,7 +1383,7 @@
            under a tone being dialled, and alphaTab keeps a width to lay out in. -->
       <div class="tab-stage tc-plate tc-panel" class:stowed={view !== 'play'} inert={view !== 'play'}>
         <TabReader {deck} ontempo={takeScoreTempo} onopen={() => chooseView('play')} syncBpm={metronomeSync ? metronomeBpm : null} onsyncstart={syncTabStart} onsyncstop={syncTabStop}
-          tone={tabTone} cleanTone={cleanTabTone} engine={engineState === 'running' ? engine : null} onwrite={() => { if (touring) wroteNote = true; }} />
+          onwrite={() => { if (touring) wroteNote = true; }} />
       </div>
     {/if}
 
@@ -1399,7 +1391,7 @@
 
   {#snippet takeTracks()}
     <Recorder deck={recorderDeck} engine={engineState === 'running' ? engine : null} sinkId={engine?.outputId ?? outputId}
-      tone={tabTone} />
+      tone={recordingTone} />
   {/snippet}
 
   {#snippet demoPanel()}

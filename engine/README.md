@@ -98,99 +98,10 @@ function in it is pure, and no verdict it can return stops anyone playing.
 Nothing displays those sentences at the moment; `engine.health` still computes
 them for whoever wants them back.
 
-## A tab through the amplifier
+## Tab playback
 
-`di-bank.ts`, `di-palm.ts`, `di-sampler.ts`, `tab-guitar.ts`, `tab-render.ts`,
-`tab-audio.ts`, `tab-audio-worker.ts`, `tab-playback.ts`.
-
-A tab can be played through the rig instead of through the soundfont. It is
-rendered first, never live:
-
-```
-score -> tab-guitar    the tab as gestures: string, fret, pick or hammer,
-                       palm mute, pinch, bend — read from the model, on
-                       alphaTab's own order of play, so repeats land where
-                       alphaTab puts them
-      -> di-sampler    one voice per string, playing real DI notes from the
-                       bank; a new pick stops the string, a hammer-on only
-                       moves its pitch
-      -> tab-render    the same chain an exported take goes through, kept open
-                       across chunks so a ringing note and a reverb tail cross
-                       the boundary intact
-      -> tab-playback  a row of buffers per track, placed on one clock, with
-                       alphaTab in external-media mode following it
-```
-
-Everything that is not a guitar — bass, drums, keys — is rendered by alphaTab's
-own synthesiser and arrives as one more track. Every track keeps its own
-buffers and its own gain, so the reader's mixer, its solos and its mutes stay
-gains rather than another render.
-
-**Why it is rendered and not played live.** One amped track costs about what
-the player's own guitar costs: 28% of a core without reverb, 34% with, measured
-by `npm run bench` on a 2017 laptop. Three tracks live would be the CPU budget
-gone and the dropouts with it. Rendered in workers, none of it touches the
-audio thread, and falling behind only means waiting.
-
-**Why it plays before it is finished.** A whole song is minutes of work, and
-nobody should watch a bar move for that long. Tracks are rendered a chunk at a
-time, in the order they will be heard, across as many workers as the machine
-has cores to spare (one is always left; five at most, since each holds its own
-40 MB of bank). Playback starts on a head start rather than on the end of the
-render, and how much of one is decided by the render's own measured speed: if
-it makes `v` seconds of music per second, starting with `r` rendered is safe
-when `r >= (1 - v) * total`. Above real time that is nothing, and the 20-second
-minimum applies.
-
-**Measured on that 2017 dual-core laptop**, worst case first: Archspire's *Drain
-of Incarnation*, seven guitar tracks over 4:17, renders at about half real time
-— playable after 4.3 minutes, all there in 8.2. Two tracks of an 80-second tab
-are playable after a fifth of the render. A modern four- or eight-core machine
-runs several tracks at once and starts on the 20-second minimum.
-
-**Speed is a render, not a resampling.** Slowing a tab down — the practice move
-the reader exists for — renders it again at that speed: the guitars' events are
-stretched and the band is exported from a score whose tempo marks are scaled
-for the microseconds it takes to generate its MIDI. Resampling instead would
-drop the whole song a tone. alphaTab is told the speed in both modes, since its
-own time-to-tick conversion is scaled by it, and the tab picks up where it was
-as soon as that far is rendered again. Syncing to the metronome is the same
-thing with the ratio the click asks for.
-
-**What that costs elsewhere.** The gain into the amplifier cannot wait for the
-whole track to exist, and one that changed halfway would change the tone, since
-what follows it is not linear — so it is estimated from the notes themselves
-(`estimateRms`), within about a dB of the rendered level. The bank is 15 MB of
-16-bit samples, fetched on the first tab played through the amp and never
-before. The playback speed is fixed while the amp plays a tab: slowing a render
-is another render, and resampling it would drop the song a tone. The reader
-says so and disables the control rather than ignoring it.
-
-**Where the candidates were compared.** The sampler was chosen by ear against a
-physical model of the strings, and the measurements that settled it — the palm
-mask against real mutes, the level estimate against rendered tracks, the two
-candidates through the same amplifier — live on the `poc/tab-di` branch, with a
-README of their own. Nothing there is imported by the site; it is the bench,
-kept off `main` because it holds a second copy of what `engine/` now does.
-
-**The bank is built and committed** (`scripts/build-di-bank.ts`, 47 MB under
-`public/di-bank/`): the deploy stays a pure function of the commit, as the
-40 MB soundfont beside it already decided, and CI neither needs a 23 GB dataset
-nor a network call to produce it. Building it measures which note
-each file sounds, where its pick lands, how loud it is against its neighbours,
-where it can be looped, and what the palm does to each string, so nothing is
-analysed on the player's machine.
-
-It is built from **EG-IPT** (Fiorini, Brochec, Borg, Pasini,
-zenodo.org/records/15205644), **CC BY-4.0**: a 2005 Gibson SG through a BSS
-AR-133 DI box at 96 kHz, one file per note. The bridge humbucker's DI channel
-gives 138 picked notes and **a real palm mute at every fret of every string**,
-plus the guitar's own harmonics. The licence is why it is this dataset: a bank
-cut from a no-derivatives one could never be published, whatever it sounded
-like. Attribution is owed and is carried in `assets/README.md`.
-
-What the bank cannot hold is a string the guitar does not have — a
-seven-string's low B, an eight's F#. Past three semitones the palm mask takes
-over from the recorded mute, because dragging one that far down takes its pick
-click and its pickup resonance with it: 14.9 dB from a real mute, where two
-real takes of the same mute are 12.2 dB apart.
+The reader plays every track through alphaTab's synthesiser with the
+MuseScore_General soundfont. `soundfont.ts` prepares its samples in a worker
+before loading; the original file stays unchanged. Playback, speed, loops,
+per-track volume, solo and mute are handled by alphaTab, independently of the
+studio's amplifier and recording chain.

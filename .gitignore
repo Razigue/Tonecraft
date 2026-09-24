@@ -72,7 +72,3 @@ tonecraft-poc.zip
 # commercial plugin on the same guitar. Not ours to redistribute, tens of
 # megabytes, and audio in git history is there forever (AD-15). Kept locally.
 sample_guitar/
-
-# The DI bank is committed, like the soundfont: the deploy stays a pure
-# function of the commit (AD-15), and the recordings it is cut from are
-# CC BY-4.0, so it can be. Rebuild it with scripts/build-di-bank.ts.

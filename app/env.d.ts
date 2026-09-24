@@ -8,6 +8,3 @@
 //
 // Referencing the types directly makes the typecheck independent of whether
 // anything has been generated yet.
-
-/** Set by the build: whether `public/di-bank/` shipped with it. See astro.config.mjs. */
-declare const __DI_BANK__: boolean;

@@ -6,10 +6,9 @@ import type { Recording, RecordingTone } from './recording.ts';
 
 /**
  * A chain, set to a tone and warmed up: the same compiled DSP, capture and IRs
- * the studio plays live. Shared by the export of a take and by a tab rendered
- * through the amplifier, so neither can drift from what is heard.
+ * the studio plays live, so an exported take uses the same signal chain.
  */
-export async function openChain(tone: RecordingTone, wasm: ArrayBuffer | Uint8Array<ArrayBuffer>, model: Uint8Array<ArrayBuffer>, rate: number, maxFrames = 1024): Promise<ChainCore> {
+async function openChain(tone: RecordingTone, wasm: ArrayBuffer | Uint8Array<ArrayBuffer>, model: Uint8Array<ArrayBuffer>, rate: number, maxFrames = 1024): Promise<ChainCore> {
   if (!tone.capture) throw new Error('Choose an amplifier before exporting the processed take.');
   const core = await instantiateChain(wasm);
   core.init(rate, maxFrames);
@@ -30,7 +29,7 @@ export async function openChain(tone: RecordingTone, wasm: ArrayBuffer | Uint8Ar
  * How long the chain keeps sounding after its last input sample: reverb and
  * pitch decay, and the doubler's late ear.
  */
-export function chainTail(tone: RecordingTone, rate: number): number {
+function chainTail(tone: RecordingTone, rate: number): number {
   const doubled = (tone.values.doubler_bypass ?? 1) !== 1;
   return tone.values.reverb_bypass !== 1 && (tone.values.reverb_mix ?? 0) > 0 ? rate * 2
     : tone.values.pitch_bypass !== 1 && (tone.values.pitch_shift ?? 0) !== 0 ? Math.ceil(rate * 0.1)
@@ -38,7 +37,7 @@ export function chainTail(tone: RecordingTone, rate: number): number {
 }
 
 /** Whether the tone makes two ears of one guitar. */
-export const isDoubled = (tone: RecordingTone): boolean => (tone.values.doubler_bypass ?? 1) !== 1;
+const isDoubled = (tone: RecordingTone): boolean => (tone.values.doubler_bypass ?? 1) !== 1;
 
 /** Same compiled DSP and IRs as live playback. Input is already channel-selected. */
 export async function renderRecording(take: Recording, tone: RecordingTone, wasm: ArrayBuffer | Uint8Array<ArrayBuffer>, model: Uint8Array<ArrayBuffer>, progress = (_: number) => {}): Promise<Recording> {

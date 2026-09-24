@@ -1,5 +1,4 @@
 // @ts-check
-import { existsSync } from 'node:fs';
 import { defineConfig } from 'astro/config';
 import svelte from '@astrojs/svelte';
 import sitemap from '@astrojs/sitemap';
@@ -94,15 +93,6 @@ export default defineConfig({
   ],
 
   vite: {
-    /*
-     * Whether this build ships a DI bank, and so whether the reader offers to
-     * play a tab through the amplifier at all. The samples are built from
-     * recordings and are not in the repository (engine/README.md), so a deploy
-     * may have none — and an amplifier that cannot be fed is not one to offer.
-     * Settled here rather than asked for over HTTP: a request for a file that
-     * is not there is a 404 in everyone's console.
-     */
-    define: { __DI_BANK__: JSON.stringify(existsSync(new URL('./public/di-bank/bank.json', import.meta.url))) },
     plugins: [alphaTabEffectRows(), alphaTabWorkletPause(), tailwind(), alphaTab()],
     worker: { format: 'es', plugins: () => [alphaTabEffectRows(), alphaTabWorkletPause()] },
   },

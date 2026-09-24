@@ -7,6 +7,7 @@ import { chromium } from 'playwright';
 import * as alpha from '@coderline/alphatab';
 
 const dist = path.resolve('dist');
+assert(!fs.existsSync(path.join(dist, 'di-bank')), 'the build ships only the soundfont for tab playback');
 const base = process.env.TEST_BASE_PATH ?? '/';
 const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), 'tonecraft-studio-'));
 const mime = { '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.html': 'text/html', '.json': 'application/json', '.woff2': 'font/woff2' };
@@ -331,6 +332,8 @@ try {
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).waitFor();
   await page.waitForFunction(() => !document.querySelector('.clock').textContent.startsWith('0:00'), { timeout: 10000 });
   assert.deepEqual(soundFonts, [200], 'the MuseScore_General soundfont is fetched once, and served');
+  assert.equal(await page.getByRole('combobox', { name: 'What plays the tab' }).count(), 0,
+    'the tab uses the soundfont without an amplifier mode');
   await page.getByRole('button', { name: 'Pause tablature', exact: true }).click();
   await page.getByRole('combobox', { name: 'Playback speed', exact: true }).selectOption('70');
   await page.getByRole('button', { name: 'Loop song', exact: true }).click();
