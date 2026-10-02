@@ -418,59 +418,88 @@ console.log('\nThe chain — from Node, through chain-core.js\n');
 }
 
 {
-  /* The doubler: the one stage with two outputs. Off, it must not exist — the
-     right ear is the left one to the bit, so every figure above still holds
-     for both. On, the left ear must be untouched (no latency, nothing added),
-     and the right one a copy whose offset stays inside 3 ms..Spread, moves,
-     and never moves faster than the pitch bound in dsp/doubler.h allows. */
-  const both = (core: ChainCore, x: Float32Array): [Float32Array, Float32Array] => {
+  // TONE3000 Spread: centered lows, decorrelated highs, deterministic wobble,
+  // and a fade back to bit-identical dual mono. The crossover rotates phase
+  // on BOTH channels, so the old "left is unchanged" contract no longer applies.
+  const both = (core: ChainCore, x: Float32Array, blocks = [128]): [Float32Array, Float32Array] => {
     const l = new Float32Array(x.length), r = new Float32Array(x.length);
-    for (let at = 0; at < x.length; at += 128) {
-      core.inputs[0]!.set(x.subarray(at, at + 128));
-      core.process(128, 1);
-      l.set(core.output!.subarray(0, 128), at);
-      r.set(core.outputRight!.subarray(0, 128), at);
+    for (let at = 0, block = 0; at < x.length; block++) {
+      const n = Math.min(blocks[block % blocks.length]!, x.length - at);
+      core.inputs[0]!.set(x.subarray(at, at + n));
+      core.process(n, 1);
+      l.set(core.output!.subarray(0, n), at);
+      r.set(core.outputRight!.subarray(0, n), at);
+      at += n;
     }
     return [l, r];
   };
   const same = (a: Float32Array, b: Float32Array): boolean => a.every((v, i) => Object.is(v, b[i]));
-  const x = noise(SR * 20, 0.2, 777);
+  const rms = (x: Float32Array, start = 0): number =>
+    Math.sqrt(x.subarray(start).reduce((s, v) => s + v * v, 0) / (x.length - start));
+  const db = (x: number): number => 20 * Math.log10(Math.max(x, 1e-30));
+  for (const rate of [44_100, 48_000, 96_000]) {
+    const make = async (on: boolean) => {
+      const core = await instantiateChain(wasm);
+      core.init(rate, 1024);
+      neutral(core, { doubler_bypass: on ? 0 : 1, doubler_spread: 12 });
+      return core;
+    };
+    const sine = (hz: number) => Float32Array.from({ length: rate * 2 }, (_, i) =>
+      0.05 * Math.sin(2 * Math.PI * hz * i / rate));
+    const x = noise(rate, 0.05, 777);
+    const off = await make(false);
+    const [offL, offR] = both(off, x);
+    check(`doubler bypass is bit-exact dual mono at ${rate} Hz`, same(offL, offR));
 
-  const off = await fresh();
-  neutral(off, { reverb_bypass: 0, reverb_mix: 0.3 });
-  const [offL, offR] = both(off, x);
-  check('doubler off: the right ear is the left one, to the bit', same(offL, offR));
+    const on = await make(true), other = await make(true);
+    const [l, r] = both(on, x);
+    const [l2, r2] = both(other, x, [1, 63, 256, 17, 1024]);
+    check(`doubler is finite and deterministic across block sizes at ${rate} Hz`,
+      l.every((v, i) => Number.isFinite(v) && Number.isFinite(r[i]) &&
+        Math.abs(v - l2[i]!) < 1e-6 && Math.abs(r[i]! - r2[i]!) < 1e-6));
 
-  const spread = 12;
-  const on = await fresh();
-  neutral(on, { reverb_bypass: 0, reverb_mix: 0.3, doubler_spread: spread, doubler_bypass: 0 });
-  const [onL, onR] = both(on, x);
-  check('doubler on: the left ear is exactly what it was with the doubler off', same(onL, offL));
-
-  // Where the right ear's copy sits, window by window, by cross-correlation.
-  const W = 1024, lagMax = Math.ceil(0.025 * SR);
-  const lags: number[] = [];
-  for (let at = lagMax; at + W < x.length; at += W) {
-    let best = -Infinity, bestLag = 0;
-    for (let lag = 0; lag <= lagMax; lag++) {
-      let s = 0;
-      for (let i = 0; i < W; i++) s += onR[at + i]! * onL[at + i - lag]!;
-      if (s > best) { best = s; bestLag = lag; }
+    for (const hz of [30, 3000]) {
+      const signal = sine(hz);
+      const [left, right] = both(on, signal);
+      const [dry] = both(off, signal);
+      const difference = Float32Array.from(left, (v, i) => v - right[i]!);
+      const nullDb = db(rms(difference, rate) / rms(left, rate));
+      const gainDb = db(rms(left, rate) / rms(dry, rate));
+      check(`doubler reference keeps level at ${hz} Hz / ${rate} Hz`, Math.abs(gainDb) < 0.15,
+        `${gainDb.toFixed(3)} dB`);
+      check(`doubler ${hz === 30 ? 'keeps lows centered' : 'widens the high band'} at ${rate} Hz`,
+        hz === 30 ? nullDb < -35 : nullDb > -6, `L-R ${nullDb.toFixed(1)} dB`);
+      if (hz === 30) {
+        const mono = Float32Array.from(left, (v, i) => (v + right[i]!) / 2);
+        check(`doubler preserves bass when summed to mono at ${rate} Hz`,
+          Math.abs(db(rms(mono, rate) / rms(dry, rate))) < 0.15);
+      }
     }
-    lags.push(bestLag);
-  }
-  const lo = Math.min(...lags) / SR * 1e3, hi = Math.max(...lags) / SR * 1e3;
-  check('doubler on: the copy stays between 3 ms and the Spread', lo >= 3 - 0.05 && hi <= spread + 0.05,
-    `${lo.toFixed(2)}..${hi.toFixed(2)} ms for a Spread of ${spread} ms`);
-  check('doubler on: the offset wanders rather than sitting still', hi - lo > 1, `${(hi - lo).toFixed(2)} ms of travel in 20 s`);
-  const steepest = Math.max(...lags.slice(1).map((v, i) => Math.abs(v - lags[i]!)));
-  check('doubler on: the offset never moves faster than 0.002 sample per sample (3.5 cents)',
-    steepest <= Math.ceil(0.002 * W) + 1, `${steepest} samples between windows ${W} apart`);
+    // Repeated identical notes must not create a static delayed copy.
+    const sustained = sine(500);
+    const [, drift] = both(on, sustained);
+    const delta = Float32Array.from(drift.subarray(rate), (v, i) => v - drift[i]!);
+    check(`doubler delay drifts on a sustained note at ${rate} Hz`, rms(delta) > 1e-4);
 
-  on.call('tc_set_param', [wire('doubler_bypass'), 1]);
-  both(on, new Float32Array(128 * 200));
-  const [backL, backR] = both(on, x.subarray(0, SR));
-  check('doubler switched off again: the right ear rejoins the left, to the bit', same(backL, backR));
+    // Live changes of the spread and power stay bounded and fade to identity.
+    for (const spread of [3, 20, 12]) {
+      on.call('tc_set_param', [wire('doubler_spread'), spread]);
+      const [left, right] = both(on, sustained);
+      const maxStep = right.reduce((m, v, i) => i ? Math.max(m, Math.abs(v - right[i - 1]!)) : m, 0);
+      check(`doubler spread ${spread} ms remains bounded at ${rate} Hz`,
+        left.every(Number.isFinite) && right.every(v => Number.isFinite(v) && Math.abs(v) < 0.1) && maxStep < 0.025,
+        `max step ${maxStep.toFixed(4)}`);
+    }
+    on.call('tc_set_param', [wire('doubler_bypass'), 1]);
+    both(on, new Float32Array(Math.round(rate / 4)));
+    const [backL, backR] = both(on, x);
+    check(`doubler bypass returns to exact dual mono at ${rate} Hz`, same(backL, backR));
+    both(on, new Float32Array(rate));
+    on.call('tc_set_param', [wire('doubler_bypass'), 0]);
+    const [quietL, quietR] = both(on, new Float32Array(rate));
+    check(`doubler re-engagement never replays stale audio at ${rate} Hz`,
+      rms(quietL) < 1e-8 && rms(quietR) < 1e-8);
+  }
 }
 
 console.log(failures === 0 ? '\nAll checks passed.\n' : `\n${failures} check(s) failed.\n`);

@@ -71,19 +71,21 @@ console.log('ok processed WAV uses the amp and current controls, preserves DI an
 
 {
   // The doubler, off in the preset, leaves the export mono; on, it makes it
-  // stereo, with the left ear exactly the undoubled render.
+  // stereo. The crossover rotates both channels while preserving level.
   assert.equal(wet.right, undefined, 'An undoubled render is mono');
   const doubled = await renderRecording({ samples, sampleRate: 48000 }, { ...tone, values: { ...values, doubler_bypass: 0 } }, wasm, model);
   assert(doubled.right !== undefined, 'A doubled render has a right ear');
   assert.equal(doubled.right.length, doubled.samples.length);
-  assert.deepEqual(doubled.samples.subarray(0, samples.length), wet.samples, 'The left ear is the undoubled render');
+  assert(doubled.samples.every(Number.isFinite) && doubled.right.every(Number.isFinite));
+  const referenceGain = rms(doubled.samples.subarray(24000)) / rms(wet.samples.subarray(24000));
+  assert(Math.abs(20 * Math.log10(referenceGain)) < 1, 'The crossover preserves reference-channel level');
   assert(doubled.right.some((v, i) => Math.abs(v - doubled.samples[i]!) > 0.01), 'The right ear is not the left one');
   const file = encodeWav(doubled);
   const view = new DataView(file);
   assert.equal(view.getUint16(22, true), 2, 'A doubled export is a stereo file');
   assert.equal(view.getUint32(52, true), doubled.samples.length * 8);
   assert.equal(view.getFloat32(60 + 8 * 1000, true), doubled.right[1000], 'Interleaved: the right ear is the second channel');
-  console.log('ok the doubler makes the export stereo and leaves the left ear untouched');
+  console.log('ok TONE3000 Spread exports finite stereo audio and preserves reference level');
 }
 
 {

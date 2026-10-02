@@ -85,6 +85,7 @@ jobs:
         run: |
           mkdir -p dist/tonecraft-engine
           cp LICENSE README.md dist/tonecraft-engine/
+          cp ../public/dsp/nam-core-LICENSE.txt ../public/dsp/tone3000-LICENSE.txt dist/tonecraft-engine/
           if [ "$RUNNER_OS" = "Windows" ]; then
             cp target/release/tonecraft-engine.exe dist/tonecraft-engine/
             (cd dist && 7z a -tzip "../${{ matrix.asset }}" tonecraft-engine >/dev/null)

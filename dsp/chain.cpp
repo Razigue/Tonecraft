@@ -24,7 +24,7 @@
        tone       four-band correction: the Web Audio biquads, exactly
        reverb     in parallel, computed only while audible
        looper     records what leaves the rig, plays it back under the playing
-       doubler    the only stereo stage: left is the rig, right a wandering copy
+       doubler    the only stereo stage: TONE3000 Spread, centered lows and a drifting high-band copy
        master
        limiter    always on, no control anywhere (FR-18), one per ear
        click      the native metronome, after the meters, before the ceiling
@@ -336,19 +336,25 @@ int processBlock(Chain& c, int off, int n, int inChannels) {
     const float backingSample = backingChannels == 0 ? 0.0f
         : backingLevel * (backingChannels > 1 ? 0.5f * (c.backingA[i] + c.backingB[i]) : c.backingA[i]);
     const float played = rig + c.looper.tick(rig);
-    const float y = c.limiter.tick(played * mg + backingSample);
+    float y;
 
     /* The doubler takes the rig and the loop's playback, so a loop is doubled
        as it is heard now rather than as it was when it was recorded, mono. It
        leaves out the A/B's direct path — that answers "what does the rig do
        to my guitar", and the doubler is part of the rig — and the backing
        track, which is somebody else's mix. */
-    float yRight = y;
+    float yRight;
     if (!c.doubler.idle()) {
-      const float right = c.doubler.tick(played - direct) + direct;
+      float left, right;
+      c.doubler.tick(played - direct, left, right);
+      left += direct;
+      right += direct;
+      y = c.limiter.tick(left * mg + backingSample);
       doubledSum += static_cast<double>(right) * right;
       yRight = c.limiterRight.tick(right * mg + backingSample);
     } else {
+      y = c.limiter.tick(played * mg + backingSample);
+      yRight = y;
       // Keeps the second limiter's anti-aliasing state where it would be, so
       // switching the doubler on does not start it from a stale sample.
       c.limiterRight = c.limiter;

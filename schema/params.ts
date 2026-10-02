@@ -274,15 +274,10 @@ export const PARAMS: readonly Param[] = [
     min: 0, max: 1, default: 1, taper: 'switch' },
 
   // --- Doubler -----------------------------------------------------------
-  // A double-tracked rhythm without playing it twice: the left ear gets the
-  // rig, the right ear the same rig a few milliseconds later, the offset
-  // wandering at random inside the range this sets. 3 to 20 ms is the range
-  // where the ear still fuses the two into one wide guitar (the precedence
-  // effect) instead of hearing an echo; it is also the range Neural DSP's
-  // Archetype: Tim Henson X gives its doubler's Spread.
-  //
-  // The upper bound of the wander, not a fixed delay: a fixed copy is a comb
-  // filter that sounds like a room, a moving one sounds like a second take.
+  // TONE3000 Spread: base delay of the right high-band copy, with 25% wobble,
+  // diffusion and a 130 Hz crossover keeping the low band centered.
+  // Existing presets keep their numeric value; this now sets the base delay
+  // rather than the former upper limit of a 3 ms..Spread random wander.
   { id: 'doubler_spread', stage: 'doubler', label: 'Spread', unit: 'ms',
     min: 3, max: 20, default: 12, taper: 'linear' },
   // Bypassed by default: headphones and a mono speaker are both common, and a

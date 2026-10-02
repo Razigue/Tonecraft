@@ -27,6 +27,7 @@ class LinearRamp {
     }
     return value_;
   }
+  float getCurrentValue() const { return value_; }
   bool isSmoothing() const { return left_ > 0; }
  private:
   float value_ = 0, target_ = 0, step_ = 0;
