@@ -48,7 +48,7 @@ async function fresh(maxFrames = 1024): Promise<ChainCore> {
  * and then half a second of silence, because every parameter glides to where
  * it is sent (AD-20) and a gain still moving is not time-invariant. The gate
  * in particular passes through its whole range on the way to "off", and an
- * impulse arriving mid-glide opens it with its 1.2 ms attack.
+ * impulse arriving mid-glide opens it with its 0.2 ms attack.
  */
 function neutral(core: ChainCore, extra: Record<string, number> = {}): void {
   const set = (id: string, v: number): void => { core.call('tc_set_param', [wire(id), v]); };
@@ -113,7 +113,7 @@ console.log('\nThe chain — from Node, through chain-core.js\n');
 }
 
 {
-  // A muted phrase must shut out the noise promptly, at every supported rate,
+  // TONE3000 uses a gradual expander tail (50 ms release, 20 ms hold),
   // while sustained notes and the next attack still open the gate fully.
   for (const rate of [44_100, 48_000, 96_000]) {
     const core = await instantiateChain(wasm);
@@ -128,10 +128,10 @@ console.log('\nThe chain — from Node, through chain-core.js\n');
       core.inputs[0]![0] = note[i % note.length]!;
       if (core.process(1, 1)) break;
     }
-    run(core, noise(Math.round(rate * 0.07), 10 ** (-90 / 20)), [1]);
+    run(core, noise(Math.round(rate * 0.7), 10 ** (-90 / 20)), [1]);
     const gain = core.meters![meterIndex('gate')]!;
-    const attenuation = 40 * Math.log10(gain + 1e-30); // applied gain is squared
-    check(`gate suppresses noise by 100 dB within 70 ms of a muted phrase at ${rate} Hz`, attenuation < -100,
+    const attenuation = 20 * Math.log10(gain + 1e-30); // meter reports the applied gain
+    check(`gate suppresses noise by at least 70 dB after its release at ${rate} Hz`, attenuation < -70 && attenuation > -81,
       `${attenuation.toFixed(1)} dB`);
     run(core, note.subarray(0, Math.round(rate * 0.05)), [128]);
     check(`gate reopens for the next attack at ${rate} Hz`, core.meters![meterIndex('gate')]! > 0.99);
@@ -309,6 +309,39 @@ console.log('\nThe chain — from Node, through chain-core.js\n');
     neutral(off);
     run(off, tone(220, SR / 2), [128]);
     check('and reports nothing when it is bypassed', off.meters![meterIndex('pitch_delay_ms')] === 0);
+  }
+
+  for (const rate of [44_100, 48_000, 96_000]) {
+    const a = await instantiateChain(wasm), b = await instantiateChain(wasm);
+    a.init(rate, 1024); b.init(rate, 1024);
+    const settings = { pitch_bypass: 0, pitch_shift: -2, pitch_mix: 1 };
+    neutral(a, settings); neutral(b, settings);
+    // A bass fundamental plus a chord exercises correlation and onset re-sync.
+    const chord = Float32Array.from({ length: rate }, (_, i) => {
+      const envelope = i % (rate / 4) < rate / 8 ? 1 : 0.1;
+      return envelope * [41.2, 110, 138.59, 164.81].reduce((sum, hz) =>
+        sum + 0.025 * Math.sin(2 * Math.PI * hz * i / rate), 0);
+    });
+    const ya = run(a, chord, [128]);
+    const yb = run(b, chord, [1, 63, 256, 17, 1024]);
+    check(`polyphonic pitch is finite and block-independent at ${rate} Hz`,
+      ya.every((v, i) => Number.isFinite(v) && Math.abs(v) < 0.5 && Math.abs(v - yb[i]!) < 1e-6),
+      `max difference ${ya.reduce((m, v, i) => Math.max(m, Math.abs(v - yb[i]!)), 0).toExponential(2)}`);
+    check(`pitch reports its nominal mean delay at ${rate} Hz`,
+      Math.abs(a.meters![meterIndex('pitch_delay_ms')]! - 16) < 0.1);
+    // A direction change followed by bypass must retire the old delay line.
+    a.call('tc_set_param', [wire('pitch_shift'), 12]);
+    const up = run(a, chord.subarray(0, rate / 4), [128]);
+    check(`live shift direction change stays finite at ${rate} Hz`,
+      up.every(v => Number.isFinite(v) && Math.abs(v) < 0.5));
+    a.call('tc_set_param', [wire('pitch_bypass'), 1]);
+    run(a, chord, [128]);
+    check(`pitch bypass clears active latency at ${rate} Hz`,
+      a.meters![meterIndex('pitch_delay_ms')] === 0);
+    neutral(b, { pitch_bypass: 1 });
+    const dryA = run(a, chord, [128]), dryB = run(b, chord, [128]);
+    check(`pitch bypass settles to dry audio at ${rate} Hz`,
+      dryA.subarray(rate / 2).every((v, i) => Math.abs(v - dryB[rate / 2 + i]!) < 1e-6));
   }
 }
 

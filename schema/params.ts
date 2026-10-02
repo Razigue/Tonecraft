@@ -160,8 +160,8 @@ export const PARAMS: readonly Param[] = [
   // captures amplify enormously — 0.02 in comes back out at -19 dBFS — so the
   // useful thresholds all sit in the last 20 dB above silence.
   //
-  // -50 is the player's chosen default; the 8 ms release in dsp/frontend.cpp
-  // tightens the close independently of this level threshold.
+  // -50 is the player's chosen default. The TONE3000 gate uses a 50 ms
+  // release and 20 ms hold (dsp/tone3000/NoiseGate.h).
   { id: 'gate_threshold', stage: 'gate', label: 'Threshold', unit: 'dB',
     min: -95, max: -30, default: -50, taper: 'linear' },
   { id: 'gate_bypass', stage: 'gate', label: 'Bypass', unit: 'bool',

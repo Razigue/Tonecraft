@@ -90,12 +90,7 @@ void Frontend::init(double sampleRate, int stages, bool adaa) {
   stages_ = stages < 0 ? 0 : stages > MAX_STAGES ? MAX_STAGES : stages;
   adaa_ = adaa;
 
-  attC_ = 1 - std::exp(-1 / (sr_ * 0.0012));   // open: 1.2 ms
-  /* Close: 8 ms. The applied gain is gg squared, reaching -60 dB about
-     28 ms after the detector closes (previously 41 ms at 12 ms).
-     The 6 dB hysteresis below keeps the gate from chattering. */
-  relC_ = 1 - std::exp(-1 / (sr_ * 0.008));
-  envC_ = 1 - std::exp(-1 / (sr_ * 0.0025));   // detector: 2.5 ms
+  gate_.prepare(sr_);
   dA_ = onePoleHP(18, sr_);
 
   for (int k = 0; k < stages_; k++) os_[k].init(HALFBAND[k], HALFBAND_N[k]);
@@ -188,7 +183,12 @@ void Frontend::process(const float* a, const float* b, int n,
   const float* inp = mono_;
   if (tuner != nullptr) for (int i = 0; i < n; i++) tuner[i] = inp[i];
 
-  const double thr = gateDb <= -99 ? 0 : std::pow(10.0, gateDb / 20);
+  const bool gateEnabled = gateDb > -99;
+  if (gateEnabled != gateEnabled_) gate_.reset();
+  gateEnabled_ = gateEnabled;
+  tone3000::NoiseGate::Params gateParams;
+  gateParams.thresholdDb = static_cast<float>(gateDb);
+  gate_.setParams(gateParams);
 
   /* --- input gain, DC blocking, noise gate --- */
   double pkIn = 0.0;
@@ -218,17 +218,8 @@ void Frontend::process(const float* a, const float* b, int n,
        audible keeps every state a normal number. */
     x = dy + 1e-18;
 
-    // gate: fast attack, 6 dB of hysteresis so it cannot chatter
-    const double av = x < 0 ? -x : x;
-    env_ += (av > env_ ? 0.55 : envC_) * (av - env_);
-    if (thr > 0) {
-      open_ = env_ > (open_ ? thr * 0.5 : thr);
-      const double tgt = open_ ? 1 : 0;
-      gg_ += (tgt > gg_ ? attC_ : relC_) * (tgt - gg_);
-      if (gg_ < 1e-20) gg_ = 0;          // a closed gate is closed, not denormal
-      x *= gg_ * gg_;                    // squared: a gentler close
-      if (gg_ == 0) x = 1e-18;           // the guard survives the gate
-    }
+    if (gateEnabled) x = gate_.tick(static_cast<float>(x));
+    gg_ = gateEnabled ? gate_.gain() : 1.0;
     pre_[i] = x;
   }
 

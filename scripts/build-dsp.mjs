@@ -111,6 +111,8 @@ function build() {
   execFileSync(bin, args, { env, stdio: 'inherit' });
   fs.copyFileSync(path.join(SRC, 'LICENSE'), path.join(OUT, 'nam-core-LICENSE.txt'));
 
+  fs.copyFileSync(path.join(ROOT, 'dsp', 'tone3000', 'LICENSE.txt'), path.join(OUT, 'tone3000-LICENSE.txt'));
+
   const bytes = fs.readFileSync(wasm);
   const module = new WebAssembly.Module(bytes);
   const imports = WebAssembly.Module.imports(module).map((i) => `${i.module}.${i.name}`);

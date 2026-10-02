@@ -7,9 +7,8 @@
    style boost that cuts the low end before the saturation — plus the choice of
    which captured channel feeds the chain at all.
 
-   It is a port of what was public/nam/frontend-worklet.js, line for line: the
-   same constants, the same double-precision state, the same float32 at the
-   places the worklet crossed a Float32Array. Only the host changed.
+   The gate is adapted from TONE3000 (MIT, see tone3000/README.md).
+   The boost and channel selection retain the original Tonecraft processing.
 
    The boost is the only hand-written non-linearity in the chain. It runs at 4x
    oversampling with antiderivative anti-aliasing. Measured by
@@ -17,6 +16,7 @@
    to the fundamental): naive -24 dBc, 4x alone -68 dBc, 4x + ADAA -94 dBc.
    ========================================================================== */
 #pragma once
+#include "tone3000/NoiseGate.h"
 
 namespace tc {
 
@@ -96,9 +96,9 @@ class Frontend {
   bool adaa_ = true;
 
   // noise gate
-  double env_ = 0.0, gg_ = 0.0;
-  bool open_ = false;
-  double attC_ = 0.0, relC_ = 0.0, envC_ = 0.0;
+  tone3000::NoiseGate gate_;
+  double gg_ = 1.0;
+  bool gateEnabled_ = false;
   // DC blocker
   double dx_ = 0.0, dy_ = 0.0, dA_ = 0.0;
   // control smoothing
