@@ -66,6 +66,8 @@
   const factory = $derived(tones.filter((p) => p.label === undefined));
   const saved = $derived(tones.filter((p) => p.label !== undefined));
   const current = $derived(saved.find((p) => p.name === preset));
+  /** A saved name can still outrun the select: the tooltip carries it whole. */
+  const presetLabel = $derived(current?.label ?? (preset === null ? t.rig.customTone : t.rig.presets[preset] ?? preset));
   /** While naming, the dropdown gives its place to a text field. */
   let naming = $state(false);
   let draft = $state('');
@@ -107,7 +109,13 @@
     <input bind:this={cabFileInput} aria-label={t.rig.cabinetIrFile} type="file" accept=".wav,.aif,.aiff,.flac,audio/*" hidden onchange={e => { const f = e.currentTarget.files?.[0]; e.currentTarget.value = ''; if (f) oncabfile(f); }} />
   </div>
   <div class="tone-selector">
-    <span class="eyebrow">{t.rig.tonePreset}</span>
+    <!-- The arrows ride on the name's line: beside the select they took 64 px
+         of its 170, and every preset read "Moder…". -->
+    <div class="preset-head">
+      {#if !naming}<button class="step" aria-label={t.rig.previousPreset} onclick={() => onstep(-1)}>‹</button>{/if}
+      <span class="eyebrow">{t.rig.tonePreset}</span>
+      {#if !naming}<button class="step" aria-label={t.rig.nextPreset} onclick={() => onstep(1)}>›</button>{/if}
+    </div>
     {#if naming}
       <form class="preset-picker" onsubmit={e => { e.preventDefault(); commit(); }}
         onfocusout={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) naming = false; }}>
@@ -117,8 +125,7 @@
       </form>
     {:else}
       <div class="preset-picker">
-        <button aria-label={t.rig.previousPreset} onclick={() => onstep(-1)}>‹</button>
-        <select aria-label={t.rig.tonePreset} value={preset ?? ''} onchange={e => choose(e.currentTarget)}>
+        <select aria-label={t.rig.tonePreset} title={presetLabel} value={preset ?? ''} onchange={e => choose(e.currentTarget)}>
           <option value="" disabled>{t.rig.customTone}</option>
           {#each factory as p}<option value={p.name}>{t.rig.presets[p.name] ?? p.name}</option>{/each}
           {#if saved.length > 0}<optgroup label={t.rig.myTones}>{#each saved as p}<option value={p.name}>{p.label}</option>{/each}</optgroup>{/if}
@@ -127,7 +134,6 @@
             {#if current !== undefined}<option value={DELETE_TONE}>{t.rig.deleteTone(current.label!)}</option>{/if}
           </optgroup>
         </select>
-        <button aria-label={t.rig.nextPreset} onclick={() => onstep(1)}>›</button>
       </div>
     {/if}
   </div>
@@ -194,7 +200,8 @@
   .roomy .selector { gap: 8px; }
   .roomy .tone-selector { align-items: center; gap: 14px; }
   .roomy .preset-picker { width: 100%; }
-  .roomy .preset-picker select { min-height: 44px; font-size: 16px; }
+  .roomy .preset-head { width: 100%; }
+  .roomy .preset-picker select { min-height: 44px; font-size: 15px; }
   /* Beside its name, as the head's blocks carry theirs. */
   .roomy .gate-control { position: relative; }
   /* The band's own two lamps, and only those: the pedals' panel is a child of
@@ -301,22 +308,26 @@
   }
   select:hover { border-color: var(--line-strong); }
   select:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
-  .preset-picker select { flex: 1; font: 500 14px var(--body); text-align: center; text-align-last: center; }
-  .preset-picker button {
+  .preset-head { display: flex; align-items: center; justify-content: space-between; gap: 4px; height: 10px; }
+  /* The select owns the whole width; its chevron sits closer to the edge. */
+  .preset-picker select { flex: 1; padding: 0 22px 0 8px; background-position: right 8px center; font: 500 14px var(--body); text-align: center; text-align-last: center; }
+  .step {
     display: grid;
     place-items: center;
     flex-shrink: 0;
-    width: 28px;
-    height: 36px;
+    width: 24px;
+    height: 24px;
+    margin: -7px 0;
     padding: 0;
     border: 0;
     border-radius: var(--radius);
     background: none;
     color: var(--text-2);
-    font-size: 22px;
+    font: 18px/1 var(--body);
     cursor: pointer;
   }
-  .preset-picker button:hover { color: var(--text); background: var(--surface-2); }
+  .step:hover { color: var(--text); background: var(--surface-2); }
+  .step:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
   .preset-picker input {
     flex: 1;
     min-width: 0;
