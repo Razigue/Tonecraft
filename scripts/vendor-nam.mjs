@@ -3,7 +3,7 @@
    -----------------------------------------------------------------------------
    The application runs entirely offline, with no CDN and nothing fetched at
    runtime that is not ours. This script downloads the amp captures from
-   pelennor2170/NAM_models (GNU GPL v3), fabdef, VIC AUDIO and TONE3000 (T3K),
+   pelennor2170/NAM_models (GNU GPL v3), fabdef, VIC AUDIO, jpisoutoftune, dissonaunte and TONE3000 (T3K),
    into `public/models/`, which is what the site ships.
 
    The engine is not vendored any more: scripts/build-nam.mjs compiles it from
@@ -33,8 +33,8 @@ const MODEL_REPO = 'pelennor2170/NAM_models';
 
    `pack` : the family shown in the interface.
    `cab`  : the cabinet offered by default with this capture.
-   The Helga captures contain the amplifier alone. ENGL E530, Nightmare and
-   Super Reverb are full rigs; their extra IRs reproduce the requested setups.
+   The Helga and Fireball 25 captures contain the amplifier alone. ENGL E530, Nightmare, the 5150
+   rig and Super Reverb are full rigs; their extra IRs reproduce the requested setups.
 --------------------------------------------------------------------------- */
 const PACKS = [
   { id: 'metal', name: 'Metal', order: 1 },
@@ -80,6 +80,46 @@ const MODEL_CATALOG = [
     note: 'Driftwood Purple Nightmare full rig: Merciless Drive, Mesa Oversized, SM57 + M160.',
   },
   {
+    src: 'Full Rig Peavey 5150 Maxon Mesa OS SM57.nam',
+    url: 'https://api.tone3000.com/storage/v1/object/public/models/0ff5x0ot7r6c_a2.nam',
+    sourcePage: 'https://www.tone3000.com/tones/full-rig-peavey-5150-mesa-4x12-32868',
+    license: 'T3K', author: 'jpisoutoftune',
+    name: 'Peavey 5150 + OD808 + Mesa 4x12', pack: 'metal', cab: 'mesa-412-os',
+    note: 'Peavey 5150 red channel full rig: Maxon OD808, Mesa OS 4x12 V30, SM57.',
+  },
+  {
+    src: '5150 Stealth 100w Red Mesa OS.nam',
+    url: 'https://api.tone3000.com/storage/v1/object/public/models/gkcbu7m8duj.nam',
+    sourcePage: 'https://www.tone3000.com/tones/5150-stealth-100w-mesa-os-full-rig-blue-red-and-green-84864',
+    license: 'T3K', author: 'jpisoutoftune',
+    name: '5150 III Stealth red + Mesa 4x12', pack: 'metal', cab: 'mesa-412-os',
+    note: 'EVH 5150 III Stealth 100W red channel full rig, unboosted, Mesa OS 4x12 V30.',
+  },
+  {
+    src: 'ENGL FB25 Lead - Modern.nam',
+    url: 'https://api.tone3000.com/storage/v1/object/public/models/ejmo4st0o9a.nam',
+    sourcePage: 'https://www.tone3000.com/tones/engl-fireball-25-a2-69159',
+    license: 'T3K', author: 'dissonaunte',
+    name: 'ENGL Fireball 25 Lead: Modern', pack: 'metal', cab: 'celestion-g12-vintage',
+    note: 'ENGL Fireball 25 lead channel, Modern settings, unboosted; amp only, voiced on a 1x12 V30.',
+  },
+  {
+    src: 'ENGL FB25 Lead - Modern Clean-boost.nam',
+    url: 'https://api.tone3000.com/storage/v1/object/public/models/m5jc8izjzx.nam',
+    sourcePage: 'https://www.tone3000.com/tones/engl-fireball-25-a2-69159',
+    license: 'T3K', author: 'dissonaunte',
+    name: 'ENGL Fireball 25 Lead: Modern, clean boost', pack: 'metal', cab: 'celestion-g12-vintage',
+    note: 'ENGL Fireball 25 lead channel, Modern settings, Wampler Euphoria clean boost; amp only.',
+  },
+  {
+    src: 'ENGL FB25 Lead - Modern PD-boost.nam',
+    url: 'https://api.tone3000.com/storage/v1/object/public/models/9mxyrii21a.nam',
+    sourcePage: 'https://www.tone3000.com/tones/engl-fireball-25-a2-69159',
+    license: 'T3K', author: 'dissonaunte',
+    name: 'ENGL Fireball 25 Lead: Modern, Precision Drive', pack: 'metal', cab: 'celestion-g12-vintage',
+    note: 'ENGL Fireball 25 lead channel, Modern settings, Horizon Devices Precision Drive boost; amp only.',
+  },
+  {
     src: 'Fender Super Reverb EQ Flat Volume 3 sm57 and AKG 414.nam',
     url: 'https://api.tone3000.com/storage/v1/object/public/models/f5on0jl7xbp_a2.nam',
     sourcePage: 'https://www.tone3000.com/tones/fender-super-reverb-1977-19',
@@ -95,7 +135,7 @@ const ensure = (d) => fs.mkdirSync(d, { recursive: true });
 
 /* ------------------------------ the captures ----------------------------- */
 async function vendorModels() {
-  log('\nNAM captures (Helga: GNU GPL v3; fabdef, VIC AUDIO and TONE3000: T3K — see attribution files)');
+  log('\nNAM captures (Helga: GNU GPL v3; fabdef, VIC AUDIO, jpisoutoftune, dissonaunte and TONE3000: T3K — see attribution files)');
   ensure(MODELS);
   const raw = 'https://raw.githubusercontent.com/' + MODEL_REPO + '/main/';
   const index = [];

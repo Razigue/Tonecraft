@@ -22,6 +22,25 @@ export interface Preset {
   readonly capture: string;
   readonly cab: string;
   readonly values: Readonly<Record<string, number>>;
+  /**
+   * Captures of one amplifier that the head switches between, the way a
+   * channel switch does: the faders stay where they are, only the capture
+   * changes. `capture` is the one the preset opens on, and must be listed.
+   */
+  readonly channels?: readonly Channel[];
+}
+
+export interface Channel {
+  /** Its key in the strings, and what the switch is addressed by. */
+  readonly id: string;
+  readonly capture: string;
+  /** The colour of its lamp on the switch, a `--lamp-*` token. */
+  readonly lamp: 'green' | 'amber' | 'red';
+}
+
+/** The preset whose channels include this capture, if any. */
+export function channelsOf(capture: string): Preset | undefined {
+  return PRESETS.find((p) => p.channels?.some((c) => c.capture === capture));
 }
 
 export const PRESETS: readonly Preset[] = [
@@ -40,13 +59,46 @@ export const PRESETS: readonly Preset[] = [
   {
     name: 'Modern metal',
     pack: 'metal',
-    capture: 'va-nightmare-md-and-mesa-oversized.nam',
-    cab: 'celestion-g12-vintage',
+    capture: 'full-rig-peavey-5150-maxon-mesa-os-sm57.nam',
+    cab: 'mesa-412-os',
     values: {
-      // Merciless Drive and the Mesa cabinet are already in this full-rig capture.
+      // The OD808 and the Mesa cabinet are already in this full-rig capture.
       in_trim: 0, gate_threshold: -65, drive_bypass: 1, drive_gain: 0, drive_tone: 5200,
       tone_bass: 0, tone_mid: 0, tone_treble: 0, tone_presence: 0,
       pitch_shift: 0, reverb_bypass: 1, reverb_mix: 0.12, out_master: -12.4,
+    },
+  },
+  {
+    name: 'Modern metal boost',
+    pack: 'metal',
+    capture: '5150-stealth-100w-red-mesa-os.nam',
+    cab: 'mesa-412-os',
+    values: {
+      // The red channel was captured unboosted: the screamer goes in front as a
+      // clean boost, low gain and a mid tone, to tighten the low end.
+      in_trim: 0, gate_threshold: -60, drive_bypass: 0, drive_gain: 8.0, drive_tone: 4500,
+      tone_bass: 0, tone_mid: 0, tone_treble: 0, tone_presence: 0,
+      pitch_shift: 0, reverb_bypass: 1, reverb_mix: 0.12, out_master: -12.4,
+    },
+  },
+  {
+    name: 'British',
+    pack: 'metal',
+    capture: 'engl-fb25-lead-modern.nam',
+    cab: 'celestion-g12-vintage',
+    // Three captures of one Fireball 25 lead channel, on the head's switch.
+    // Lamps go green, amber, red as the front end heats up.
+    channels: [
+      { id: 'modern', capture: 'engl-fb25-lead-modern.nam', lamp: 'green' },
+      { id: 'cleanBoost', capture: 'engl-fb25-lead-modern-clean-boost.nam', lamp: 'amber' },
+      { id: 'pdBoost', capture: 'engl-fb25-lead-modern-pd-boost.nam', lamp: 'red' },
+    ],
+    values: {
+      // The boosts are in the captures: Tonecraft's own stays out, the EQ flat,
+      // as captured through a V30.
+      in_trim: 0, gate_threshold: -60, drive_bypass: 1, drive_gain: 0, drive_tone: 5200,
+      tone_bass: 0, tone_mid: 0, tone_treble: 0, tone_presence: 0,
+      pitch_shift: 0, reverb_bypass: 0, reverb_mix: 0.15, out_master: -12.4,
     },
   },
   {

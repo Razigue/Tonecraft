@@ -94,6 +94,17 @@ for (const preset of PRESETS) {
   if (!cabs.has(preset.cab)) {
     errors.push(`preset "${preset.name}" names cabinet "${preset.cab}", which does not exist`);
   }
+  // A channel switch that cannot show the capture it opens on shows nothing lit.
+  if (preset.channels !== undefined) {
+    for (const c of preset.channels) {
+      if (!captures.has(c.capture)) {
+        errors.push(`preset "${preset.name}" channel "${c.id}" names capture "${c.capture}", which is not installed`);
+      }
+    }
+    if (!preset.channels.some((c) => c.capture === preset.capture)) {
+      errors.push(`preset "${preset.name}" opens on "${preset.capture}", which is not one of its channels`);
+    }
+  }
 }
 
 /**

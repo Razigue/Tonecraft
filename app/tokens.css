@@ -69,6 +69,12 @@
   --action-text: var(--violet-50);
   --ember: #ec987f;                   /* recording, clipping, destruction only */
   --ember-line: #8a4436;
+  /* The lamps of a head's channel switch, and nothing else: a channel LED
+     reads by its colour on any amplifier, so these are the head's, not accents.
+     Each one is always beside its name (DESIGN.md: colour never alone). */
+  --lamp-green: #4fd17f;
+  --lamp-amber: #f2a93b;
+  --lamp-red: #ef5242;
 
   /* Aliases the landing page and older rules still read. */
   --ink: var(--text);

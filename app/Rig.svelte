@@ -10,7 +10,7 @@
   import { bpmFromFourTaps, Metronome, MIN_BPM, MAX_BPM } from '../engine/metronome.ts';
   import type { Capture } from '../engine/catalog.ts';
   import { PARAMS, STAGES, type Param } from '../schema/params.ts';
-  import { PRESETS, DEFAULT_PRESET, type Preset } from './presets.ts';
+  import { PRESETS, DEFAULT_PRESET, channelsOf, type Preset } from './presets.ts';
   import { cleanToneName, loadTones, saveTones, type SavedTone } from '../store/tones.ts';
   import { loadSession, saveSession, type StudioView } from '../store/session.ts';
   import { loadMedia, saveMedia } from '../store/media.ts';
@@ -718,6 +718,8 @@
   const recordingTone = $derived({ values, capture, cab, cabRevision });
   const level = (v: number): number => Math.min(1, Math.sqrt(Math.max(0, v)) * 1.6);
   const isGuilt = $derived(captureFile === PRESETS[0]?.capture);
+  /** The head's channel switch, while what plays is one of a preset's channels. */
+  const channels = $derived(channelsOf(captureFile)?.channels ?? null);
   const ampIlluminated = $derived(engineState === 'running' && !poweredOff);
   /**
    * How lit the front of the amp is, 0 to 1, from the output RMS.
@@ -865,10 +867,14 @@
     await saveTones($state.snapshot(next));
   }
 
-  async function chooseCapture(file: string): Promise<void> {
+  /**
+   * `sameTone` is the channel switch: another capture of the preset already
+   * playing, so the faders and the preset's name stay what they were.
+   */
+  async function chooseCapture(file: string, sameTone = false): Promise<void> {
     captureFile = file;
     captureLoaded = false;
-    preset = null;
+    if (!sameTone) preset = null;
     const chosen = captures.find((c) => c.file === file);
     // Each capture names the cabinet it was voiced against; we follow it until
     // the player picks one themselves.
@@ -1360,6 +1366,7 @@
         <div class="amp-frame" bind:this={ampFrame} style:zoom={ampZoom === 1 ? null : ampZoom}>
           <AmpHead {isGuilt} {ampIlluminated} {poweredOff} {light} {veil} {values} {resetValues}
             powerBusy={engineState === 'starting'} powerDisabled={engineState === 'starting' || detecting}
+            {channels} {captureFile} onchannel={(file) => void chooseCapture(file, true)}
             onparam={setParam} onpower={() => void power()} />
         </div>
       </div>

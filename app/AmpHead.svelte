@@ -12,9 +12,10 @@
   import Knob from './Knob.svelte';
   import { PARAMS, type Param } from '../schema/params.ts';
   import { lang } from './locale.svelte.ts';
+  import type { Channel } from './presets.ts';
 
   let { isGuilt, ampIlluminated, poweredOff, light, veil, values, resetValues,
-    powerBusy, powerDisabled, onparam, onpower }: {
+    powerBusy, powerDisabled, channels, captureFile, onchannel, onparam, onpower }: {
     isGuilt: boolean;
     /** Running and not bypassed: the lamps are on. */
     ampIlluminated: boolean;
@@ -27,6 +28,10 @@
     resetValues: Record<string, number>;
     powerBusy: boolean;
     powerDisabled: boolean;
+    /** The preset's channels when the capture playing is one of them, else null. */
+    channels: readonly Channel[] | null;
+    captureFile: string;
+    onchannel: (capture: string) => void;
     onparam: (id: string, value: number) => void;
     onpower: () => void;
   } = $props();
@@ -87,6 +92,23 @@
   /** The light layers sit in the same coordinates, from their top-left. */
   const glassSlot = `left:${px(GLASS.x, SKIN_W)};top:${px(GLASS.y, SKIN_H)};width:${px(GLASS.w, SKIN_W)};height:${px(GLASS.h, SKIN_H)}`;
   const boosted = $derived(values.drive_bypass !== 1);
+
+  /**
+   * The channel switch is a radio group: one channel always plays. The arrows
+   * move through it as they do through any radio group, and only the channel
+   * playing is in the tab order.
+   */
+  let channelKeys = $state<HTMLButtonElement[]>([]);
+  function stepChannel(event: KeyboardEvent, index: number): void {
+    if (channels === null) return;
+    const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1
+      : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
+    if (step === 0) return;
+    event.preventDefault();
+    const next = (index + step + channels.length) % channels.length;
+    onchannel(channels[next]!.capture);
+    channelKeys[next]?.focus();
+  }
 </script>
 
 <div class="amp-stand" class:guilt={isGuilt}>
@@ -133,13 +155,32 @@
       </button>
     </section>
   {:else}
-    <section class="amp-head neutral" class:bypassed={poweredOff} aria-label={t.rig.neutralAmp}>
+    <section class="amp-head neutral" class:illuminated={ampIlluminated} class:bypassed={poweredOff} aria-label={t.rig.neutralAmp}>
       <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
       <div class="glass-window">
         <div class="neutral-art"><span>TC</span><small>AMPLIFICATION</small></div>
         <div class="amp-brand"><span class="brand-rule"></span><h1>TONECRAFT</h1><span class="brand-rule"></span><p>{t.rig.neutralMotto}</p></div>
       </div>
       <div class="amp-panel">
+        {#if channels !== null}
+          <!-- One lamp per capture, the way a channel switch has one LED per
+               channel: green, amber, red as the front end heats up. The name is
+               under every lamp, so the colour never carries it alone. -->
+          <div class="channel-switch" role="radiogroup" aria-label={t.rig.ampChannel}>
+            <small aria-hidden="true">{t.rig.ampChannel.toUpperCase()}</small>
+            <div class="channel-keys">
+              {#each channels as c, i (c.id)}
+                {@const on = c.capture === captureFile}
+                <button bind:this={channelKeys[i]} class="channel-key" type="button" role="radio" aria-checked={on}
+                  tabindex={on ? 0 : -1} style:--lamp={`var(--lamp-${c.lamp})`}
+                  onclick={() => { if (!on) onchannel(c.capture); }} onkeydown={(e) => stepChannel(e, i)}>
+                  <span class="channel-lamp" aria-hidden="true"></span>
+                  <span>{t.rig.ampChannels[c.id]}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
         <div class="knob-row">
           {#each PLATE as c, i (c.id)}
             {#if i === 3}
@@ -249,6 +290,48 @@
   .power-indicator > span.lit { color: #fff; background: var(--violet-600); box-shadow: 0 0 12px #c47adf; }
   .power-indicator small { font: 400 7px/1 var(--display); font-stretch: 125%; letter-spacing: 0.2em; color: var(--text-2); }
   .power-indicator:disabled { opacity: .5; cursor: wait; }
+  /* The channel switch: three keys cut into the panel, the one playing pressed
+     in. Its lamp's glow is a layer whose opacity rises, so it warms. */
+  .channel-switch { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .channel-switch > small { font: 400 7px/1 var(--display); font-stretch: 125%; letter-spacing: 0.2em; color: var(--text-2); }
+  .channel-keys { display: flex; gap: 5px; padding: 4px; border-radius: var(--radius); background: var(--surface-0); box-shadow: inset 0 1px 3px #000a, 0 0 0 1px var(--line); }
+  .channel-key {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 56px;
+    padding: 9px 7px 8px;
+    border: 0;
+    border-radius: 3px;
+    background: linear-gradient(#29252e, #18151c);
+    box-shadow: inset 0 1px 0 #ffffff12, 0 2px 3px #0009;
+    font: 400 7px/1 var(--display);
+    font-stretch: 125%;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .channel-key[aria-checked='true'] { color: var(--text); background: linear-gradient(#18151c, #1f1c24); box-shadow: inset 0 1px 3px #000c; cursor: default; }
+  .channel-key:hover:not([aria-checked='true']) { color: var(--text); }
+  .channel-key:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
+  .channel-lamp { position: relative; width: 9px; height: 9px; border-radius: 50%; background: color-mix(in srgb, var(--lamp) 30%, #0c0b0e); box-shadow: 0 0 0 1px #000, inset 0 1px 1px #0009; }
+  .channel-lamp::after {
+    content: '';
+    position: absolute;
+    inset: -7px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--lamp) 0 24%, color-mix(in srgb, var(--lamp) 40%, transparent) 38%, transparent 70%);
+    opacity: 0;
+    transition: opacity 550ms ease-in;
+  }
+  /* Powered off, the chosen lamp stays faintly lit: the switch still says
+     where it is set, as the position of a real one does. */
+  [aria-checked='true'] > .channel-lamp::after { opacity: .35; }
+  .illuminated [aria-checked='true'] > .channel-lamp::after { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .channel-lamp::after { transition: none; } }
   .screw { position: absolute; width: 5px; height: 5px; border-radius: 50%; background: linear-gradient(135deg, #777, #222 45%, #999 50%, #333 60%); }
   .tl { top: 6px; left: 7px; } .tr { top: 6px; right: 7px; } .bl { bottom: 6px; left: 7px; } .br { bottom: 6px; right: 7px; }
   .amp-foot { display: flex; justify-content: space-between; margin: 0 50px; }
