@@ -33,7 +33,8 @@ const MODEL_REPO = 'pelennor2170/NAM_models';
 
    `pack` : the family shown in the interface.
    `cab`  : the cabinet offered by default with this capture.
-   The Helga and Fireball 25 captures contain the amplifier alone. ENGL E530, Nightmare, the 5150
+   The Helga and Fireball 25 captures contain the amplifier alone; ENGL E530 is
+   listed as a full rig but gets the Mesa IR. Nightmare, the 5150
    rig and Super Reverb are full rigs; their extra IRs reproduce the requested setups.
 --------------------------------------------------------------------------- */
 const PACKS = [
@@ -48,7 +49,7 @@ const MODEL_CATALOG = [
     url: 'https://api.tone3000.com/storage/v1/object/public/models/4a3efc3b5e79bf95_a2.nam',
     sourcePage: 'https://www.tone3000.com/tones/engl-e530-43',
     license: 'T3K', author: 'fabdef',
-    name: 'ENGL E530', pack: 'metal', cab: 'none',
+    name: 'ENGL E530', pack: 'metal', cab: 'mesa-412-os',
     note: 'ENGL E530 by fabdef: no boost, contour off; listed as an amp + cab capture.',
   },
   {
@@ -133,7 +134,7 @@ const MODEL_CATALOG = [
     url: 'https://api.tone3000.com/storage/v1/object/public/models/vxpp8fwrft_a2.nam',
     sourcePage: 'https://www.tone3000.com/tones/polyphia-49731',
     license: 'T3K', author: 'jdicifuentesb',
-    name: 'Polyphia: So Strange', pack: 'clean', cab: 'none',
+    name: 'Polyphia', pack: 'clean', cab: 'none',
     note: 'Amp + cab capture of a Polyphia clean tone; its author asks for no IR.',
   },
 ];

@@ -14,11 +14,17 @@ const oldGuilt = {
   cab: 'v30mod', cabTouched: false, values: { out_master: -12.4 },
 };
 const updatedGuilt = sanitizeSession(oldGuilt);
-check('the previous factory Guilt session opens on the ENGL E530 full rig with no IR',
-  updatedGuilt.captureFile === 'engl-e530.nam' && updatedGuilt.cab === 'none'
+check('the previous factory Guilt session opens on the ENGL E530 and the Mesa IR',
+  updatedGuilt.captureFile === 'engl-e530.nam' && updatedGuilt.cab === 'mesa-412-os'
     && updatedGuilt.values?.out_master === -12.4);
+for (const cab of ['celestion-g12-vintage', 'none']) {
+  const old = { preset: 'Lead', resetPreset: 'Lead', captureFile: 'engl-e530.nam', cab, cabTouched: false };
+  check(`a factory Guilt session on the ${cab} cabinet moves to the Mesa IR`,
+    sanitizeSession(old).cab === 'mesa-412-os');
+  check(`a Guilt session whose ${cab} cabinet was chosen keeps it`,
+    sanitizeSession({ ...old, cabTouched: true }).cab === cab);
+}
 for (const [preset, captureFile, cab] of [
-  ['Lead', 'engl-e530.nam', 'celestion-g12-vintage'],
   ['Modern metal', 'full-rig-peavey-5150-maxon-mesa-os-sm57.nam', 'mesa-412-os'],
   ['Modern metal boost', '5150-stealth-100w-red-mesa-os.nam', 'mesa-412-os'],
 ] as const) {

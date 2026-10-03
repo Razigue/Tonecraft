@@ -150,7 +150,7 @@ export const PARAMS: readonly Param[] = [
   // What reaches the model. On captures this saturated it sets bite and
   // dynamics far more than it sets volume.
   { id: 'in_trim', stage: 'input', label: 'Trim', unit: 'dB',
-    min: -6, max: 24, default: -4, taper: 'linear' },
+    min: -6, max: 24, default: 0, taper: 'linear' },
 
   // --- Gate --------------------------------------------------------------
   // Release is automatic and deliberately not exposed: a player should not have
@@ -187,7 +187,7 @@ export const PARAMS: readonly Param[] = [
   { id: 'drive_level', stage: 'drive', label: 'Level', unit: 'dB',
     min: -24, max: 12, default: 0, taper: 'linear', deprecated: true },
   { id: 'drive_bypass', stage: 'drive', label: 'Bypass', unit: 'bool',
-    min: 0, max: 1, default: 0, taper: 'switch' },
+    min: 0, max: 1, default: 1, taper: 'switch' },
 
   // --- Amp ---------------------------------------------------------------
   // All five of these drove the Faust cascade that the NAM pivot retired. They

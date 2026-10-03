@@ -17,7 +17,7 @@
       "source": "ENGL E530.nam",
       "name": "ENGL E530",
       "pack": "metal",
-      "cab": "none",
+      "cab": "mesa-412-os",
       "note": "ENGL E530 by fabdef: no boost, contour off; listed as an amp + cab capture.",
       "arch": "SlimmableContainer",
       "weights": 14017,
@@ -25,8 +25,8 @@
       "sourcePage": "https://www.tone3000.com/tones/engl-e530-43",
       "license": "T3K",
       "author": "fabdef",
-      "rmsDb": -11.93,
-      "trimDb": -6.1
+      "rmsDb": -9.54,
+      "trimDb": -8.5
     },
     {
       "file": "helga-b-5150-blockletter-boosted.nam",
@@ -191,7 +191,7 @@
     {
       "file": "polyphia-so-strange.nam",
       "source": "Polyphia So Strange.nam",
-      "name": "Polyphia: So Strange",
+      "name": "Polyphia",
       "pack": "clean",
       "cab": "none",
       "note": "Amp + cab capture of a Polyphia clean tone; its author asks for no IR.",

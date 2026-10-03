@@ -13,10 +13,10 @@ identifies a full rig. The author's description references a Mesa OS cabinet
 with G12EVH and V30 speakers, miked with an SM57.
 
 The original SlimmableContainer includes A2-Full and A2-Lite; Tonecraft uses
-the default full model. Since the cabinet is in the capture, Guilt (the
-Lead preset) plays it through the `none` cabinet (a unit impulse), retaining
-its boost, EQ and reverb settings. Its capture trim is measured that way by
-`npm run calibrate`.
+the default full model. Despite its listing, it sounds strident with no
+cabinet after it, so Guilt (the Lead preset) plays it through the Mesa 412 OS
+IR, with unity input, Tonecraft's boost off, and its EQ and reverb. Its capture
+trim is measured through that IR by `npm run calibrate`.
 
 License: **T3K**, separate from the Helga captures' GPL license. The source
 permits downloading and using the model in software and publishing rendered

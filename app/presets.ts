@@ -48,11 +48,12 @@ export const PRESETS: readonly Preset[] = [
     name: 'Lead',
     pack: 'metal',
     capture: 'engl-e530.nam',
-    cab: 'none',
+    cab: 'mesa-412-os',
     values: {
-      // Kept in step with the schema defaults by npm run check. The capture is
-      // a full rig, Mesa OS cabinet and SM57 included: no IR after it.
-      in_trim: -4, gate_threshold: -50, drive_bypass: 0, drive_gain: 25.0, drive_tone: 6011,
+      // Kept in step with the schema defaults by npm run check. Listed as a
+      // full rig, but strident without a cabinet after it: it gets the Mesa.
+      // Unity input and Tonecraft's boost out: the E530 has gain enough.
+      in_trim: 0, gate_threshold: -50, drive_bypass: 1, drive_gain: 25.0, drive_tone: 6011,
       tone_bass: -1.7, tone_mid: 3.4, tone_treble: 1.7, tone_presence: 1.0,
       pitch_shift: 0, reverb_bypass: 0, reverb_mix: 0.30, out_master: -12.4,
     },
@@ -100,20 +101,19 @@ export const PRESETS: readonly Preset[] = [
       // as captured through a V30.
       in_trim: 0, gate_threshold: -60, drive_bypass: 1, drive_gain: 0, drive_tone: 5200,
       tone_bass: 0, tone_mid: 0, tone_treble: 0, tone_presence: 0,
-      pitch_shift: 0, reverb_bypass: 0, reverb_mix: 0.15, out_master: -12.4,
+      pitch_shift: 0, reverb_bypass: 1, reverb_mix: 0.15, out_master: -12.4,
     },
   },
   {
-    name: 'Clean',
+    name: 'Polyphia',
     pack: 'clean',
     capture: 'polyphia-so-strange.nam',
     cab: 'none',
     values: {
-      // The capture's author asks for no IR, and for reverb after it; the
-      // chorus and delay they also suggest are not in the chain.
+      // The capture's author asks for no IR, and for reverb after it.
       in_trim: 0, gate_threshold: -65, drive_bypass: 1, drive_gain: 0, drive_tone: 5200,
       tone_bass: 0, tone_mid: 0, tone_treble: 0, tone_presence: 0,
-      pitch_shift: 0, reverb_bypass: 0, reverb_mix: 0.18, out_master: -12.4,
+      pitch_shift: 0, reverb_bypass: 0, reverb_mix: 0.15, out_master: -12.4,
     },
   },
 ] as const;

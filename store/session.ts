@@ -90,7 +90,6 @@ export function sanitizeValues(raw: Record<string, unknown>): Record<string, num
  */
 /** Factory preset, its capture, and the cabinet it used to add to it. */
 const FULL_RIG_PRESETS: readonly (readonly [string, string, string])[] = [
-  ['Lead', 'engl-e530.nam', 'celestion-g12-vintage'],
   ['Modern metal', 'full-rig-peavey-5150-maxon-mesa-os-sm57.nam', 'mesa-412-os'],
   ['Modern metal boost', '5150-stealth-100w-red-mesa-os.nam', 'mesa-412-os'],
 ];
@@ -111,8 +110,12 @@ export function sanitizeSession(raw: unknown): Partial<Session> {
   if (out.preset === 'Lead' && out.captureFile === 'helga-b-jsx-ultra-od808.nam'
       && out.cab === 'v30mod' && out.cabTouched !== true) {
     out.captureFile = 'engl-e530.nam';
-    out.cab = 'none';
+    out.cab = 'mesa-412-os';
   }
+  // Guilt's E530 went from the Celestion IR to none and back to a cabinet,
+  // the Mesa: it was strident without one.
+  if (out.preset === 'Lead' && out.captureFile === 'engl-e530.nam' && out.cabTouched !== true
+      && (out.cab === 'celestion-g12-vintage' || out.cab === 'none')) out.cab = 'mesa-412-os';
   // The full-rig factory presets used to put a second cabinet after the one
   // already in their capture; an untouched one drops it.
   const fullRig = FULL_RIG_PRESETS.find(([preset, capture, cab]) =>

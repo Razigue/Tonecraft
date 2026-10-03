@@ -179,9 +179,9 @@ if (!started) {
 
   const playing = await page.getByRole('combobox', { name: 'Capture', exact: true }).inputValue();
   check('the selector identifies the capture it is playing', playing.length > 0, playing);
-  check('Guilt starts with the ENGL E530 full rig and no cabinet IR',
+  check('Guilt starts with the ENGL E530 and the Mesa IR',
     playing === 'engl-e530.nam'
-    && await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue() === 'none');
+    && await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue() === 'mesa-412-os');
 
   // Ground truth, straight from the worklet: the model is loaded and the
   // processor is running it. Without this, "there is sound" proves nothing —
@@ -365,15 +365,15 @@ const resetBass = Number(await bass.inputValue());
 check('double-click restores the current preset value',
   Math.abs(resetBass - presetBass) < 0.0001,
   `${resetBass.toFixed(4)} instead of ${presetBass.toFixed(4)}`);
-await tonePreset.selectOption('Clean');
+await tonePreset.selectOption('Polyphia');
 await page.waitForTimeout(1500);
-check('Clean selects the Polyphia capture with no cabinet IR',
+check('Polyphia selects its capture with no cabinet IR',
   await page.getByRole('combobox', { name: 'Capture', exact: true }).inputValue() === 'polyphia-so-strange.nam'
   && await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue() === 'none');
 await tonePreset.selectOption('Lead');
 check('returning to Lead restores the Guilt amp and cabinet',
   await page.getByRole('combobox', { name: 'Capture', exact: true }).inputValue() === 'engl-e530.nam'
-  && await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue() === 'none');
+  && await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue() === 'mesa-412-os');
 await page.waitForTimeout(1500);
 
 // Changing capture and cabinet, the two real tone choices. Found by their
