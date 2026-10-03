@@ -69,6 +69,7 @@ const en = {
     toneNotKept: 'This browser keeps nothing: the tone will be gone when the page closes.',
     cabs: {
       v30mod: 'V30 4x12 — Modern', v30dark: 'V30 4x12 — Off-Axis', green: 'Greenback 4x12 — Vintage', mod112: '1x12 Open Back',
+      none: 'None — in the capture',
     } as Record<string, string>,
     guiltAmp: 'GUILT amplifier',
     neutralAmp: 'Tonecraft amplifier',
@@ -480,6 +481,7 @@ const fr: Ui = {
     toneNotKept: 'Ce navigateur ne garde rien : ce son disparaîtra à la fermeture de la page.',
     cabs: {
       v30mod: 'V30 4x12 — Moderne', v30dark: 'V30 4x12 — Hors axe', green: 'Greenback 4x12 — Vintage', mod112: '1x12 dos ouvert',
+      none: 'Aucune — dans la capture',
     },
     guiltAmp: 'Ampli GUILT',
     neutralAmp: 'Ampli Tonecraft',

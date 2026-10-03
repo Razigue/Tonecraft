@@ -3,7 +3,7 @@
    -----------------------------------------------------------------------------
    The application runs entirely offline, with no CDN and nothing fetched at
    runtime that is not ours. This script downloads the amp captures from
-   pelennor2170/NAM_models (GNU GPL v3), fabdef, VIC AUDIO, jpisoutoftune, dissonaunte and TONE3000 (T3K),
+   pelennor2170/NAM_models (GNU GPL v3), fabdef, VIC AUDIO, jpisoutoftune, dissonaunte, jdicifuentesb and TONE3000 (T3K),
    into `public/models/`, which is what the site ships.
 
    The engine is not vendored any more: scripts/build-nam.mjs compiles it from
@@ -48,7 +48,7 @@ const MODEL_CATALOG = [
     url: 'https://api.tone3000.com/storage/v1/object/public/models/4a3efc3b5e79bf95_a2.nam',
     sourcePage: 'https://www.tone3000.com/tones/engl-e530-43',
     license: 'T3K', author: 'fabdef',
-    name: 'ENGL E530', pack: 'metal', cab: 'celestion-g12-vintage',
+    name: 'ENGL E530', pack: 'metal', cab: 'none',
     note: 'ENGL E530 by fabdef: no boost, contour off; listed as an amp + cab capture.',
   },
   {
@@ -84,7 +84,7 @@ const MODEL_CATALOG = [
     url: 'https://api.tone3000.com/storage/v1/object/public/models/0ff5x0ot7r6c_a2.nam',
     sourcePage: 'https://www.tone3000.com/tones/full-rig-peavey-5150-mesa-4x12-32868',
     license: 'T3K', author: 'jpisoutoftune',
-    name: 'Peavey 5150 + OD808 + Mesa 4x12', pack: 'metal', cab: 'mesa-412-os',
+    name: 'Peavey 5150 + OD808 + Mesa 4x12', pack: 'metal', cab: 'none',
     note: 'Peavey 5150 red channel full rig: Maxon OD808, Mesa OS 4x12 V30, SM57.',
   },
   {
@@ -92,7 +92,7 @@ const MODEL_CATALOG = [
     url: 'https://api.tone3000.com/storage/v1/object/public/models/gkcbu7m8duj.nam',
     sourcePage: 'https://www.tone3000.com/tones/5150-stealth-100w-mesa-os-full-rig-blue-red-and-green-84864',
     license: 'T3K', author: 'jpisoutoftune',
-    name: '5150 III Stealth red + Mesa 4x12', pack: 'metal', cab: 'mesa-412-os',
+    name: '5150 III Stealth red + Mesa 4x12', pack: 'metal', cab: 'none',
     note: 'EVH 5150 III Stealth 100W red channel full rig, unboosted, Mesa OS 4x12 V30.',
   },
   {
@@ -128,6 +128,14 @@ const MODEL_CATALOG = [
     pack: 'clean', cab: 'mesa-412-os',
     note: '1977 Fender Super Reverb, flat EQ, volume 3; SM57 and AKG C414 blend.',
   },
+  {
+    src: 'Polyphia So Strange.nam',
+    url: 'https://api.tone3000.com/storage/v1/object/public/models/vxpp8fwrft_a2.nam',
+    sourcePage: 'https://www.tone3000.com/tones/polyphia-49731',
+    license: 'T3K', author: 'jdicifuentesb',
+    name: 'Polyphia: So Strange', pack: 'clean', cab: 'none',
+    note: 'Amp + cab capture of a Polyphia clean tone; its author asks for no IR.',
+  },
 ];
 
 const log = (...a) => console.log(...a);
@@ -135,7 +143,7 @@ const ensure = (d) => fs.mkdirSync(d, { recursive: true });
 
 /* ------------------------------ the captures ----------------------------- */
 async function vendorModels() {
-  log('\nNAM captures (Helga: GNU GPL v3; fabdef, VIC AUDIO, jpisoutoftune, dissonaunte and TONE3000: T3K — see attribution files)');
+  log('\nNAM captures (Helga: GNU GPL v3; fabdef, VIC AUDIO, jpisoutoftune, dissonaunte, jdicifuentesb and TONE3000: T3K — see attribution files)');
   ensure(MODELS);
   const raw = 'https://raw.githubusercontent.com/' + MODEL_REPO + '/main/';
   const index = [];

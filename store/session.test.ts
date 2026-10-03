@@ -14,9 +14,20 @@ const oldGuilt = {
   cab: 'v30mod', cabTouched: false, values: { out_master: -12.4 },
 };
 const updatedGuilt = sanitizeSession(oldGuilt);
-check('the previous factory Guilt session opens on ENGL E530 and Celestion',
-  updatedGuilt.captureFile === 'engl-e530.nam' && updatedGuilt.cab === 'celestion-g12-vintage'
+check('the previous factory Guilt session opens on the ENGL E530 full rig with no IR',
+  updatedGuilt.captureFile === 'engl-e530.nam' && updatedGuilt.cab === 'none'
     && updatedGuilt.values?.out_master === -12.4);
+for (const [preset, captureFile, cab] of [
+  ['Lead', 'engl-e530.nam', 'celestion-g12-vintage'],
+  ['Modern metal', 'full-rig-peavey-5150-maxon-mesa-os-sm57.nam', 'mesa-412-os'],
+  ['Modern metal boost', '5150-stealth-100w-red-mesa-os.nam', 'mesa-412-os'],
+] as const) {
+  const old = { preset, resetPreset: preset, captureFile, cab, cabTouched: false };
+  check(`a factory ${preset} session drops the IR its full rig already contains`,
+    sanitizeSession(old).cab === 'none');
+  check(`a ${preset} session whose cabinet was chosen keeps it`,
+    sanitizeSession({ ...old, cabTouched: true }).cab === cab);
+}
 for (const custom of [{ preset: null }, { preset: 'saved:my-lead' }, { cab: 'custom' }, { cabTouched: true }]) {
   const restored = sanitizeSession({ ...oldGuilt, ...custom });
   check(`Guilt migration preserves custom choices ${JSON.stringify(custom)}`,

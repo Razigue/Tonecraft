@@ -88,6 +88,13 @@ export function sanitizeValues(raw: Record<string, unknown>): Record<string, num
  * parameters are dropped; values are clamped to the schema's range, so a
  * parameter whose range narrows can never be driven outside it from disk.
  */
+/** Factory preset, its capture, and the cabinet it used to add to it. */
+const FULL_RIG_PRESETS: readonly (readonly [string, string, string])[] = [
+  ['Lead', 'engl-e530.nam', 'celestion-g12-vintage'],
+  ['Modern metal', 'full-rig-peavey-5150-maxon-mesa-os-sm57.nam', 'mesa-412-os'],
+  ['Modern metal boost', '5150-stealth-100w-red-mesa-os.nam', 'mesa-412-os'],
+];
+
 export function sanitizeSession(raw: unknown): Partial<Session> {
   if (!isObject(raw)) return {};
   const out: { -readonly [K in keyof Session]?: Session[K] } = {};
@@ -104,8 +111,13 @@ export function sanitizeSession(raw: unknown): Partial<Session> {
   if (out.preset === 'Lead' && out.captureFile === 'helga-b-jsx-ultra-od808.nam'
       && out.cab === 'v30mod' && out.cabTouched !== true) {
     out.captureFile = 'engl-e530.nam';
-    out.cab = 'celestion-g12-vintage';
+    out.cab = 'none';
   }
+  // The full-rig factory presets used to put a second cabinet after the one
+  // already in their capture; an untouched one drops it.
+  const fullRig = FULL_RIG_PRESETS.find(([preset, capture, cab]) =>
+    out.preset === preset && out.captureFile === capture && out.cab === cab);
+  if (fullRig && out.cabTouched !== true) out.cab = 'none';
 
   if (typeof raw['deviceId'] === 'string') out.deviceId = raw['deviceId'];
   if (typeof raw['outputId'] === 'string') out.outputId = raw['outputId'];

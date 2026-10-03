@@ -58,6 +58,8 @@ export interface Cab {
   readonly curve?: readonly (readonly [number, number])[];
   /** Recorded IR under public/, decoded at the host's rate by Engine.cabIRAt. */
   readonly file?: string;
+  /** A unit impulse: for full-rig captures whose author asks for no IR. */
+  readonly neutral?: true;
 }
 
 /**
@@ -116,6 +118,15 @@ export const CABS: readonly Cab[] = [
     name: 'Mesa 412 OS',
     hint: 'The recorded Mesa 412 OS IR from the TONE3000 player.',
     file: 'irs/mesa-412-os.wav',
+  },
+  {
+    // Not a bypass: the cab stage stays in the chain, convolving with [1]. A
+    // capture of the amplifier alone through it is the jigsaw described above,
+    // so only full rigs should name it.
+    id: 'none',
+    name: 'None — in the capture',
+    hint: 'No cabinet IR: the capture already contains the cabinet and microphone.',
+    neutral: true,
   },
 ] as const;
 
@@ -185,6 +196,7 @@ function gainAt(h: Float32Array, len: number, f: number, sr: number): number {
  */
 export function cabIR(sampleRate: number, id: string): Float32Array<ArrayBuffer> {
   const cab = cabById(id);
+  if (cab.neutral) return Float32Array.of(1);
   if (!cab.curve) throw new Error(`Recorded cabinet ${id} must be decoded before rendering.`);
   const sr = sampleRate;
   const N = 8192;

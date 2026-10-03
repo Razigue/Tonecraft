@@ -11,7 +11,8 @@ The capture is a full rig: EVH 5150 III Stealth 100W, red channel, unboosted,
 into a Mesa Oversized 4x12 with V30s, SM57 and VR2 blend. The pack also holds
 the Blue (unboosted) and Green (SD1 boost) channels; Tonecraft ships only Red.
 Modern metal boost puts Tonecraft's own boost in front of it, low gain and a
-mid tone, and additionally selects the Mesa 412 OS IR.
+mid tone, and plays it through the `none` cabinet (a unit impulse), since the
+cabinet is in the capture.
 
 License: **T3K**. The source permits downloading and using the model in
 software and publishing rendered audio. Uploading, republishing or distributing
