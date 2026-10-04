@@ -353,9 +353,9 @@ check('dragging a knob downward lowers its value', afterDown < afterDrag,
 const tonePreset = page.getByRole('combobox', { name: 'Tone preset', exact: true });
 await tonePreset.selectOption('Modern metal');
 await page.waitForTimeout(1500);
-check('Modern metal selects the exact 5150 full rig with no cabinet IR',
+check('Modern metal selects the exact 5150 full rig and the Mesa IR',
   await page.getByRole('combobox', { name: 'Capture', exact: true }).inputValue() === 'full-rig-peavey-5150-maxon-mesa-os-sm57.nam'
-  && await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue() === 'none');
+  && await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue() === 'mesa-412-os');
 const bass = page.locator('input[type=range][aria-label="Bass"]');
 const presetBass = Number(await bass.inputValue());
 await bass.press('ArrowUp');
@@ -367,9 +367,9 @@ check('double-click restores the current preset value',
   `${resetBass.toFixed(4)} instead of ${presetBass.toFixed(4)}`);
 await tonePreset.selectOption('Polyphia');
 await page.waitForTimeout(1500);
-check('Polyphia selects its capture with no cabinet IR',
+check('Polyphia selects its capture and the Mesa IR',
   await page.getByRole('combobox', { name: 'Capture', exact: true }).inputValue() === 'polyphia-so-strange.nam'
-  && await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue() === 'none');
+  && await page.getByRole('combobox', { name: 'Cabinet', exact: true }).inputValue() === 'mesa-412-os');
 await tonePreset.selectOption('Lead');
 check('returning to Lead restores the Guilt amp and cabinet',
   await page.getByRole('combobox', { name: 'Capture', exact: true }).inputValue() === 'engl-e530.nam'

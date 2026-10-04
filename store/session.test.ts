@@ -25,14 +25,15 @@ for (const cab of ['celestion-g12-vintage', 'none']) {
     sanitizeSession({ ...old, cabTouched: true }).cab === cab);
 }
 for (const [preset, captureFile, cab] of [
-  ['Modern metal', 'full-rig-peavey-5150-maxon-mesa-os-sm57.nam', 'mesa-412-os'],
-  ['Modern metal boost', '5150-stealth-100w-red-mesa-os.nam', 'mesa-412-os'],
+  ['Modern metal', 'full-rig-peavey-5150-maxon-mesa-os-sm57.nam'],
+  ['Modern metal boost', '5150-stealth-100w-red-mesa-os.nam'],
+  ['Polyphia', 'polyphia-so-strange.nam'],
 ] as const) {
-  const old = { preset, resetPreset: preset, captureFile, cab, cabTouched: false };
-  check(`a factory ${preset} session drops the IR its full rig already contains`,
-    sanitizeSession(old).cab === 'none');
-  check(`a ${preset} session whose cabinet was chosen keeps it`,
-    sanitizeSession({ ...old, cabTouched: true }).cab === cab);
+  const old = { preset, resetPreset: preset, captureFile, cab: 'none', cabTouched: false };
+  check(`a factory ${preset} session without an IR gets the Mesa back`,
+    sanitizeSession(old).cab === 'mesa-412-os');
+  check(`a ${preset} session whose missing cabinet was chosen keeps none`,
+    sanitizeSession({ ...old, cabTouched: true }).cab === 'none');
 }
 for (const custom of [{ preset: null }, { preset: 'saved:my-lead' }, { cab: 'custom' }, { cabTouched: true }]) {
   const restored = sanitizeSession({ ...oldGuilt, ...custom });

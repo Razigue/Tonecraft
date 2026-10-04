@@ -85,7 +85,7 @@ const MODEL_CATALOG = [
     url: 'https://api.tone3000.com/storage/v1/object/public/models/0ff5x0ot7r6c_a2.nam',
     sourcePage: 'https://www.tone3000.com/tones/full-rig-peavey-5150-mesa-4x12-32868',
     license: 'T3K', author: 'jpisoutoftune',
-    name: 'Peavey 5150 + OD808 + Mesa 4x12', pack: 'metal', cab: 'none',
+    name: 'Peavey 5150 + OD808 + Mesa 4x12', pack: 'metal', cab: 'mesa-412-os',
     note: 'Peavey 5150 red channel full rig: Maxon OD808, Mesa OS 4x12 V30, SM57.',
   },
   {
@@ -93,7 +93,7 @@ const MODEL_CATALOG = [
     url: 'https://api.tone3000.com/storage/v1/object/public/models/gkcbu7m8duj.nam',
     sourcePage: 'https://www.tone3000.com/tones/5150-stealth-100w-mesa-os-full-rig-blue-red-and-green-84864',
     license: 'T3K', author: 'jpisoutoftune',
-    name: '5150 III Stealth red + Mesa 4x12', pack: 'metal', cab: 'none',
+    name: '5150 III Stealth red + Mesa 4x12', pack: 'metal', cab: 'mesa-412-os',
     note: 'EVH 5150 III Stealth 100W red channel full rig, unboosted, Mesa OS 4x12 V30.',
   },
   {
@@ -134,7 +134,7 @@ const MODEL_CATALOG = [
     url: 'https://api.tone3000.com/storage/v1/object/public/models/vxpp8fwrft_a2.nam',
     sourcePage: 'https://www.tone3000.com/tones/polyphia-49731',
     license: 'T3K', author: 'jdicifuentesb',
-    name: 'Polyphia', pack: 'clean', cab: 'none',
+    name: 'Polyphia', pack: 'clean', cab: 'mesa-412-os',
     note: 'Amp + cab capture of a Polyphia clean tone; its author asks for no IR.',
   },
 ];

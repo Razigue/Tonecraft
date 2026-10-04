@@ -62,9 +62,10 @@ export const PRESETS: readonly Preset[] = [
     name: 'Modern metal',
     pack: 'metal',
     capture: 'full-rig-peavey-5150-maxon-mesa-os-sm57.nam',
-    cab: 'none',
+    cab: 'mesa-412-os',
     values: {
-      // The OD808 and the Mesa cabinet are already in this full-rig capture.
+      // The OD808 is in this full-rig capture. Its cabinet is too, but it is
+      // strident without an IR after it: it gets the Mesa.
       in_trim: 0, gate_threshold: -65, drive_bypass: 1, drive_gain: 0, drive_tone: 5200,
       tone_bass: 0, tone_mid: 0, tone_treble: 0, tone_presence: 0,
       pitch_shift: 0, reverb_bypass: 1, reverb_mix: 0.12, out_master: -12.4,
@@ -74,11 +75,11 @@ export const PRESETS: readonly Preset[] = [
     name: 'Modern metal boost',
     pack: 'metal',
     capture: '5150-stealth-100w-red-mesa-os.nam',
-    cab: 'none',
+    cab: 'mesa-412-os',
     values: {
       // The red channel was captured unboosted: the screamer goes in front as a
-      // clean boost, low gain and a mid tone, to tighten the low end. The Mesa
-      // cabinet is in this full-rig capture.
+      // clean boost, low gain and a mid tone, to tighten the low end. A full
+      // rig, but strident without an IR after it: it gets the Mesa.
       in_trim: 0, gate_threshold: -60, drive_bypass: 0, drive_gain: 8.0, drive_tone: 4500,
       tone_bass: 0, tone_mid: 0, tone_treble: 0, tone_presence: 0,
       pitch_shift: 0, reverb_bypass: 1, reverb_mix: 0.12, out_master: -12.4,
@@ -108,9 +109,10 @@ export const PRESETS: readonly Preset[] = [
     name: 'Polyphia',
     pack: 'clean',
     capture: 'polyphia-so-strange.nam',
-    cab: 'none',
+    cab: 'mesa-412-os',
     values: {
-      // The capture's author asks for no IR, and for reverb after it.
+      // The capture's author asks for no IR, but it is strident without one:
+      // it gets the Mesa, and reverb after it.
       in_trim: 0, gate_threshold: -65, drive_bypass: 1, drive_gain: 0, drive_tone: 5200,
       tone_bass: 0, tone_mid: 0, tone_treble: 0, tone_presence: 0,
       pitch_shift: 0, reverb_bypass: 0, reverb_mix: 0.15, out_master: -12.4,

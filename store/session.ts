@@ -88,10 +88,11 @@ export function sanitizeValues(raw: Record<string, unknown>): Record<string, num
  * parameters are dropped; values are clamped to the schema's range, so a
  * parameter whose range narrows can never be driven outside it from disk.
  */
-/** Factory preset, its capture, and the cabinet it used to add to it. */
-const FULL_RIG_PRESETS: readonly (readonly [string, string, string])[] = [
-  ['Modern metal', 'full-rig-peavey-5150-maxon-mesa-os-sm57.nam', 'mesa-412-os'],
-  ['Modern metal boost', '5150-stealth-100w-red-mesa-os.nam', 'mesa-412-os'],
+/** Factory preset and its capture, which went without an IR for a while. */
+const FULL_RIG_PRESETS: readonly (readonly [string, string])[] = [
+  ['Modern metal', 'full-rig-peavey-5150-maxon-mesa-os-sm57.nam'],
+  ['Modern metal boost', '5150-stealth-100w-red-mesa-os.nam'],
+  ['Polyphia', 'polyphia-so-strange.nam'],
 ];
 
 export function sanitizeSession(raw: unknown): Partial<Session> {
@@ -116,11 +117,11 @@ export function sanitizeSession(raw: unknown): Partial<Session> {
   // the Mesa: it was strident without one.
   if (out.preset === 'Lead' && out.captureFile === 'engl-e530.nam' && out.cabTouched !== true
       && (out.cab === 'celestion-g12-vintage' || out.cab === 'none')) out.cab = 'mesa-412-os';
-  // The full-rig factory presets used to put a second cabinet after the one
-  // already in their capture; an untouched one drops it.
-  const fullRig = FULL_RIG_PRESETS.find(([preset, capture, cab]) =>
-    out.preset === preset && out.captureFile === capture && out.cab === cab);
-  if (fullRig && out.cabTouched !== true) out.cab = 'none';
+  // The full-rig factory presets went without an IR, since their capture
+  // holds a cabinet; they were strident, so an untouched one gets the Mesa back.
+  const fullRig = FULL_RIG_PRESETS.find(([preset, capture]) =>
+    out.preset === preset && out.captureFile === capture && out.cab === 'none');
+  if (fullRig && out.cabTouched !== true) out.cab = 'mesa-412-os';
 
   if (typeof raw['deviceId'] === 'string') out.deviceId = raw['deviceId'];
   if (typeof raw['outputId'] === 'string') out.outputId = raw['outputId'];
