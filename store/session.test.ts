@@ -24,7 +24,7 @@ for (const cab of ['celestion-g12-vintage', 'none']) {
   check(`a Guilt session whose ${cab} cabinet was chosen keeps it`,
     sanitizeSession({ ...old, cabTouched: true }).cab === cab);
 }
-for (const [preset, captureFile, cab] of [
+for (const [preset, captureFile] of [
   ['Modern metal', 'full-rig-peavey-5150-maxon-mesa-os-sm57.nam'],
   ['Modern metal boost', '5150-stealth-100w-red-mesa-os.nam'],
   ['Polyphia', 'polyphia-so-strange.nam'],
